@@ -16,17 +16,42 @@ edit `SC/.env`, do not edit `.s.sol`.
 | `../hook/script/DeployHook.s.sol` | `PrediXHookV2` implementation + CREATE2-salt-mined `PrediXHookProxyV2`. |
 | `../exchange/script/DeployExchange.s.sol` | Standalone `PrediXExchange`. |
 | `../router/script/DeployRouter.s.sol` | `PrediXRouter` with 9 immutables. |
+| `../shared/script/DeployTestUSDC.s.sol` | Testnet-only open-mint ERC20 with mainnet USDC metadata. Deploy once per testnet before `DeployAll`. |
 
 ## Environment setup
 
 1. `cp SC/.env.example SC/.env`
 2. Fill every field. The ones that change per chain:
-   - `USDC_ADDRESS`
+   - `USDC_ADDRESS` — see §Testnet USDC below for testnet, or Circle's canonical address for mainnet
    - `POOL_MANAGER_ADDRESS`
    - `V4_QUOTER_ADDRESS`
    - `CHAINLINK_ENABLED` and, if `true`, `CHAINLINK_SEQUENCER_UPTIME_FEED`
 3. `PERMIT2_ADDRESS` is canonical (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) on every chain — the template already has it.
 4. Governance keys (`MULTISIG_ADDRESS`, `HOOK_PROXY_ADMIN`, `HOOK_RUNTIME_ADMIN`, `REPORTER_ADDRESS`, `REGISTRAR_ADDRESS`, `FEE_RECIPIENT`) must all be set even for testnet — they are required by `vm.envAddress`.
+
+## Testnet USDC
+
+Circle's public USDC testnet faucets are rate-limited and can't cover a full
+end-to-end flow (split 100k + CLOB + AMM + redeem). The repo ships a
+testnet-only open-mint token at
+`packages/shared/script/DeployTestUSDC.s.sol` that matches mainnet USDC
+metadata exactly (name `USD Coin`, symbol `USDC`, 6 decimals, EIP-2612
+permit). Anyone can mint any amount to any address via the `mint` entry
+point — **never deploy on mainnet.**
+
+**Step 0 (testnet only):**
+
+```bash
+source SC/.env
+forge script packages/shared/script/DeployTestUSDC.s.sol:DeployTestUSDC \
+    --rpc-url "$UNICHAIN_RPC_PRIMARY" \
+    --broadcast
+```
+
+Copy the resulting `TestUSDC` address from the broadcast summary and paste
+it into `USDC_ADDRESS` in `SC/.env`. Then proceed with `DeployAll`.
+
+On mainnet skip this step entirely and use the real Circle USDC address.
 
 ### Unichain RPCs
 
