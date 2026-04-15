@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+//
+// Placeholder: Router E2E fork test is intentionally SKIPPED on Unichain
+// Sepolia because the canonical Uniswap v4 `V4Quoter` deployment could not
+// be confirmed on chain id 1301 at research time.
+//
+// Router constructor takes both `IPoolManager` and `IV4Quoter` as required
+// immutables (see `PrediXRouter.sol` constructor; both revert `ZeroAddress`
+// on address(0)). Deploying a local mock V4Quoter in a fork test would
+// defeat the purpose — we would be testing the router against a mock on
+// top of a real chain, which is strictly worse than the unit suite against
+// `MockV4Quoter`.
+//
+// Permit2 end-to-end flow (canonical address + allowance lifecycle) is
+// already exercised in `packages/shared/test/fork/Permit2IntegrationForkTest.t.sol`
+// so the router-specific Permit2 wiring does not need a duplicate fork
+// test to prove Permit2 itself.
+//
+// Research steps (reproduce before re-enabling):
+//   1. Locate the V4Quoter deployment address for Unichain Sepolia in
+//      https://docs.uniswap.org/contracts/v4/deployments (or the v4-periphery
+//      release notes).
+//   2. `cast code <address> --rpc-url $UNICHAIN_RPC_PRIMARY` — non-empty.
+//   3. `cast call <address> "poolManager()(address)"` must return the
+//      canonical PoolManager address.
+//
+// To enable once V4Quoter is confirmed:
+//   * Rename this file to `RouterE2EForkTest.t.sol`.
+//   * Add `V4_QUOTER_ADDRESS=...` to `.env.example` (it is already declared).
+//   * Deploy the full stack (diamond + hook + exchange + router) against the
+//     fork. Hook deployment requires CREATE2 address mining so the
+//     permission flags in the low bits match `getHookPermissions()` —
+//     `HookMiner` from `v4-periphery/src/utils/HookMiner.sol` is the
+//     canonical helper.
+//   * Exercise:
+//       - `buyYes` round-trip with recipient balance + router non-custody
+//         assertion.
+//       - `buyYesWithPermit` with a real EIP-712 Permit2 signature (sign
+//         against the live DOMAIN_SEPARATOR).
+//
+// Suffix `.requires-v4-quoter` keeps forge from compiling this file while
+// still shipping the rationale + re-enablement checklist to git.
