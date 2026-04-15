@@ -1,0 +1,24 @@
+# Dependabot — PrediX V2 smart contracts
+#
+# SC is a Foundry-only repo: no root package.json, no pnpm-lock.yaml,
+# no CI workflow installs npm packages. The Solidity source tree
+# imports via `lib/` submodules (uniswap-hooks, openzeppelin-contracts,
+# forge-std, etc.), which are pinned at commit SHA and upgraded only
+# through deliberate `forge install` by a human.
+#
+# Dependabot's auto-detect surfaces vulnerable JS deps inside deeply
+# nested vendored `package-lock.json` files like
+#   lib/uniswap-hooks/lib/v4-core/lib/openzeppelin-contracts/package-lock.json
+# These paths host Hardhat tooling for OpenZeppelin Contracts npm
+# development — our Foundry build never touches them. The JS code is
+# byte-for-byte present but never loaded, parsed, or executed by any
+# build/test/deploy surface this repo exposes. Dismissing every new
+# CVE one-by-one as `not_used` is noise; disable auto-detect instead.
+#
+# If a real JS toolchain is added to this repo (e.g., TypeScript test
+# harness, Node-based deploy scripts beyond `forge script`), flip this
+# config to a real `updates:` entry scoped to the package.json that
+# lands with it.
+
+version: 2
+updates: []
