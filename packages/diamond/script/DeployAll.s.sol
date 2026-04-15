@@ -171,13 +171,20 @@ contract DeployAll is Script {
         internal
         returns (address manualAddr, address chainlinkAddr)
     {
-        ManualOracle manualOracle = new ManualOracle(env.multisig, diamond);
+        // Deployer holds DEFAULT_ADMIN_ROLE temporarily so we can grant the operational
+        // role (reporter/registrar) in the same broadcast. Final handover to multisig is
+        // the last two calls on each oracle. Mirrors `DiamondDeployLib.transferGovernance`.
+        ManualOracle manualOracle = new ManualOracle(env.deployer, diamond);
         manualOracle.grantRole(manualOracle.REPORTER_ROLE(), env.reporter);
+        manualOracle.grantRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
+        manualOracle.renounceRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
         manualAddr = address(manualOracle);
 
         if (env.chainlinkEnabled) {
-            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(env.multisig, env.chainlinkSequencerFeed);
+            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(env.deployer, env.chainlinkSequencerFeed);
             chainlinkOracle.grantRole(chainlinkOracle.REGISTRAR_ROLE(), env.registrar);
+            chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
+            chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
             chainlinkAddr = address(chainlinkOracle);
         }
     }
