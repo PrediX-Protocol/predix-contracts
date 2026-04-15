@@ -1,0 +1,69 @@
+# ---------- Foundry build artifacts ----------
+out/
+cache/
+broadcast/
+.forge-snapshots/
+packages/*/out/
+packages/*/cache/
+packages/*/broadcast/
+
+# ---------- Node / package managers ----------
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------- Secrets & environment ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.secrets/
+
+# ---------- OS & editor ----------
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ---------- Lock files we don't vendor ----------
+foundry.lock
+
+# ---------- Local development scratchpad ----------
+*.tmp
+*.bak
+*.orig
+*.rej
+.tmp/
+tmp/
+scratch/
+
+# ---------- Coverage & analysis ----------
+coverage/
+lcov.info
+*.lcov
+slither-out/
+mythril-out/
+echidna-corpus/
+halmos-out/
+
+# ---------- Internal working documents (not published) ----------
+audits/
+specs/**/REVIEW_*.md
+
+# ---------- Package-local forge libs (use monorepo lib/ only) ----------
+packages/*/lib/
