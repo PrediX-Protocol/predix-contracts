@@ -65,5 +65,12 @@ halmos-out/
 audits/
 specs/**/REVIEW_*.md
 
+# ---------- Agent prompts and rules (never publish on remote) ----------
+CLAUDE.md
+.claude/
+AGENTS.md
+CURSOR_RULES*.md
+*_prompt.md
+
 # ---------- Package-local forge libs (use monorepo lib/ only) ----------
 packages/*/lib/
