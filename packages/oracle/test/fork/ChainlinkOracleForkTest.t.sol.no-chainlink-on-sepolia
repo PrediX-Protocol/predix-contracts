@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: MIT
+//
+// Placeholder: ChainlinkOracle fork test is intentionally SKIPPED on
+// Unichain Sepolia.
+//
+// As of the date of this file, Chainlink does not publish price feeds on
+// Unichain Sepolia (chain id 1301). The adapter is exercised exclusively by
+// unit tests against MockChainlinkAggregator.
+//
+// Research steps (reproduce before re-enabling):
+//   1. Check https://docs.chain.link/data-feeds/price-feeds/addresses
+//      for a "Unichain Sepolia" network row.
+//   2. Run `cast code <feed_address> --rpc-url $UNICHAIN_RPC_PRIMARY` and
+//      verify non-empty code.
+//   3. Run `cast call <feed_address> "decimals()(uint8)"` and verify the
+//      return value matches the threshold decimals baked into the test
+//      market configuration.
+//
+// To enable once a feed is available:
+//   * Rename this file to `ChainlinkOracleForkTest.t.sol`.
+//   * Add `CHAINLINK_FEED_ADDRESS=...` to `.env.example`.
+//   * Write test cases covering:
+//       - register() with the real feed (probe + decimals capture)
+//       - resolve(marketId, roundIdHint) bound to a specific historical round
+//       - Revert on wrong round hint (both too early and too late)
+//   * Mirror the unit-test structure in
+//     `packages/oracle/test/unit/ChainlinkOracle.t.sol`.
+//
+// Suffix `.no-chainlink-on-sepolia` keeps forge from compiling this file
+// while still committing the rationale + re-enablement checklist.
