@@ -44,10 +44,7 @@ contract MarketLifecycleForkTest is DiamondFixture {
         cuts[0] = _add(address(marketFacet), _marketSelectors());
 
         MarketInit.InitArgs memory args = MarketInit.InitArgs({
-            collateralToken: address(usdc),
-            feeRecipient: feeRecipient,
-            marketCreationFee: 0,
-            defaultPerMarketCap: 0
+            collateralToken: address(usdc), feeRecipient: feeRecipient, marketCreationFee: 0, defaultPerMarketCap: 0
         });
         bytes memory initData = abi.encodeCall(MarketInit.init, (args));
 

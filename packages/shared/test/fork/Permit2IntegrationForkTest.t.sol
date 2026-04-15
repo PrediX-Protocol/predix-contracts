@@ -38,8 +38,7 @@ contract Permit2IntegrationForkTest is Test {
     }
 
     function test_Permit2_DomainSeparator_Nonzero() public view {
-        (bool ok, bytes memory ret) =
-            address(permit2).staticcall(abi.encodeWithSignature("DOMAIN_SEPARATOR()"));
+        (bool ok, bytes memory ret) = address(permit2).staticcall(abi.encodeWithSignature("DOMAIN_SEPARATOR()"));
         assertTrue(ok, "DOMAIN_SEPARATOR call failed");
         bytes32 sep = abi.decode(ret, (bytes32));
         assertTrue(sep != bytes32(0));
