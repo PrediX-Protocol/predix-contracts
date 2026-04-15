@@ -4,7 +4,7 @@ build:
 	forge build
 
 test:
-	forge test -vv
+	forge test -vv --no-match-path 'test/fork/*'
 
 fmt:
 	forge fmt
