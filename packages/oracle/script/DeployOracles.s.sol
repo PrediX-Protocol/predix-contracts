@@ -24,13 +24,15 @@ contract DeployOracles is Script {
     }
 
     function run() external returns (Deployed memory out) {
+        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address deployer = vm.addr(deployerKey);
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address reporter = vm.envAddress("REPORTER_ADDRESS");
         bool chainlinkEnabled = vm.envBool("CHAINLINK_ENABLED");
 
-        vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        out = _deploy(multisig, diamond, reporter, chainlinkEnabled);
+        vm.startBroadcast(deployerKey);
+        out = _deploy(deployer, multisig, diamond, reporter, chainlinkEnabled);
         vm.stopBroadcast();
 
         console2.log("ManualOracle:", out.manual);
@@ -43,19 +45,24 @@ contract DeployOracles is Script {
 
     /// @dev Shared deploy helper used by `DeployAll`. Assumes a broadcast scope is
     ///      already open.
-    function deploy(address multisig, address diamond, address reporter, bool chainlinkEnabled)
+    function deploy(address deployer, address multisig, address diamond, address reporter, bool chainlinkEnabled)
         external
         returns (Deployed memory)
     {
-        return _deploy(multisig, diamond, reporter, chainlinkEnabled);
+        return _deploy(deployer, multisig, diamond, reporter, chainlinkEnabled);
     }
 
-    function _deploy(address multisig, address diamond, address reporter, bool chainlinkEnabled)
+    function _deploy(address deployer, address multisig, address diamond, address reporter, bool chainlinkEnabled)
         internal
         returns (Deployed memory out)
     {
-        ManualOracle manualOracle = new ManualOracle(multisig, diamond);
+        // Deployer holds DEFAULT_ADMIN_ROLE temporarily so we can grant the operational
+        // role (reporter/registrar) in the same broadcast. Final handover to multisig is
+        // the last two calls. Mirrors `DiamondDeployLib.transferGovernance`.
+        ManualOracle manualOracle = new ManualOracle(deployer, diamond);
         manualOracle.grantRole(manualOracle.REPORTER_ROLE(), reporter);
+        manualOracle.grantRole(manualOracle.DEFAULT_ADMIN_ROLE(), multisig);
+        manualOracle.renounceRole(manualOracle.DEFAULT_ADMIN_ROLE(), deployer);
         out.manual = address(manualOracle);
 
         if (chainlinkEnabled) {
@@ -64,8 +71,10 @@ contract DeployOracles is Script {
             // testnets where Chainlink has not deployed the sequencer feed yet. Documented
             // in ChainlinkOracle.sol lines 24-27.
             address sequencerFeed = vm.envOr("CHAINLINK_SEQUENCER_UPTIME_FEED", address(0));
-            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(multisig, sequencerFeed);
+            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(deployer, sequencerFeed);
             chainlinkOracle.grantRole(chainlinkOracle.REGISTRAR_ROLE(), registrar);
+            chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), multisig);
+            chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), deployer);
             out.chainlink = address(chainlinkOracle);
         }
     }
