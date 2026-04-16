@@ -132,17 +132,27 @@ fi
 # ---------------------------------------------------------------------------
 CURRENT_LIQ=$(cast call "$STATE_VIEW" "getLiquidity(bytes32)(uint128)" "$POOL_ID" --rpc-url "$RPC" | awk '{print $1}')
 if [ "$CURRENT_LIQ" = "0" ]; then
-    log "splitting 200 USDC on market $MID for seed liquidity"
-    send_tx "$DEPLOYER_PRIVATE_KEY" "$USDC_ADDRESS" "approve(address,uint256)" "$DIAMOND_ADDRESS" "200000000" >/dev/null
-    send_tx "$DEPLOYER_PRIVATE_KEY" "$DIAMOND_ADDRESS" "splitPosition(uint256,uint256)" "$MID" "200000000" >/dev/null
+    log "splitting 500 USDC on market $MID for seed liquidity"
+    send_tx "$DEPLOYER_PRIVATE_KEY" "$USDC_ADDRESS" "approve(address,uint256)" "$DIAMOND_ADDRESS" "500000000" >/dev/null
+    send_tx "$DEPLOYER_PRIVATE_KEY" "$DIAMOND_ADDRESS" "splitPosition(uint256,uint256)" "$MID" "500000000" >/dev/null
 
-    log "approving PoolModifyLiquidityTest"
-    send_tx "$DEPLOYER_PRIVATE_KEY" "$YES_TOKEN" "approve(address,uint256)" "$MOD_LIQ" "200000000" >/dev/null
-    send_tx "$DEPLOYER_PRIVATE_KEY" "$USDC_ADDRESS" "approve(address,uint256)" "$MOD_LIQ" "200000000" >/dev/null
+    log "approving PoolModifyLiquidityTest (max)"
+    MAX_APPROVE="115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    send_tx "$DEPLOYER_PRIVATE_KEY" "$YES_TOKEN" "approve(address,uint256)" "$MOD_LIQ" "$MAX_APPROVE" >/dev/null
+    send_tx "$DEPLOYER_PRIVATE_KEY" "$USDC_ADDRESS" "approve(address,uint256)" "$MOD_LIQ" "$MAX_APPROVE" >/dev/null
 
-    log "modifyLiquidity L=18_700_000_000 over [-7080, -6780]"
+    # Compute tick range dynamically from the pool's current tick (backlog #48).
+    # Centers the LP range at ±5 tick-spacings around the current tick so the
+    # position brackets the price regardless of yesIsCurrency0 vs yesIsCurrency1
+    # pool orientation (negative tick ~-6932 vs positive tick ~+6931).
+    CURRENT_TICK=$(cast call "$STATE_VIEW" "getSlot0(bytes32)(uint160,int24,uint24,uint24)" "$POOL_ID" --rpc-url "$RPC" \
+        | sed -n '2p' | awk '{print $1}')
+    log "current tick=$CURRENT_TICK"
+    TICK_LOWER=$(python3 -c "t=$CURRENT_TICK; s=$TICK_SPACING; print((t // s - 2) * s)")
+    TICK_UPPER=$(python3 -c "t=$CURRENT_TICK; s=$TICK_SPACING; print((t // s + 2) * s)")
+    log "modifyLiquidity L=18_700_000_000 over [$TICK_LOWER, $TICK_UPPER]"
     L=18700000000
-    PARAMS="(-7080,-6780,$L,0x0000000000000000000000000000000000000000000000000000000000000000)"
+    PARAMS="($TICK_LOWER,$TICK_UPPER,$L,0x0000000000000000000000000000000000000000000000000000000000000000)"
     send_tx "$DEPLOYER_PRIVATE_KEY" "$MOD_LIQ" \
         "modifyLiquidity((address,address,uint24,int24,address),(int24,int24,int256,bytes32),bytes)" \
         "$POOL_KEY" "$PARAMS" "0x" >/dev/null
