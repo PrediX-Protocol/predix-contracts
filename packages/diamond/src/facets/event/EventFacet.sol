@@ -72,7 +72,8 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IEventFacet
-    function resolveEvent(uint256 eventId, uint256 winningIndex) external override {
+    function resolveEvent(uint256 eventId, uint256 winningIndex) external override nonReentrant {
+        LibPausable.enforceNotPaused(Modules.MARKET);
         LibAccessControl.checkRole(Roles.OPERATOR_ROLE);
 
         LibEventStorage.EventData storage e = _event(eventId);

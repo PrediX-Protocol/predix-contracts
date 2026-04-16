@@ -104,7 +104,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
-    function resolveMarket(uint256 marketId) external override {
+    function resolveMarket(uint256 marketId) external override nonReentrant {
         LibPausable.enforceNotPaused(Modules.MARKET);
 
         LibMarketStorage.MarketData storage m = _market(marketId);
@@ -115,17 +115,22 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
 
         IOracle oracle = IOracle(m.oracle);
         if (!oracle.isResolved(marketId)) revert Market_OracleNotResolved();
-        bool result = oracle.outcome(marketId);
 
+        // Effects BEFORE interaction (CEI) — set resolved state before
+        // external call to oracle.outcome() so any reentrancy attempt
+        // sees isResolved == true and hits the AlreadyResolved guard.
         m.isResolved = true;
-        m.outcome = result;
         m.resolvedAt = block.timestamp;
+
+        // Interaction — external call AFTER state update
+        bool result = oracle.outcome(marketId);
+        m.outcome = result;
 
         emit MarketResolved(marketId, result, msg.sender);
     }
 
     /// @inheritdoc IMarketFacet
-    function emergencyResolve(uint256 marketId, bool outcome) external override {
+    function emergencyResolve(uint256 marketId, bool outcome) external override nonReentrant {
         LibAccessControl.checkRole(Roles.OPERATOR_ROLE);
 
         LibMarketStorage.MarketData storage m = _market(marketId);

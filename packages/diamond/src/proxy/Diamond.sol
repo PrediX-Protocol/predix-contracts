@@ -18,6 +18,7 @@ import {LibDiamondStorage} from "@predix/diamond/libraries/LibDiamondStorage.sol
 contract Diamond {
     error Diamond_ZeroAdmin();
     error Diamond_FunctionNotFound(bytes4 selector);
+    error Diamond_NoETHAccepted();
 
     constructor(address admin, IDiamondCut.FacetCut[] memory cuts, address init, bytes memory initData) {
         if (admin == address(0)) revert Diamond_ZeroAdmin();
@@ -26,6 +27,7 @@ contract Diamond {
     }
 
     fallback() external payable {
+        if (msg.value > 0) revert Diamond_NoETHAccepted();
         LibDiamondStorage.Layout storage ds = LibDiamondStorage.layout();
         address facet = ds.selectorToFacetAndPosition[msg.sig].facetAddress;
         if (facet == address(0)) revert Diamond_FunctionNotFound(msg.sig);
