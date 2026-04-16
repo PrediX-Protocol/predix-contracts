@@ -254,6 +254,24 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         }
     }
 
+    /// @inheritdoc IPrediXHook
+    /// @dev Allows a trusted router to pre-commit identity under another trusted
+    ///      caller's slot. Primary use case: the router calls this before
+    ///      `V4Quoter.quoteExactInputSingle`, writing `user` under
+    ///      `_commitSlot(quoter, poolId)` so the quoter's simulate-and-revert
+    ///      `beforeSwap(sender=quoter, ...)` finds the identity. Both the
+    ///      msg.sender (router) AND `caller` (quoter) must be trusted — this
+    ///      prevents an attacker from planting commits under arbitrary slots.
+    function commitSwapIdentityFor(address caller, address user, PoolId poolId) external override {
+        if (!_trustedRouters[msg.sender]) revert Hook_OnlyTrustedRouter();
+        if (!_trustedRouters[caller]) revert Hook_OnlyTrustedRouter();
+        if (user == address(0)) revert Hook_ZeroAddress();
+        bytes32 slot = _commitSlot(caller, poolId);
+        assembly ("memory-safe") {
+            tstore(slot, user)
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------

@@ -209,6 +209,16 @@ interface IPrediXHook {
     ///      in the same call frame. There is no cross-transaction commit/swap path.
     function commitSwapIdentity(address user, PoolId poolId) external;
 
+    /// @notice Pre-commit identity under another trusted caller's transient slot.
+    /// @dev Used by the router to pre-populate `_commitSlot(quoter, poolId)` before
+    ///      calling `V4Quoter.quoteExactInputSingle`, so the quoter's simulate-and-revert
+    ///      `beforeSwap(sender=quoter, ...)` finds the committed identity. Both `msg.sender`
+    ///      AND `caller` must be in the trusted-router set — prevents arbitrary slot planting.
+    /// @param caller The address whose commit slot will be written (e.g., V4Quoter address).
+    /// @param user   The real end-user identity to commit.
+    /// @param poolId The pool the swap targets.
+    function commitSwapIdentityFor(address caller, address user, PoolId poolId) external;
+
     // ---------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------
