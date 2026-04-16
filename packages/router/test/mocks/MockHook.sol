@@ -22,6 +22,19 @@ contract MockHook {
         lastCommitSequence = commitCount;
     }
 
+    function commitSwapIdentityFor(
+        address,
+        /*caller*/
+        address user,
+        PoolId poolId
+    )
+        external
+    {
+        commitCount += 1;
+        commits.push(Commit({user: user, poolId: poolId, sequence: commitCount}));
+        lastCommitSequence = commitCount;
+    }
+
     function lastCommitUser() external view returns (address) {
         if (commitCount == 0) return address(0);
         return commits[commitCount - 1].user;

@@ -33,7 +33,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         assertEq(yes1.balanceOf(alice), 1_000_000e6 + 200e6, "alice yes");
         assertEq(usdc.balanceOf(address(router)), 0, "router usdc zero");
         assertEq(yes1.balanceOf(address(router)), 0, "router yes zero");
-        assertEq(hook.commitCount(), 0, "no AMM - no hook commit");
+        assertEq(hook.commitCount(), 1, "CLOB cap probe commits for quoter");
     }
 
     function test_HappyPath_AmmOnly() public {
@@ -55,7 +55,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         assertEq(clobFilled, 0, "clob 0");
         assertEq(ammFilled, 180e6, "amm 180");
         assertEq(yesOut, 180e6, "yesOut");
-        assertEq(hook.commitCount(), 1, "hook committed once");
+        assertEq(hook.commitCount(), 2, "CLOB cap probe + AMM swap commit");
         assertEq(hook.lastCommitUser(), alice, "commit user == alice");
         assertEq(poolManager.swapCount(), 1, "one swap");
     }
@@ -242,7 +242,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
         // Hook commit must have happened before any swap: MockHook records in the same tx,
         // so commitCount=1 and swapCount=1. Assert hook.lastCommitUser == real end user alice.
-        assertEq(hook.commitCount(), 1);
+        assertEq(hook.commitCount(), 2);
         assertEq(hook.lastCommitUser(), alice);
         assertEq(poolManager.swapCount(), 1);
     }

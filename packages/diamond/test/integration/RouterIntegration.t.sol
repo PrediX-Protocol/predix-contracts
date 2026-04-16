@@ -120,9 +120,12 @@ contract RouterIntegrationTest is MarketFixture {
             TICK_SPACING
         );
 
-        // Trust router on hook so `commitSwapIdentity` accepts its calls.
-        vm.prank(hookAdmin);
+        // Trust router + quoter on hook so `commitSwapIdentity` and
+        // `commitSwapIdentityFor` (Phase 5) accept their calls.
+        vm.startPrank(hookAdmin);
         hook.setTrustedRouter(address(router), true);
+        hook.setTrustedRouter(address(quoter), true);
+        vm.stopPrank();
     }
 
     // =========================================================================

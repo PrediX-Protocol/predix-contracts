@@ -43,7 +43,7 @@ contract PrediXRouter_SellNo is RouterFixture {
         (uint256 usdcOut,, uint256 ammFilled) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
         assertEq(usdcOut, noIn - costQuote, "usdcOut = noIn - cost");
         assertEq(ammFilled, noIn - costQuote);
-        assertEq(hook.commitCount(), 1);
+        assertEq(hook.commitCount(), 3);
     }
 
     function test_Revert_SellNo_QuoteOutsideSafetyMargin() public {

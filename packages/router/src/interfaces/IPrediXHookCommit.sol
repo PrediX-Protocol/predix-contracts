@@ -16,4 +16,12 @@ interface IPrediXHookCommit {
     ///         anti-sandwich detector so back-to-back trades from different end users routed
     ///         through the same router address do not collide.
     function commitSwapIdentity(address user, PoolId poolId) external;
+
+    /// @notice Pre-commit identity under another trusted caller's transient slot. The router
+    ///         calls this before `V4Quoter.quoteExactInputSingle` to write `user` under
+    ///         `_commitSlot(quoter, poolId)` so the quoter's simulate-and-revert path finds it.
+    /// @param caller The address whose commit slot will be written (e.g., V4Quoter).
+    /// @param user   The real end-user identity.
+    /// @param poolId The pool the swap targets.
+    function commitSwapIdentityFor(address caller, address user, PoolId poolId) external;
 }

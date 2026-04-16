@@ -39,7 +39,7 @@ contract PrediXRouter_SellYes is RouterFixture {
         (uint256 usdcOut,, uint256 ammFilled) = router.sellYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
         assertEq(usdcOut, 55e6);
         assertEq(ammFilled, 55e6);
-        assertEq(hook.commitCount(), 1);
+        assertEq(hook.commitCount(), 2);
         assertEq(hook.lastCommitUser(), alice);
     }
 

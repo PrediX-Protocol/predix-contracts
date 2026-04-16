@@ -53,7 +53,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         assertEq(noOut, expectedMint);
         assertEq(ammFilled, expectedMint);
         assertEq(no1.balanceOf(alice), 1_000_000e6 + expectedMint);
-        assertEq(hook.commitCount(), 1);
+        assertEq(hook.commitCount(), 3);
     }
 
     function test_Revert_BuyNo_QuoteOutsideSafetyMargin() public {

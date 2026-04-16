@@ -306,17 +306,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @inheritdoc IPrediXRouter
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2`: when `usdcLeft > 0`
-    ///      this method forwards to `V4Quoter.quoteExactInputSingle`, which
-    ///      simulate-and-reverts through the hook. `hook.beforeSwap` sees
-    ///      `sender = quoter` and the commit slot under `(quoter, poolId)` is
-    ///      empty, so the call reverts with `Hook_MissingRouterCommit()`. The
-    ///      CLOB-only prefix (when the order fits entirely in the exchange book)
-    ///      still returns valid values. Fix tracked: backlog #49 Phase 5 hook
-    ///      upgrade (`commitSwapIdentityFor` + 48h timelock upgrade). FE must use
-    ///      client-side mid-price computation (derived from
-    ///      `StateView.getSlot0(poolId)`) OR `IPrediXExchangeView.previewFillMarketOrder`
-    ///      for CLOB-only previews until Phase 5 lands.
     function quoteBuyYes(uint256 marketId, uint256 usdcIn, uint256 maxFills)
         external
         returns (uint256 expectedYesOut, uint256 clobPortion, uint256 ammPortion)
@@ -331,6 +320,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         uint256 usdcLeft = usdcIn - clobCost;
         if (usdcLeft > 0) {
+            _preCommitForQuoter(yesToken);
             PoolKey memory key = _buildPoolKey(yesToken);
             IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
                 poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(usdcLeft), hookData: ""
@@ -343,8 +333,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @inheritdoc IPrediXRouter
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2` — same root cause as
-    ///      `quoteBuyYes`. Fix tracked: backlog #49 Phase 5 hook upgrade.
     function quoteSellYes(uint256 marketId, uint256 yesIn, uint256 maxFills)
         external
         returns (uint256 expectedUsdcOut, uint256 clobPortion, uint256 ammPortion)
@@ -356,11 +344,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 sharesFilled;
         (sharesFilled, clobPortion) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills);
-        // On sell paths the exchange returns (shares filled, USDC cost-as-output). We report
-        // USDC out as `clobPortion` and treat `sharesFilled` as the CLOB-consumed share budget.
 
         uint256 yesLeft = yesIn - sharesFilled;
         if (yesLeft > 0) {
+            _preCommitForQuoter(yesToken);
             PoolKey memory key = _buildPoolKey(yesToken);
             IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
                 poolKey: key, zeroForOne: yesToken < usdc, exactAmount: uint128(yesLeft), hookData: ""
@@ -373,8 +360,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @inheritdoc IPrediXRouter
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2` — same root cause as
-    ///      `quoteBuyYes`. Fix tracked: backlog #49 Phase 5 hook upgrade.
     function quoteBuyNo(uint256 marketId, uint256 usdcIn, uint256 maxFills)
         external
         returns (uint256 expectedNoOut, uint256 clobPortion, uint256 ammPortion)
@@ -396,8 +381,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @inheritdoc IPrediXRouter
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2` — same root cause as
-    ///      `quoteBuyYes`. Fix tracked: backlog #49 Phase 5 hook upgrade.
     function quoteSellNo(uint256 marketId, uint256 noIn, uint256 maxFills)
         external
         returns (uint256 expectedUsdcOut, uint256 clobPortion, uint256 ammPortion)
@@ -776,91 +759,87 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     // =========================================================================
-    // CLOB price caps — permissive (Phase 4 Part 1 narrow fix)
+    // Quoter identity pre-commit (Phase 5 — commitSwapIdentityFor)
     // =========================================================================
-    //
-    // The prior implementation asked the V4Quoter for an AMM spot price and used
-    // it as a CLOB cap so CLOB takers could not overpay relative to the AMM.
-    // That path is broken against the deployed `PrediXHookV2` because the
-    // quoter's simulate-and-revert pattern surfaces as `sender = quoter` inside
-    // `hook.beforeSwap`, and the FINAL-H06 commit gate has no pre-committed
-    // identity under `_commitSlot(quoter, poolId)` — see Phase 3 findings.
-    //
-    // The narrow router-only fix removes the quoter call entirely and degrades
-    // the CLOB cap to "always permissive" (no CLOB vs. AMM arbitrage protection).
-    // This is functionally safe (no money loss, no exchange invariant break) but
-    // opens a small arbitrage window if CLOB liquidity crosses the AMM spot
-    // price. The full fix — restoring fee-adjusted AMM-spot caps for all four
-    // sides — depends on a hook API extension (`commitSwapIdentityFor`) that
-    // requires a 48-hour timelock upgrade cycle; tracked as Phase 5 backlog #49.
-    //
-    // Why helpers instead of inlined constants: the four helpers remain as
-    // single-line returns so Phase 5 can restore the quoter-based bodies without
-    // touching `_buyYesExecute` / `_sellYesExecute` / `_buyNoExecute` /
-    // `_sellNoExecute` or the four public `quote*` methods.
 
-    /// @notice CLOB BUY cap for `BUY_YES`. Permissive (`PRICE_PRECISION`) while the
-    ///         AMM spot probe is disabled. See block comment above for rationale.
-    function _clobBuyYesLimit(
-        address /* yesToken */
-    )
-        internal
-        pure
-        returns (uint256)
-    {
-        return PRICE_PRECISION;
+    /// @dev Pre-commit `msg.sender` identity under the quoter's transient slot so
+    ///      `V4Quoter.quoteExactInputSingle` / `quoteExactOutputSingle` can pass
+    ///      the hook's FINAL-H06 commit gate during simulate-and-revert. Must be
+    ///      called before every quoter invocation in the same transaction. Both the
+    ///      router and the quoter must be in the hook's trusted-router set.
+    function _preCommitForQuoter(address yesToken) internal {
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IPrediXHookCommit(hook).commitSwapIdentityFor(address(quoter), msg.sender, key.toId());
     }
 
-    /// @notice CLOB SELL min-price for `SELL_YES`. Permissive (`0`) while the AMM
-    ///         spot probe is disabled.
-    function _clobSellYesLimit(
-        address /* yesToken */
-    )
-        internal
-        pure
-        returns (uint256)
-    {
-        return 0;
+    // =========================================================================
+    // CLOB price caps — fee-adjusted AMM spot (restored in Phase 5)
+    // =========================================================================
+
+    /// @notice Fee-adjusted AMM spot price for buying YES, in USDC/YES with 1e6 precision.
+    /// @dev Quotes `1 USDC ($1) → YES` and inverts. The Quoter simulates the real swap through
+    ///      the hook, so the dynamic fee is baked in (audit H-03 fix). Returns 0 on an empty
+    ///      pool so callers can fall back to a permissive cap rather than reverting.
+    function _ammSpotPriceForBuy(address yesToken) internal returns (uint256 usdcPerYes) {
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(PRICE_PRECISION), hookData: ""
+        });
+        (uint256 yesOut,) = quoter.quoteExactInputSingle(params);
+        if (yesOut == 0) return 0;
+        usdcPerYes = (PRICE_PRECISION * PRICE_PRECISION) / yesOut;
     }
 
-    /// @notice CLOB BUY cap for `BUY_NO`. Permissive (`PRICE_PRECISION`) while the
-    ///         AMM spot probe is disabled.
-    function _clobBuyNoLimit(
-        address /* yesToken */
-    )
-        internal
-        pure
-        returns (uint256)
-    {
-        return PRICE_PRECISION;
+    /// @notice Fee-adjusted AMM spot price when selling YES, in USDC/YES with 1e6 precision.
+    function _ammSpotPriceForSell(address yesToken) internal returns (uint256 usdcPerYes) {
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key, zeroForOne: yesToken < usdc, exactAmount: uint128(PRICE_PRECISION), hookData: ""
+        });
+        (usdcPerYes,) = quoter.quoteExactInputSingle(params);
     }
 
-    /// @notice CLOB SELL min-price for `SELL_NO`. Permissive (`0`) while the AMM
-    ///         spot probe is disabled.
-    function _clobSellNoLimit(
-        address /* yesToken */
-    )
-        internal
-        pure
-        returns (uint256)
-    {
-        return 0;
+    /// @notice Saturating `1e6 - price` used to derive virtual NO prices from YES prices.
+    function _complementPrice(uint256 yesPrice) internal pure returns (uint256) {
+        return yesPrice >= PRICE_PRECISION ? 0 : PRICE_PRECISION - yesPrice;
+    }
+
+    /// @notice CLOB BUY cap for `BUY_YES`. Falls back to `PRICE_PRECISION` (permissive) on an
+    ///         empty pool so the CLOB is free to fill when there is no AMM competition.
+    function _clobBuyYesLimit(address yesToken) internal returns (uint256) {
+        uint256 spot = _ammSpotPriceForBuy(yesToken);
+        return spot == 0 ? PRICE_PRECISION : spot;
+    }
+
+    /// @notice CLOB SELL min-price for `SELL_YES`. Spot is already USDC received per YES, so
+    ///         there is no fall-back transformation — an empty pool yields 0 which is the
+    ///         permissive min.
+    function _clobSellYesLimit(address yesToken) internal returns (uint256) {
+        return _ammSpotPriceForSell(yesToken);
+    }
+
+    /// @notice CLOB BUY cap for `BUY_NO`. Virtual NO buy price = 1 - yesSellSpot.
+    function _clobBuyNoLimit(address yesToken) internal returns (uint256) {
+        uint256 yesSell = _ammSpotPriceForSell(yesToken);
+        if (yesSell == 0) return PRICE_PRECISION;
+        uint256 complement = _complementPrice(yesSell);
+        return complement == 0 ? PRICE_PRECISION : complement;
+    }
+
+    /// @notice CLOB SELL min-price for `SELL_NO`. Virtual NO sell price = 1 - yesBuySpot.
+    function _clobSellNoLimit(address yesToken) internal returns (uint256) {
+        uint256 yesBuy = _ammSpotPriceForBuy(yesToken);
+        if (yesBuy == 0) return 0;
+        return _complementPrice(yesBuy);
     }
 
     /// @notice Compute `mintAmount` for `buyNo` using the spot-price identity and 3% margin.
-    /// @dev Quotes `1e6 USDC → YES` once to derive the YES spot price, then the binary NO
+    /// @dev Quotes `1e6 USDC -> YES` once to derive the YES spot price, then the binary NO
     ///      identity gives `mintAmount = usdcIn / noPriceSpot * margin`.
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2`: this helper calls
-    ///      `V4Quoter` which triggers `hook.beforeSwap` with `sender = quoter`, and
-    ///      `_resolveIdentity` expects a commit under `(quoter, poolId)` that the
-    ///      router cannot write under the current `commitSwapIdentity` API. As a
-    ///      result, the `buyNo` AMM spillover path reverts with
-    ///      `Hook_MissingRouterCommit`. CLOB-only `buyNo` (where the order fits
-    ///      entirely in the exchange book) still works. Fix tracked: backlog #49
-    ///      Phase 5 hook upgrade (`commitSwapIdentityFor` + 48h timelock upgrade).
-    ///      Do not attempt to work around this helper in isolation — the correct
-    ///      fix is at the hook API level.
     function _computeBuyNoMintAmount(address yesToken, uint256 usdcIn) internal returns (uint256 mintAmount) {
+        _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
         IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
             poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(PRICE_PRECISION), hookData: ""
@@ -868,7 +847,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (uint256 yesPerUsdcUnit,) = quoter.quoteExactInputSingle(params);
         if (yesPerUsdcUnit == 0) return 0;
 
-        // yesPriceSpot (in 1e6 USDC/YES precision) = PRICE_PRECISION * PRICE_PRECISION / yesPerUsdcUnit
         uint256 yesPriceSpot = (PRICE_PRECISION * PRICE_PRECISION) / yesPerUsdcUnit;
         if (yesPriceSpot >= PRICE_PRECISION) return 0;
 
@@ -878,18 +856,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @notice Compute the USDC cost upper bound for flash-buying `noIn` YES in `sellNo`.
-    /// @dev KNOWN BROKEN against the deployed `PrediXHookV2`: same root cause as
-    ///      `_computeBuyNoMintAmount` above. The `sellNo` AMM spillover path reverts
-    ///      with `Hook_MissingRouterCommit`. CLOB-only `sellNo` still works. Fix
-    ///      tracked: backlog #49 Phase 5 hook upgrade.
     function _computeSellNoMaxCost(address yesToken, uint256 noIn) internal returns (uint256 maxCost) {
+        _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
         IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
             poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(noIn), hookData: ""
         });
         (uint256 costQuote,) = quoter.quoteExactOutputSingle(params);
         if (costQuote == 0) return type(uint256).max;
-        // Invert margin: allow up to cost * (BPS / margin) — i.e. quoter understates cost by 3%.
         maxCost = (costQuote * BPS_DENOMINATOR) / VIRTUAL_SAFETY_MARGIN_BPS;
     }
 
