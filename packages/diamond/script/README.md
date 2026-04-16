@@ -156,14 +156,27 @@ reverts the broadcast.
 
 ## Post-deploy checklist (manual)
 
+**Phase 4 Part 1 update (backlog #44 closed)**: the router + V4Quoter trust
+bindings on the hook are now folded into `DeployAll.run()` directly — no more
+manual `setTrustedRouter` operator txs after broadcast. The only remaining
+manual step is the incoming hook runtime admin calling `acceptAdmin()` to
+complete the two-step rotation proposed during the deploy.
+
 After a live deploy, the protocol operator must:
 
 1. Verify every address on the block explorer.
-2. Bind each new pool to the hook proxy via the router's pool creation path.
-3. Register Chainlink market configs via `ChainlinkOracle.register(...)` (only on chains where Chainlink is enabled).
-4. Confirm `TimelockController.getMinDelay() == TIMELOCK_DELAY_SECONDS`.
-5. Confirm the multisig can successfully call `IAccessControlFacet.grantRole` through a dry `safe.txBuilder` simulation.
-6. Confirm `HookProxy_TimelockDurationUpdated` event fired with the 48-hour default.
+2. **Hook runtime admin rotation**: the address configured as
+   `HOOK_RUNTIME_ADMIN` must call `PrediXHookV2.acceptAdmin()` on the hook
+   proxy. `DeployAll.run()` deploys with the deployer as temporary runtime
+   admin so `setTrustedRouter` calls can happen inline, then proposes
+   rotation via `hook.setAdmin(HOOK_RUNTIME_ADMIN)` at the end. Until the
+   new admin accepts, runtime admin rights remain with the deployer EOA.
+3. Bind each new pool to the hook proxy via the router's pool creation path.
+4. Register Chainlink market configs via `ChainlinkOracle.register(...)` (only on chains where Chainlink is enabled).
+5. Confirm `TimelockController.getMinDelay() == TIMELOCK_DELAY_SECONDS`.
+6. Confirm the multisig can successfully call `IAccessControlFacet.grantRole` through a dry `safe.txBuilder` simulation.
+7. Confirm `HookProxy_TimelockDurationUpdated` event fired with the 48-hour default.
+8. Confirm `hook.isTrustedRouter(router) == true` AND `hook.isTrustedRouter(V4_QUOTER_ADDRESS) == true`. These are set automatically by `DeployAll` post-Phase-4-Part-1 — this check is a verification, not an action.
 
 ## Tests
 

@@ -14,6 +14,7 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 
 import {ChainlinkOracle} from "@predix/oracle/adapters/ChainlinkOracle.sol";
 import {ManualOracle} from "@predix/oracle/adapters/ManualOracle.sol";
+import {IPrediXHook} from "@predix/hook/interfaces/IPrediXHook.sol";
 import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
 import {PrediXHookProxyV2} from "@predix/hook/proxy/PrediXHookProxyV2.sol";
 import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
@@ -119,6 +120,30 @@ contract DeployAll is Script {
             )
         );
 
+        // Backlog #44 canonical fix: the hook's FINAL-H06 commit gate requires
+        // both the router and the V4Quoter to be in its trusted-routers set.
+        // Without these two calls, every `router.buyYes` / `sellYes` / `buyNo` /
+        // `sellNo` call on chain reverts with `Hook_UntrustedCaller(router)`,
+        // and every `router.quote*` call reverts with
+        // `Hook_UntrustedCaller(quoter)` via the simulate-and-revert path.
+        //
+        // Phase 3 caught this as escapes #5 and #6 via manual operator txs; this
+        // block folds both into the deploy pipeline so fresh deploys never need
+        // post-broadcast wiring. The deployer is the temporary hook runtime admin
+        // (see `_deployHook`) so these calls succeed inside the broadcast; the
+        // final admin rotation to `env.hookRuntimeAdmin` is proposed immediately
+        // afterwards and must be accepted by the incoming admin in a separate tx.
+        IPrediXHook(out.hookProxy).setTrustedRouter(out.router, true);
+        IPrediXHook(out.hookProxy).setTrustedRouter(env.v4Quoter, true);
+
+        // Propose the final hook runtime admin. Rotation is two-step per SPEC_HOOK_V2:
+        // the incoming admin must call `hook.acceptAdmin()` in a follow-up tx. This is
+        // the only remaining manual post-deploy step — documented in the post-deploy
+        // checklist of `packages/diamond/script/README.md`.
+        if (env.hookRuntimeAdmin != env.deployer) {
+            IPrediXHook(out.hookProxy).setAdmin(env.hookRuntimeAdmin);
+        }
+
         DiamondDeployLib.transferGovernance(out.diamond, env.deployer, env.multisig, out.timelock);
 
         vm.stopBroadcast();
@@ -189,19 +214,25 @@ contract DeployAll is Script {
         }
     }
 
+    /// @dev The hook proxy is constructed with `env.deployer` as the initial runtime
+    ///      admin, not `env.hookRuntimeAdmin`. This lets the deploy broadcast wire
+    ///      trusted routers (backlog #44 fix) in the same transaction batch before
+    ///      proposing admin rotation to the final runtime admin. The actual rotation
+    ///      acceptance (`hook.acceptAdmin()`) is a follow-up tx the final admin must
+    ///      sign post-broadcast — documented in `packages/diamond/script/README.md`.
     function _deployHook(Env memory env, address diamond) internal returns (address impl, address proxy, bytes32 salt) {
         PrediXHookV2 implC = new PrediXHookV2(env.poolManager);
         impl = address(implC);
 
         bytes memory constructorArgs =
-            abi.encode(env.poolManager, impl, env.hookProxyAdmin, env.hookRuntimeAdmin, diamond, env.usdc);
+            abi.encode(env.poolManager, impl, env.hookProxyAdmin, env.deployer, diamond, env.usdc);
         (address predicted, bytes32 mined) = HookMiner.find(
             CREATE2_DEPLOYER, HOOK_PERMISSION_FLAGS, type(PrediXHookProxyV2).creationCode, constructorArgs
         );
         salt = mined;
 
         PrediXHookProxyV2 proxyC = new PrediXHookProxyV2{salt: mined}(
-            env.poolManager, impl, env.hookProxyAdmin, env.hookRuntimeAdmin, diamond, env.usdc
+            env.poolManager, impl, env.hookProxyAdmin, env.deployer, diamond, env.usdc
         );
         if (address(proxyC) != predicted) revert HookAddressMismatch(predicted, address(proxyC));
         if ((uint160(address(proxyC)) & Hooks.ALL_HOOK_MASK) != HOOK_PERMISSION_FLAGS) {
