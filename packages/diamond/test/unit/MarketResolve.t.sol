@@ -120,4 +120,21 @@ contract MarketResolveTest is MarketFixture {
         vm.prank(admin);
         market.emergencyResolve(id, true);
     }
+
+    /// @notice F2 regression — resolveMarket sets isResolved BEFORE the oracle
+    ///         interaction (CEI order). After resolution, a second call correctly
+    ///         reverts with AlreadyResolved — proves the state is set pre-interaction.
+    function test_ResolveMarket_CEI_StateSetBeforeInteraction() public {
+        oracle.setResolution(id, true);
+        vm.warp(endTime + 1);
+        market.resolveMarket(id);
+        IMarketFacet.MarketView memory m = market.getMarket(id);
+        assertTrue(m.isResolved, "isResolved set");
+        assertTrue(m.outcome, "outcome correct");
+        assertGt(m.resolvedAt, 0, "resolvedAt set");
+
+        // Second call immediately reverts — proves isResolved was already true
+        vm.expectRevert(IMarketFacet.Market_AlreadyResolved.selector);
+        market.resolveMarket(id);
+    }
 }

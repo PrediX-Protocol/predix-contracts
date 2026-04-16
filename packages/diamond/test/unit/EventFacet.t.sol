@@ -512,4 +512,15 @@ contract EventFacetTest is EventFixture {
             assertEq(m.outcome, i == winIdx);
         }
     }
+
+    /// @notice F4 regression — resolveEvent reverts when MARKET module is paused.
+    function test_Revert_ResolveEvent_WhenPaused() public {
+        (uint256 eventId,) = _createNCandidateEvent(2, endTime);
+        vm.warp(endTime + 1);
+        vm.prank(admin);
+        pausable.pauseModule(Modules.MARKET);
+        vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
+        vm.prank(admin);
+        eventFacet.resolveEvent(eventId, 0);
+    }
 }

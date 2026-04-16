@@ -166,6 +166,22 @@ contract PrediXRouter_BuyYes is RouterFixture {
         router.buyYes(MARKET_ID, 1000, 0, address(diamond), 5, _deadline());
     }
 
+    /// @notice F6 regression — yesToken as recipient is banned (tokens would be locked).
+    function test_Revert_InvalidRecipient_YesToken() public {
+        _approveUsdcAsAlice(1000);
+        vm.prank(alice);
+        vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
+        router.buyYes(MARKET_ID, 1000, 0, address(yes1), 5, _deadline());
+    }
+
+    /// @notice F6 regression — noToken as recipient is banned.
+    function test_Revert_InvalidRecipient_NoToken() public {
+        _approveUsdcAsAlice(1000);
+        vm.prank(alice);
+        vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
+        router.buyYes(MARKET_ID, 1000, 0, address(no1), 5, _deadline());
+    }
+
     function test_Revert_InsufficientOutput() public {
         uint256 usdcIn = 100e6;
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 150e6, usdcIn);

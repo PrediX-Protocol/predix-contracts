@@ -13,6 +13,7 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
+import {PrediXHookV2} from "../src/hooks/PrediXHookV2.sol";
 import {IPrediXHook} from "../src/interfaces/IPrediXHook.sol";
 import {FeeTiers} from "../src/constants/FeeTiers.sol";
 
@@ -106,6 +107,15 @@ contract PrediXHookV2Test is Test {
     function test_Revert_Initialize_TwiceReverts() public {
         vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
         hook.initialize(address(diamond), admin, usdc);
+    }
+
+    /// @notice F10 regression — bare implementation contract cannot be initialized
+    ///         because the constructor sets _initialized = true on the impl storage.
+    function test_Revert_InitializeImplementationDirectly() public {
+        // Deploy a bare PrediXHookV2 (not via proxy, not via TestHookHarness which resets _initialized).
+        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER));
+        vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
+        bareImpl.initialize(address(diamond), admin, usdc);
     }
 
     function test_Revert_Initialize_ZeroDiamond() public {
@@ -253,6 +263,21 @@ contract PrediXHookV2Test is Test {
         vm.prank(address(diamond));
         vm.expectRevert(IPrediXHook.Hook_PoolAlreadyRegistered.selector);
         hook.registerMarketPool(MARKET_ID, key0);
+    }
+
+    /// @notice F9 regression — same marketId cannot register a second pool.
+    function test_Revert_RegisterMarketPool_DuplicateMarket() public {
+        // MARKET_ID already has key0 registered in setUp. Try registering a
+        // different pool (different tickSpacing) for the same marketId.
+        PoolKey memory k2 = PoolKey({
+            currency0: Currency.wrap(yesLow),
+            currency1: Currency.wrap(usdc),
+            fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            tickSpacing: 120,
+            hooks: IHooks(address(hook))
+        });
+        vm.expectRevert(IPrediXHook.Hook_MarketAlreadyHasPool.selector);
+        hook.registerMarketPool(MARKET_ID, k2);
     }
 
     function test_Revert_RegisterMarketPool_UnknownMarket() public {

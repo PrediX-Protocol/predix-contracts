@@ -24,10 +24,19 @@ contract DiamondProxyTest is DiamondFixture {
         ok;
     }
 
+    /// @notice F5 regression — ETH sent to diamond is rejected with explicit error.
     function test_Revert_Fallback_BareEthRejected() public {
         vm.deal(address(this), 1 ether);
-        vm.expectRevert(abi.encodeWithSelector(Diamond.Diamond_FunctionNotFound.selector, bytes4(0)));
+        vm.expectRevert(Diamond.Diamond_NoETHAccepted.selector);
         (bool ok,) = address(diamond).call{value: 1 ether}("");
+        ok;
+    }
+
+    /// @notice F5 regression — ETH sent WITH a valid selector also reverts.
+    function test_Revert_Fallback_ETHWithValidSelector() public {
+        vm.deal(address(this), 1 ether);
+        vm.expectRevert(Diamond.Diamond_NoETHAccepted.selector);
+        (bool ok,) = address(diamond).call{value: 1 ether}(abi.encodeWithSignature("marketCount()"));
         ok;
     }
 
