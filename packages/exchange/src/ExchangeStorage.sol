@@ -38,6 +38,7 @@ abstract contract ExchangeStorage {
     uint256 internal constant MAX_ORDERS_PER_USER = 50;
     uint256 internal constant DEFAULT_MAX_FILLS = 10;
     uint8 internal constant MAX_FILLS_PER_PLACE = 20;
+    uint256 internal constant MAX_QUEUE_DEPTH_PER_PRICE = 200;
 
     // ======== Internal enums ========
 

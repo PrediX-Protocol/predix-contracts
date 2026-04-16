@@ -111,6 +111,9 @@ abstract contract MakerPath is ExchangeStorage {
 
         if (remaining > 0) {
             uint8 idx = _priceToIndex(price);
+            if (_orderQueue[marketId][side][idx].length >= MAX_QUEUE_DEPTH_PER_PRICE) {
+                revert IPrediXExchange.Exchange_QueueFull();
+            }
             _orderQueue[marketId][side][idx].push(orderId);
             priceBitmap[marketId][side] = priceBitmap[marketId][side].set(idx);
             userOrderCount[marketId][msg.sender]++;
@@ -449,21 +452,19 @@ abstract contract MakerPath is ExchangeStorage {
         address noToken
     ) internal {
         uint256 usdcAvailable = IERC20(usdc).balanceOf(address(this));
-        uint256 splitAmt = fillAmt < usdcAvailable ? fillAmt : usdcAvailable;
-        if (splitAmt == 0) return;
+        if (usdcAvailable < fillAmt) revert IPrediXExchange.Exchange_InsufficientBalanceForMint();
 
-        IMarketFacet(diamond).splitPosition(taker.marketId, splitAmt);
+        IMarketFacet(diamond).splitPosition(taker.marketId, fillAmt);
 
         bool takerIsBuyYes = taker.side == IPrediXExchange.Side.BUY_YES;
         address yesBuyer = takerIsBuyYes ? taker.owner : maker.owner;
         address noBuyer = takerIsBuyYes ? maker.owner : taker.owner;
 
-        IERC20(yesToken).safeTransfer(yesBuyer, splitAmt);
-        IERC20(noToken).safeTransfer(noBuyer, splitAmt);
+        IERC20(yesToken).safeTransfer(yesBuyer, fillAmt);
+        IERC20(noToken).safeTransfer(noBuyer, fillAmt);
 
-        // Strict surplus = depositSum - splitAmt (both floored consistently).
-        if (depositSum > splitAmt) {
-            uint256 surplus = depositSum - splitAmt;
+        if (depositSum > fillAmt) {
+            uint256 surplus = depositSum - fillAmt;
             IERC20(usdc).safeTransfer(feeRecipient, surplus);
             emit IPrediXExchange.FeeCollected(taker.marketId, surplus);
         }

@@ -71,6 +71,8 @@ interface IPrediXExchange {
     error SelfMatchNotAllowed();
     error DeadlineExpired(uint256 deadline, uint256 current);
     error InsufficientLiquidity();
+    error Exchange_InsufficientBalanceForMint();
+    error Exchange_QueueFull();
 
     // ============ Events ============
 
