@@ -109,6 +109,7 @@ interface IPrediXHook {
 
     /// @notice Thrown when `registerMarketPool` is called twice for the same `PoolId`.
     error Hook_PoolAlreadyRegistered();
+    error Hook_MarketAlreadyHasPool();
 
     /// @notice Thrown when `_beforeInitialize` sees a pool whose `key.fee` lacks the v4
     ///         dynamic-fee flag — without it the hook's per-swap fee override is silently

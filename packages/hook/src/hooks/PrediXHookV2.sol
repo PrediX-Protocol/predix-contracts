@@ -66,7 +66,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     address private _diamond;
     address private _admin;
     address private _quoteToken;
-    bool private _initialized;
+    bool internal _initialized;
     bool private _paused;
 
     mapping(address router => bool trusted) private _trustedRouters;
@@ -78,12 +78,24 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///      the back-leg detection. Layout: keccak256(marketId, identity) → packed
     ///      `(blockNumber << 2) | directionBits` where directionBits is `0b01` for
     ///      zeroForOne and `0b10` for oneForZero.
+    ///
+    ///      KNOWN LIMITATION — storage grows unbounded but each entry is per
+    ///      `(marketId, identity)`. Storage cost is borne by the swapper writing
+    ///      their own record — no griefing vector (cannot bloat others' slots).
+    ///      If storage cost becomes a concern at scale, consider a bloom-filter
+    ///      replacement (post-launch optimization).
     mapping(bytes32 lastSwapKey => uint256 packed) private _lastSwap;
 
     /// @dev FINAL-H09: pending admin for the 2-step rotation. Appended at the end of
     ///      storage so the proxy's ERC-1967 layout is not disturbed — EVERY new state
     ///      variable MUST come after this line for the same reason.
     address private _pendingAdmin;
+
+    /// @dev Reverse mapping enforcing 1-market-1-pool uniqueness. Each marketId can
+    ///      have at most one registered pool; a second `registerMarketPool` for the
+    ///      same marketId reverts with `Hook_MarketAlreadyHasPool`. Appended after
+    ///      `_pendingAdmin` per the append-only storage rule.
+    mapping(uint256 marketId => PoolId) private _marketToPoolId;
 
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
@@ -145,6 +157,11 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     constructor(IPoolManager poolManager_) {
         poolManager = poolManager_;
+        // Defense-in-depth: prevent direct initialization of the bare implementation
+        // contract. Only the proxy's delegatecall path (which writes to proxy storage,
+        // not impl storage) should run initialize(). Without this guard, an attacker
+        // could call initialize() on the implementation and become admin of the impl.
+        _initialized = true;
     }
 
     // ---------------------------------------------------------------------
@@ -212,6 +229,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         PoolId poolId = key.toId();
         PoolBinding storage binding = _poolBinding[poolId];
         if (binding.marketId != 0) revert Hook_PoolAlreadyRegistered();
+        if (PoolId.unwrap(_marketToPoolId[marketId]) != bytes32(0)) revert Hook_MarketAlreadyHasPool();
 
         // Permissionless registration: anyone may call. The security barrier is the
         // validation block below, NOT a caller-address check. The hook requires that
@@ -236,6 +254,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
         binding.marketId = marketId;
         binding.yesIsCurrency0 = yesIsCurrency0;
+        _marketToPoolId[marketId] = poolId;
 
         emit Hook_PoolRegistered(marketId, poolId, mkt.yesToken, quote, yesIsCurrency0);
     }
