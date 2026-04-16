@@ -19,6 +19,8 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+testenv.*
+!testenv.example
 *.pem
 *.key
 secrets/

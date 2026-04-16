@@ -116,15 +116,16 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         IOracle oracle = IOracle(m.oracle);
         if (!oracle.isResolved(marketId)) revert Market_OracleNotResolved();
 
-        // Effects BEFORE interaction (CEI) — set resolved state before
-        // external call to oracle.outcome() so any reentrancy attempt
-        // sees isResolved == true and hits the AlreadyResolved guard.
-        m.isResolved = true;
-        m.resolvedAt = block.timestamp;
-
-        // Interaction — external call AFTER state update
+        // Interaction — read outcome before state mutation. nonReentrant
+        // already guards against reentrancy, so CEI restructuring is not
+        // needed and would create an intermediate state where isResolved=true
+        // but outcome=false (NEW-01 audit finding).
         bool result = oracle.outcome(marketId);
+
+        // Effects — all state set atomically after external call
+        m.isResolved = true;
         m.outcome = result;
+        m.resolvedAt = block.timestamp;
 
         emit MarketResolved(marketId, result, msg.sender);
     }
