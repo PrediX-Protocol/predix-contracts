@@ -502,6 +502,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         poolManager.take(Currency.wrap(token), address(this), amount);
     }
 
+    /// @notice Refund all three trade-path tokens (USDC + YES + NO) and assert the router
+    ///         holds zero of each afterwards. Stronger than single-token refund — catches
+    ///         any residual from intermediate steps that might strand a different token.
+    function _finalizeAndAssertAllZero(address yesToken, address noToken) internal {
+        _refundAndAssertZero(usdc);
+        _refundAndAssertZero(yesToken);
+        _refundAndAssertZero(noToken);
+    }
+
     /// @notice Return any residual balance of `token` to `msg.sender` and assert the router's
     ///         balance is zero afterwards. The revert path is the router's accounting canary —
     ///         it should never fire under normal operation.
@@ -893,6 +902,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         if (amountIn < MIN_TRADE_AMOUNT) revert ZeroAmount();
         if (_isBannedRecipient(recipient)) revert InvalidRecipient();
         (yesToken, noToken,,,) = _validateMarket(marketId);
+        // Tokens sent to their own contract address are permanently locked
+        // because OutcomeToken has no rescue function.
+        if (recipient == yesToken || recipient == noToken) revert InvalidRecipient();
     }
 
     /// @notice Pull `amount` of `token` from `msg.sender` via Permit2.
@@ -936,7 +948,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         if (yesOut < minYesOut) revert InsufficientOutput(yesOut, minYesOut);
 
         IERC20(yesToken).safeTransfer(recipient, yesOut);
-        _refundAndAssertZero(usdc);
+        _finalizeAndAssertAllZero(yesToken, noToken);
 
         emit Trade(marketId, msg.sender, recipient, TradeType.BUY_YES, usdcIn, yesOut, clobFilled, ammFilled);
     }
@@ -971,7 +983,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         if (usdcOut < minUsdcOut) revert InsufficientOutput(usdcOut, minUsdcOut);
 
         IERC20(usdc).safeTransfer(recipient, usdcOut);
-        _refundAndAssertZero(yesToken);
+        _finalizeAndAssertAllZero(yesToken, noToken);
 
         emit Trade(marketId, msg.sender, recipient, TradeType.SELL_YES, yesIn, usdcOut, clobFilled, ammFilled);
     }
@@ -1001,7 +1013,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         if (noOut < minNoOut) revert InsufficientOutput(noOut, minNoOut);
 
         IERC20(noToken).safeTransfer(recipient, noOut);
-        _refundAndAssertZero(usdc);
+        _finalizeAndAssertAllZero(yesToken, noToken);
 
         emit Trade(marketId, msg.sender, recipient, TradeType.BUY_NO, usdcIn, noOut, clobFilled, ammFilled);
     }
@@ -1034,7 +1046,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         if (usdcOut < minUsdcOut) revert InsufficientOutput(usdcOut, minUsdcOut);
 
         IERC20(usdc).safeTransfer(recipient, usdcOut);
-        _refundAndAssertZero(noToken);
+        _finalizeAndAssertAllZero(yesToken, noToken);
 
         emit Trade(marketId, msg.sender, recipient, TradeType.SELL_NO, noIn, usdcOut, clobFilled, ammFilled);
     }
