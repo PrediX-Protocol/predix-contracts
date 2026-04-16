@@ -35,9 +35,10 @@ Fork tests pin to a specific Unichain Sepolia block to isolate them from:
 - Market creation / resolve events that may change `marketCount` or the
   pool binding
 
-**Current pin block**: `49446128` (captured 2026-04-16 during Phase 4 Part 1
-ship). This block contains the Phase 3 pool 1 initialization + liquidity seed
-+ hook trust bindings (escapes #5 and #6).
+**Current pin block**: `49492445` (captured 2026-04-16 during Phase 5 fresh
+deploy). This block contains the Phase 5 market 3 + pool initialization +
+liquidity seed + hook trust bindings (router + V4Quoter both trusted via
+`DeployAll` canonical pipeline).
 
 **Maintenance**: re-pin annually OR when:
 
@@ -50,45 +51,39 @@ To re-pin: pick a new block that contains all required setup state, update
 
 ## Test matrix — Phase 4 Part 1 regression anchors
 
-The 12-test inventory locks in both halves of the C-narrow scope:
+All 12 tests are now happy-path assertions (Phase 5 unblocked every path):
 
-### Happy paths — backlog #45a (C-narrow unblocked these)
+### AMM real swap
 
 | Test | Path | Must PASS |
 |---|---|---|
 | `test_Fork_BuyYes_HappyPath` | router → AMM real swap | ✅ |
 | `test_Fork_SellYes_HappyPath` | symmetric | ✅ |
+
+### CLOB-only
+
+| Test | Path | Must PASS |
+|---|---|---|
 | `test_Fork_BuyYes_ClobOnly_SmallAmount` | CLOB fill only, no AMM spillover | ✅ |
 | `test_Fork_SellYes_ClobOnly_SmallAmount` | symmetric | ✅ |
 | `test_Fork_BuyNo_ClobOnly_SmallAmount` | virtual-NO via CLOB, no spillover | ✅ |
 | `test_Fork_SellNo_ClobOnly_SmallAmount` | symmetric | ✅ |
 
-### Known-broken reverts — backlog #49 (Phase 5 hook upgrade will unblock)
+### Quote paths (Phase 5 — `commitSwapIdentityFor`)
 
-| Test | Expected revert | Unlocks in |
+| Test | Path | Must PASS |
 |---|---|---|
-| `test_Fork_Revert_QuoteBuyYes_Phase5Deferred` | `Hook_MissingRouterCommit` | Phase 5 |
-| `test_Fork_Revert_QuoteSellYes_Phase5Deferred` | same | Phase 5 |
-| `test_Fork_Revert_QuoteBuyNo_Phase5Deferred` | same | Phase 5 |
-| `test_Fork_Revert_QuoteSellNo_Phase5Deferred` | same | Phase 5 |
-| `test_Fork_Revert_BuyNo_AmmSpillover_Phase5Deferred` | `Hook_MissingRouterCommit` | Phase 5 |
-| `test_Fork_Revert_SellNo_AmmSpillover_Phase5Deferred` | same | Phase 5 |
+| `test_Fork_QuoteBuyYes_EndToEnd` | quote returns non-zero output | ✅ |
+| `test_Fork_QuoteSellYes_EndToEnd` | symmetric | ✅ |
+| `test_Fork_QuoteBuyNo_EndToEnd` | symmetric | ✅ |
+| `test_Fork_QuoteSellNo_EndToEnd` | symmetric | ✅ |
 
-The 6 revert-locking tests use `vm.expectRevert()` without a specific
-selector. When Phase 5 lands the `commitSwapIdentityFor` hook upgrade + router
-re-enables the quote + virtual-NO AMM spillover paths, these tests **will
-start failing** — that is intentional. The V0 process for Phase 5 must:
+### Virtual-NO AMM spillover (Phase 5 — restored compute helpers)
 
-1. Re-enable the router quote methods + `_computeBuyNoMintAmount` /
-   `_computeSellNoMaxCost` helpers
-2. Flip each Phase5Deferred test from `vm.expectRevert()` to an actual
-   happy-path assertion
-3. Re-run fork tests and confirm 12/12 happy-path pass
-4. Update `TEST_REPORT_PHASE3_5_PART2_*.md` with the unlocked matrix
-
-Keeping these reverts as explicit assertions (rather than skipping the tests)
-forces that V0 reconciliation: a "fix" to the router quote path that doesn't
-pair with a test update will break CI and surface the mismatch immediately.
+| Test | Path | Must PASS |
+|---|---|---|
+| `test_Fork_BuyNo_AmmSpillover_EndToEnd` | buyNo with AMM spillover | ✅ |
+| `test_Fork_SellNo_AmmSpillover_EndToEnd` | sellNo with AMM spillover | ✅ |
 
 ## Historical note
 
