@@ -14,7 +14,7 @@ import {PrediXHookV2} from "../../src/hooks/PrediXHookV2.sol";
 ///         helpers as external functions so unit tests can exercise pure logic without
 ///         going through the IHooks dispatchers (which require `msg.sender == poolManager`).
 contract TestHookHarness is PrediXHookV2 {
-    constructor(IPoolManager poolManager_) PrediXHookV2(poolManager_) {
+    constructor(IPoolManager poolManager_, address quoter_) PrediXHookV2(poolManager_, quoter_) {
         // Reset the defense-in-depth guard that PrediXHookV2's constructor sets.
         // In production the proxy's delegatecall writes to proxy storage (different
         // address) so the impl's `_initialized = true` is irrelevant. In test

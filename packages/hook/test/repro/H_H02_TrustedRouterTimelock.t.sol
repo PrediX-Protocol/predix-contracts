@@ -25,7 +25,7 @@ contract H_H02_TrustedRouterTimelock is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        hook = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        hook = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         hook.initialize(address(diamond), admin, usdc);
     }
 

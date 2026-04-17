@@ -99,7 +99,7 @@ contract OracleIntegrationTest is MarketFixture {
         feed.setAnswer(3_500e8, block.timestamp);
 
         uint80 roundIdHint = 2;
-        chainlinkOracle.resolve(marketId, roundIdHint);
+        chainlinkOracle.resolve(marketId, roundIdHint, 1);
         market.resolveMarket(marketId);
 
         assertFalse(market.getMarket(marketId).outcome);
@@ -179,6 +179,6 @@ contract OracleIntegrationTest is MarketFixture {
         // `ChainlinkOracle_WrongRoundForSnapshot`.
         uint80 wrongHint = 1;
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_WrongRoundForSnapshot.selector);
-        chainlinkOracle.resolve(marketId, wrongHint);
+        chainlinkOracle.resolve(marketId, wrongHint, 0);
     }
 }

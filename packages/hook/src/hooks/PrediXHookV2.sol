@@ -59,6 +59,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         constructor by virtue of both contracts being constructed with the same value.
     IPoolManager public immutable poolManager;
 
+    /// @notice Canonical V4Quoter address. The ONLY third-party `caller` that
+    ///         `commitSwapIdentityFor` may target (beyond self). Frozen at
+    ///         impl deployment because the router relies on it for the
+    ///         simulate-and-revert quote path, and changing the target would
+    ///         require a coordinated router + hook upgrade. (H-H03 / NEW-M6)
+    address public immutable quoter;
+
     // ---------------------------------------------------------------------
     // Storage (proxy delegate context)
     // ---------------------------------------------------------------------
@@ -170,8 +177,10 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // Constructor
     // ---------------------------------------------------------------------
 
-    constructor(IPoolManager poolManager_) {
+    constructor(IPoolManager poolManager_, address quoter_) {
+        if (quoter_ == address(0)) revert Hook_ZeroAddress();
         poolManager = poolManager_;
+        quoter = quoter_;
         // Defense-in-depth: prevent direct initialization of the bare implementation
         // contract. Only the proxy's delegatecall path (which writes to proxy storage,
         // not impl storage) should run initialize(). Without this guard, an attacker
@@ -341,6 +350,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function commitSwapIdentityFor(address caller, address user, PoolId poolId) external override {
         if (!_trustedRouters[msg.sender]) revert Hook_OnlyTrustedRouter();
         if (!_trustedRouters[caller]) revert Hook_OnlyTrustedRouter();
+        // H-H03 / NEW-M6: only two legitimate cross-slot writers — self
+        // (msg.sender commits its own slot) and the canonical quoter (router
+        // pre-commits under quoter's slot for the simulate-and-revert path).
+        // Any other caller means one trusted router is writing under another
+        // trusted router's slot — the identity-poisoning latent attack if the
+        // trusted set ever expands beyond {router, quoter}.
+        if (caller != msg.sender && caller != quoter) revert Hook_InvalidCommitTarget();
         if (user == address(0)) revert Hook_ZeroAddress();
         bytes32 slot = _commitSlot(caller, poolId);
         assembly ("memory-safe") {

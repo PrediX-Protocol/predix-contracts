@@ -48,7 +48,7 @@ contract PrediXHookV2Test is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        hook = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        hook = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         hook.initialize(address(diamond), admin, usdc);
 
         endTime = block.timestamp + 30 days;
@@ -113,25 +113,25 @@ contract PrediXHookV2Test is Test {
     ///         because the constructor sets _initialized = true on the impl storage.
     function test_Revert_InitializeImplementationDirectly() public {
         // Deploy a bare PrediXHookV2 (not via proxy, not via TestHookHarness which resets _initialized).
-        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER));
+        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
         bareImpl.initialize(address(diamond), admin, usdc);
     }
 
     function test_Revert_Initialize_ZeroDiamond() public {
-        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         vm.expectRevert(IPrediXHook.Hook_ZeroAddress.selector);
         h.initialize(address(0), admin, usdc);
     }
 
     function test_Revert_Initialize_ZeroAdmin() public {
-        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         vm.expectRevert(IPrediXHook.Hook_ZeroAddress.selector);
         h.initialize(address(diamond), address(0), usdc);
     }
 
     function test_Revert_Initialize_ZeroQuote() public {
-        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        TestHookHarness h = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         vm.expectRevert(IPrediXHook.Hook_ZeroAddress.selector);
         h.initialize(address(diamond), admin, address(0));
     }

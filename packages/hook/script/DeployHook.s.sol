@@ -42,9 +42,10 @@ contract DeployHook is Script {
         address hookAdmin = vm.envAddress("HOOK_RUNTIME_ADMIN");
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
+        address quoter = vm.envAddress("V4_QUOTER_ADDRESS");
 
         vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        out = _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc);
+        out = _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter);
         vm.stopBroadcast();
 
         console2.log("PrediXHookV2 (impl):", out.implementation);
@@ -53,18 +54,26 @@ contract DeployHook is Script {
     }
 
     /// @dev Shared deploy helper used by `DeployAll`. Assumes a broadcast scope is open.
-    function deploy(IPoolManager poolManager, address proxyAdmin, address hookAdmin, address diamond, address usdc)
-        external
-        returns (Deployed memory)
-    {
-        return _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc);
+    function deploy(
+        IPoolManager poolManager,
+        address proxyAdmin,
+        address hookAdmin,
+        address diamond,
+        address usdc,
+        address quoter
+    ) external returns (Deployed memory) {
+        return _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter);
     }
 
-    function _deploy(IPoolManager poolManager, address proxyAdmin, address hookAdmin, address diamond, address usdc)
-        internal
-        returns (Deployed memory out)
-    {
-        PrediXHookV2 impl = new PrediXHookV2(poolManager);
+    function _deploy(
+        IPoolManager poolManager,
+        address proxyAdmin,
+        address hookAdmin,
+        address diamond,
+        address usdc,
+        address quoter
+    ) internal returns (Deployed memory out) {
+        PrediXHookV2 impl = new PrediXHookV2(poolManager, quoter);
         out.implementation = address(impl);
 
         bytes memory constructorArgs = abi.encode(poolManager, address(impl), proxyAdmin, hookAdmin, diamond, usdc);

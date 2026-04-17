@@ -25,7 +25,7 @@ contract FinalH09Test is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        hook = new TestHookHarness(IPoolManager(address(0xCAFE)));
+        hook = new TestHookHarness(IPoolManager(address(0xCAFE)), address(0xC0FFEE));
         hook.initialize(address(diamond), admin, usdc);
     }
 

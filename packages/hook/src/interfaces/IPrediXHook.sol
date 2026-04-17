@@ -196,6 +196,12 @@ interface IPrediXHook {
     ///         `TRUSTED_ROUTER_DELAY` has elapsed since the proposal.
     error Hook_TrustedRouterDelayNotElapsed();
 
+    /// @notice H-H03 / NEW-M6: reverts from `commitSwapIdentityFor` when
+    ///         `caller != msg.sender` AND `caller != quoter`. Only two
+    ///         cross-slot writes are legitimate — self-commit or the
+    ///         canonical quoter pre-commit path.
+    error Hook_InvalidCommitTarget();
+
     // ---------------------------------------------------------------------
     // Admin
     // ---------------------------------------------------------------------

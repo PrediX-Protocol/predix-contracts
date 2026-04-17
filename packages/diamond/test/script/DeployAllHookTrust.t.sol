@@ -57,7 +57,7 @@ contract DeployAllHookTrust is Test {
 
     function setUp() public {
         diamondStub = new TrustTestDiamondStub();
-        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER_STUB));
+        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER_STUB), address(0xC0FFEE));
 
         // Mirrors DeployAll._deployHook exactly: the DEPLOYER (this test
         // contract) is the temporary runtime admin, not the final admin.

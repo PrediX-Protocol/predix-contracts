@@ -240,7 +240,7 @@ contract DeployAll is Script {
     ///      acceptance (`hook.acceptAdmin()`) is a follow-up tx the final admin must
     ///      sign post-broadcast — documented in `packages/diamond/script/README.md`.
     function _deployHook(Env memory env, address diamond) internal returns (address impl, address proxy, bytes32 salt) {
-        PrediXHookV2 implC = new PrediXHookV2(env.poolManager);
+        PrediXHookV2 implC = new PrediXHookV2(env.poolManager, env.v4Quoter);
         impl = address(implC);
 
         bytes memory constructorArgs =

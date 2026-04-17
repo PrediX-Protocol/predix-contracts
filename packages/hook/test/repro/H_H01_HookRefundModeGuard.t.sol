@@ -38,7 +38,7 @@ contract H_H01_HookRefundModeGuard is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        hook = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        hook = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         hook.initialize(address(diamond), admin, usdc);
 
         endTime = block.timestamp + 30 days;

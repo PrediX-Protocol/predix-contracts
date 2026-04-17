@@ -41,7 +41,7 @@ contract FinalH11Test is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        hook = new TestHookHarness(IPoolManager(POOL_MANAGER));
+        hook = new TestHookHarness(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
         hook.initialize(address(diamond), admin, usdc);
         diamond.setMarket(1, yesLow, noToken, block.timestamp + 30 days, false, false);
         diamond.setMarket(2, yesHigh, noToken, block.timestamp + 30 days, false, false);
