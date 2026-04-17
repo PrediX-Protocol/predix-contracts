@@ -59,6 +59,14 @@ interface IChainlinkOracle is IOracle {
     ///         collisions when an adapter is reused across deployments. (NEW-02)
     error ChainlinkOracle_MarketNotFound();
 
+    /// @notice Reverts when `register` is called with `snapshotAt > market.endTime`.
+    ///         Defensive: such a config can never resolve — no Chainlink round
+    ///         will satisfy the `updatedAt >= snapshotAt` predicate once the
+    ///         market has passed its endTime without resolution, leaving the
+    ///         market stuck. Catch the config mistake at registration rather
+    ///         than let admin silently brick a market. (NEW-02 defense-in-depth)
+    error ChainlinkOracle_SnapshotAfterMarketEnd();
+
     /// @notice Reverts when `register` is called with a zero feed address.
     error ChainlinkOracle_ZeroFeed();
 

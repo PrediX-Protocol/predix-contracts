@@ -68,4 +68,41 @@ contract NEW_02_ChainlinkDiamondBinding is Test {
         // Sanity: config persisted.
         assertEq(oracleContract.getConfig(KNOWN_MARKET).feed, address(feed));
     }
+
+    // -------------------------------------------------------------------
+    // NEW-02 defense-in-depth: snapshot-after-endTime guard
+    // -------------------------------------------------------------------
+
+    function test_Revert_NEW_02_registerRejectsSnapshotAfterEndTime() public {
+        // Market endTime one second BEFORE snapshotAt — config can never resolve.
+        diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT - 1);
+        vm.prank(registrar);
+        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotAfterMarketEnd.selector);
+        oracleContract.register(
+            KNOWN_MARKET,
+            IChainlinkOracle.Config({feed: address(feed), threshold: THRESHOLD, gte: true, snapshotAt: SNAPSHOT_AT})
+        );
+    }
+
+    function test_NEW_02_registerAcceptsSnapshotEqualsEndTime() public {
+        // Boundary: snapshotAt == endTime is explicitly allowed.
+        diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT);
+        vm.prank(registrar);
+        oracleContract.register(
+            KNOWN_MARKET,
+            IChainlinkOracle.Config({feed: address(feed), threshold: THRESHOLD, gte: true, snapshotAt: SNAPSHOT_AT})
+        );
+        assertEq(oracleContract.getConfig(KNOWN_MARKET).snapshotAt, SNAPSHOT_AT);
+    }
+
+    function test_NEW_02_registerAcceptsSnapshotBeforeEndTime() public {
+        // Happy path — snapshotAt strictly before endTime.
+        diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT + 1 days);
+        vm.prank(registrar);
+        oracleContract.register(
+            KNOWN_MARKET,
+            IChainlinkOracle.Config({feed: address(feed), threshold: THRESHOLD, gte: true, snapshotAt: SNAPSHOT_AT})
+        );
+        assertEq(oracleContract.getConfig(KNOWN_MARKET).feed, address(feed));
+    }
 }

@@ -30,6 +30,28 @@ contract MockDiamondMarket {
         });
     }
 
+    /// @dev Overload for tests that need to control `endTime` explicitly —
+    ///      e.g. NEW-02 snapshot-after-endTime boundary checks.
+    function setMarketWithEndTime(uint256 marketId, bool known, uint256 endTime) external {
+        _markets[marketId] = IMarketFacet.MarketView({
+            question: "",
+            endTime: endTime,
+            oracle: address(0),
+            creator: address(this),
+            yesToken: known ? address(uint160(0x1000 + marketId)) : address(0),
+            noToken: known ? address(uint160(0x2000 + marketId)) : address(0),
+            totalCollateral: 0,
+            perMarketCap: 0,
+            resolvedAt: 0,
+            isResolved: false,
+            outcome: false,
+            refundModeActive: false,
+            eventId: 0,
+            perMarketRedemptionFeeBps: 0,
+            redemptionFeeOverridden: false
+        });
+    }
+
     function getMarket(uint256 marketId) external view returns (IMarketFacet.MarketView memory) {
         return _markets[marketId];
     }

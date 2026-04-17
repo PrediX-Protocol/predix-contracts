@@ -82,6 +82,13 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         IMarketFacet.MarketView memory mkt = IMarketFacet(diamond).getMarket(marketId);
         if (mkt.yesToken == address(0)) revert ChainlinkOracle_MarketNotFound();
 
+        // Defensive: a snapshot past the market's endTime would leave the
+        // oracle unable to ever resolve the market (no valid round can
+        // satisfy `updatedAt >= snapshotAt AND prevUpdatedAt < snapshotAt`
+        // after endTime has passed without resolution). Catch config mistake
+        // at registration rather than let admin brick a market silently.
+        if (cfg.snapshotAt > mkt.endTime) revert ChainlinkOracle_SnapshotAfterMarketEnd();
+
         AggregatorV3Interface feed = AggregatorV3Interface(cfg.feed);
         (, int256 probe,, uint256 probeUpdatedAt,) = feed.latestRoundData();
         if (probe <= 0 || probeUpdatedAt == 0) revert ChainlinkOracle_FeedUnhealthy();
