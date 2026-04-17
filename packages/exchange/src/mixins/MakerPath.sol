@@ -256,6 +256,17 @@ abstract contract MakerPath is ExchangeStorage {
             uint256 makerRemaining = maker.amount - maker.filled;
             uint256 fillAmt = newRemaining < makerRemaining ? newRemaining : makerRemaining;
 
+            // E-01 dust filter: if `fillAmt * makerPrice` floors to 0, executing
+            // this fill would transfer tokens on one leg for 0 USDC consideration
+            // — a silent wealth transfer. Mirrors TakerPath L200 guard. Skip the
+            // maker atomically without ANY state mutation so `cost` / `filled`
+            // stay accurate and the phase-A loop advances cleanly.
+            uint256 usdcAmt = (fillAmt * makerPrice) / PRICE_PRECISION;
+            if (usdcAmt == 0) {
+                i++;
+                continue;
+            }
+
             // Effects on both order ledgers BEFORE any external transfer (CEI).
             // Drain the taker's `depositLocked` by the consumed amount as well — the
             // legacy code only mutated the maker's side, leaving the taker's field
@@ -263,7 +274,6 @@ abstract contract MakerPath is ExchangeStorage {
             // I1 accounting invariant clean (`balance == Σ active depositLocked + fees`).
             address makerOwner = maker.owner;
             maker.filled += uint128(fillAmt);
-            uint256 usdcAmt = (fillAmt * makerPrice) / PRICE_PRECISION;
             if (MatchMath.isBuy(makerSide)) {
                 maker.depositLocked -= uint128(usdcAmt);
             } else {
