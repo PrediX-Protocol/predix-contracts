@@ -45,6 +45,20 @@ interface IPrediXHook {
     ///         end user.
     event Hook_TrustedRouterUpdated(address indexed router, bool trusted);
 
+    /// @notice Emitted by `proposeTrustedRouter` (post-bootstrap). The eventual
+    ///         state change fires a `Hook_TrustedRouterUpdated` when
+    ///         `executeTrustedRouter` is called after the delay. (H-H02)
+    event Hook_TrustedRouterProposed(address indexed router, bool trusted, uint256 readyAt);
+
+    /// @notice Emitted when a pending trusted-router proposal is cancelled
+    ///         before execution. (H-H02)
+    event Hook_TrustedRouterCancelled(address indexed router);
+
+    /// @notice Emitted exactly once when `completeBootstrap` is called. After
+    ///         this point, immediate-apply `setTrustedRouter` is permanently
+    ///         disabled; trust changes must use the propose/execute flow. (H-H02)
+    event Hook_BootstrapCompleted();
+
     /// @notice Emitted when the diamond registers a new outcome-token / quote-token pool
     ///         with the hook, binding it to `marketId` and freezing the YES/quote ordering.
     event Hook_PoolRegistered(
@@ -165,6 +179,23 @@ interface IPrediXHook {
     ///         that would otherwise let a hostile caller lock the pool at an unfair price.
     error Hook_InitPriceOutOfWindow();
 
+    /// @notice H-H02: reverts when the immediate-apply `setTrustedRouter` is
+    ///         called after `completeBootstrap`. Use the propose/execute flow.
+    error Hook_BootstrapComplete();
+
+    /// @notice H-H02: reverts when the propose/execute flow is called before
+    ///         `completeBootstrap` — the deploy window requires the immediate
+    ///         setter and the propose/execute path would otherwise race.
+    error Hook_BootstrapNotComplete();
+
+    /// @notice H-H02: reverts when `executeTrustedRouter` / `cancelTrustedRouter`
+    ///         find no pending change for `router`.
+    error Hook_NoPendingRouterChange();
+
+    /// @notice H-H02: reverts when `executeTrustedRouter` is called before
+    ///         `TRUSTED_ROUTER_DELAY` has elapsed since the proposal.
+    error Hook_TrustedRouterDelayNotElapsed();
+
     // ---------------------------------------------------------------------
     // Admin
     // ---------------------------------------------------------------------
@@ -191,8 +222,29 @@ interface IPrediXHook {
     function setPaused(bool paused_) external;
 
     /// @notice Add or remove a router from the trusted set. Admin-gated.
-    /// @dev Trusted routers are the only callers of `commitSwapIdentity`.
+    /// @dev H-H02: available ONLY during the bootstrap window
+    ///      (`bootstrapped() == false`). After `completeBootstrap`, all trust
+    ///      changes must route through `proposeTrustedRouter` / `executeTrustedRouter`
+    ///      with a 48h delay between the two.
     function setTrustedRouter(address router, bool trusted) external;
+
+    /// @notice Finalize the bootstrap window. Once called, `setTrustedRouter`
+    ///         is permanently disabled and trust changes require the 48h
+    ///         propose/execute flow. Admin-gated, one-shot, emits
+    ///         `Hook_BootstrapCompleted`.
+    function completeBootstrap() external;
+
+    /// @notice Propose adding or removing a router from the trusted set.
+    ///         Admin-gated. Requires bootstrap to have completed. Call
+    ///         `executeTrustedRouter` after `TRUSTED_ROUTER_DELAY` to apply.
+    function proposeTrustedRouter(address router, bool trusted) external;
+
+    /// @notice Execute a pending trusted-router change after the delay.
+    ///         Permissionless — anyone can cron the execution once ready.
+    function executeTrustedRouter(address router) external;
+
+    /// @notice Cancel a pending trusted-router proposal. Admin-gated.
+    function cancelTrustedRouter(address router) external;
 
     /// @notice Permissionless. Binds `poolId` (derived from `key`) to `marketId`, verifying
     ///         that one leg is the market's YES outcome token and the other is the configured
@@ -236,6 +288,16 @@ interface IPrediXHook {
     function paused() external view returns (bool);
     function isTrustedRouter(address router) external view returns (bool);
     function poolMarketId(PoolId poolId) external view returns (uint256);
+
+    /// @notice Whether the bootstrap window has been closed. Post-bootstrap
+    ///         `setTrustedRouter` is disabled; trust changes require the
+    ///         propose/execute flow.
+    function bootstrapped() external view returns (bool);
+
+    /// @notice Read the pending trusted-router change for `router`, if any.
+    /// @return trusted The proposed final state.
+    /// @return readyAt Timestamp at which `executeTrustedRouter` becomes callable. Zero if none pending.
+    function pendingTrustedRouter(address router) external view returns (bool trusted, uint256 readyAt);
 
     /// @notice Reads the transient identity commitment. Returns `address(0)` outside the
     ///         transaction in which `commitSwapIdentity` was called — useful in tests to

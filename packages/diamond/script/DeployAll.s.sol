@@ -148,6 +148,12 @@ contract DeployAll is Script {
         IPrediXHook(out.hookProxy).setTrustedRouter(out.router, true);
         IPrediXHook(out.hookProxy).setTrustedRouter(env.v4Quoter, true);
 
+        // H-H02: close the bootstrap window so post-deploy trust changes
+        // must route through the 48h propose/execute flow. Once this fires,
+        // the legacy immediate-apply `setTrustedRouter` setter is permanently
+        // disabled on this hook instance.
+        IPrediXHook(out.hookProxy).completeBootstrap();
+
         // Propose the final hook runtime admin. Rotation is two-step per SPEC_HOOK_V2:
         // the incoming admin must call `hook.acceptAdmin()` in a follow-up tx. This is
         // the only remaining manual post-deploy step — documented in the post-deploy

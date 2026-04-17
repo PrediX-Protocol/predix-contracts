@@ -97,6 +97,21 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///      `_pendingAdmin` per the append-only storage rule.
     mapping(uint256 marketId => PoolId) private _marketToPoolId;
 
+    /// @dev H-H02 append-only storage for the 2-step trusted-router rotation.
+    ///      Bootstrap window: while `_bootstrapped == false`, `setTrustedRouter`
+    ///      takes effect immediately so the deploy script can wire the canonical
+    ///      router + quoter atomically. After `completeBootstrap()` the legacy
+    ///      setter is locked out and trust changes must go through
+    ///      `proposeTrustedRouter` → 48h delay → `executeTrustedRouter`.
+    bool private _bootstrapped;
+    mapping(address router => uint256 proposedAt) private _pendingRouterProposedAt;
+    mapping(address router => bool trusted) private _pendingRouterState;
+
+    /// @notice Minimum wait between `proposeTrustedRouter` and
+    ///         `executeTrustedRouter`. Matches the diamond/hook-proxy 48h floor
+    ///         so governance delays are uniform.
+    uint256 public constant TRUSTED_ROUTER_DELAY = 48 hours;
+
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
     // ---------------------------------------------------------------------
@@ -217,10 +232,52 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     }
 
     /// @inheritdoc IPrediXHook
+    /// @dev H-H02: immediate-apply setter is available only during the
+    ///      bootstrap window (`!_bootstrapped`). After `completeBootstrap()`
+    ///      all trust changes must route through the propose/execute flow.
     function setTrustedRouter(address router, bool trusted) external override onlyAdmin {
+        if (_bootstrapped) revert Hook_BootstrapComplete();
         if (router == address(0)) revert Hook_ZeroAddress();
         _trustedRouters[router] = trusted;
         emit Hook_TrustedRouterUpdated(router, trusted);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function completeBootstrap() external override onlyAdmin {
+        if (_bootstrapped) revert Hook_BootstrapComplete();
+        _bootstrapped = true;
+        emit Hook_BootstrapCompleted();
+    }
+
+    /// @inheritdoc IPrediXHook
+    function proposeTrustedRouter(address router, bool trusted) external override onlyAdmin {
+        if (!_bootstrapped) revert Hook_BootstrapNotComplete();
+        if (router == address(0)) revert Hook_ZeroAddress();
+        _pendingRouterProposedAt[router] = block.timestamp;
+        _pendingRouterState[router] = trusted;
+        emit Hook_TrustedRouterProposed(router, trusted, block.timestamp + TRUSTED_ROUTER_DELAY);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function executeTrustedRouter(address router) external override {
+        uint256 proposedAt = _pendingRouterProposedAt[router];
+        if (proposedAt == 0) revert Hook_NoPendingRouterChange();
+        if (block.timestamp < proposedAt + TRUSTED_ROUTER_DELAY) {
+            revert Hook_TrustedRouterDelayNotElapsed();
+        }
+        bool trusted = _pendingRouterState[router];
+        _trustedRouters[router] = trusted;
+        delete _pendingRouterProposedAt[router];
+        delete _pendingRouterState[router];
+        emit Hook_TrustedRouterUpdated(router, trusted);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelTrustedRouter(address router) external override onlyAdmin {
+        if (_pendingRouterProposedAt[router] == 0) revert Hook_NoPendingRouterChange();
+        delete _pendingRouterProposedAt[router];
+        delete _pendingRouterState[router];
+        emit Hook_TrustedRouterCancelled(router);
     }
 
     /// @inheritdoc IPrediXHook
@@ -324,6 +381,16 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         assembly ("memory-safe") {
             user := tload(slot)
         }
+    }
+
+    function bootstrapped() external view override returns (bool) {
+        return _bootstrapped;
+    }
+
+    function pendingTrustedRouter(address router) external view override returns (bool trusted, uint256 readyAt) {
+        uint256 proposedAt = _pendingRouterProposedAt[router];
+        if (proposedAt == 0) return (false, 0);
+        return (_pendingRouterState[router], proposedAt + TRUSTED_ROUTER_DELAY);
     }
 
     // ---------------------------------------------------------------------
