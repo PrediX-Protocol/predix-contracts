@@ -113,6 +113,15 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (m.refundModeActive) revert Market_RefundModeActive();
         if (block.timestamp < m.endTime) revert Market_NotEnded();
 
+        // F-D-03: re-verify oracle approval at resolve time. If admin
+        // `revokeOracle`s an oracle post-creation (compromise, vulnerability,
+        // or policy change), permissionless `resolveMarket` would otherwise
+        // still consume the outcome from the revoked oracle. Blocking here
+        // gives admin a clean path to `enableRefundMode` without racing.
+        if (!LibConfigStorage.layout().approvedOracles[m.oracle]) {
+            revert Market_OracleNotApproved();
+        }
+
         IOracle oracle = IOracle(m.oracle);
         if (!oracle.isResolved(marketId)) revert Market_OracleNotResolved();
 
