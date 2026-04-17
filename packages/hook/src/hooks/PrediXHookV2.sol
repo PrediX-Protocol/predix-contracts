@@ -455,6 +455,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
         if (mkt.isResolved) revert Hook_MarketResolved();
+        if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
         return IHooks.beforeAddLiquidity.selector;
     }
@@ -478,6 +479,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
         if (mkt.isResolved) revert Hook_MarketResolved();
+        if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         return IHooks.beforeDonate.selector;
     }
 
@@ -491,6 +493,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
         if (mkt.isResolved) revert Hook_MarketResolved();
+        if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
 
         address identity = _resolveIdentity(sender, key.toId());

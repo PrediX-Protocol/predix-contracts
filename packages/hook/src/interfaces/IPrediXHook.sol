@@ -127,6 +127,12 @@ interface IPrediXHook {
     /// @notice Thrown when a swap, add-liquidity or donate hits an already-resolved market.
     error Hook_MarketResolved();
 
+    /// @notice Thrown when a swap, add-liquidity or donate hits a market in refund mode.
+    ///         Trading must stop once the diamond enables refund mode so LPs are not
+    ///         adverse-selected against users who already know no resolution is coming.
+    ///         `beforeRemoveLiquidity` remains open so LPs can exit. (H-H01 fix)
+    error Hook_MarketInRefundMode();
+
     /// @notice Thrown when a swap or add-liquidity hits a market whose `endTime` has passed.
     error Hook_MarketExpired();
 
