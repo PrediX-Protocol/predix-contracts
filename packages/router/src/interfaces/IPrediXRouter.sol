@@ -76,7 +76,16 @@ interface IPrediXRouter {
     error InvalidPermitToken();
 
     /// @notice Thrown when `permitSingle.details.amount < amount` for the current call.
+    /// @dev Retained as a type for external tooling; the router now enforces
+    ///      equality (`InvalidPermitAmount`) post-NEW-M5, so callers should
+    ///      catch `InvalidPermitAmount` instead.
     error InsufficientPermitAllowance();
+
+    /// @notice Thrown when `permitSingle.details.amount != amount`. Post-NEW-M5
+    ///         the router requires exact-amount permits to avoid residual
+    ///         Permit2 allowances. Frontends must sign a per-trade permit
+    ///         matching the exact `amountIn`.
+    error InvalidPermitAmount();
 
     /// @notice Defensive invariant: the router's balance of a token MUST be zero after a call
     ///         settles. A non-zero residue means accounting drifted — revert hard instead of

@@ -908,8 +908,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @notice Pull `amount` of `token` from `msg.sender` via Permit2.
-    /// @dev Verifies the signed permit references the expected token and carries enough
-    ///      allowance before delegating to Permit2 itself.
+    /// @dev Enforces `permitSingle.details.amount == amount` (NEW-M5). A permit
+    ///      signed for MORE than the trade would leave residual Permit2
+    ///      allowance to the router — latent attack surface if any future
+    ///      router bug introduces a user-controllable transferFrom destination.
+    ///      UX trade-off: frontends MUST sign a per-trade permit with the exact
+    ///      amount, not a single max-amount permit reused across trades.
     function _consumePermit(
         IAllowanceTransfer.PermitSingle calldata permitSingle,
         bytes calldata signature,
@@ -917,7 +921,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address token
     ) internal {
         if (permitSingle.details.token != token) revert InvalidPermitToken();
-        if (permitSingle.details.amount < amount) revert InsufficientPermitAllowance();
+        if (permitSingle.details.amount != amount) revert InvalidPermitAmount();
         permit2.permit(msg.sender, permitSingle, signature);
         permit2.transferFrom(msg.sender, address(this), amount, token);
     }

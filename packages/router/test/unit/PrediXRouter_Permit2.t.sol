@@ -59,14 +59,29 @@ contract PrediXRouter_Permit2 is RouterFixture {
         router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
     }
 
-    function test_Revert_Permit2_InsufficientAllowance() public {
+    function test_Revert_Permit2_AmountMismatch_Under() public {
+        // NEW-M5 post-fix: _consumePermit enforces amount == permit.amount.
+        // Permit signed for less than the trade reverts InvalidPermitAmount.
         vm.prank(alice);
         usdc.approve(address(permit2), type(uint256).max);
 
         IAllowanceTransfer.PermitSingle memory p =
             _permit(address(usdc), uint160(50e6), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
-        vm.expectRevert(IPrediXRouter.InsufficientPermitAllowance.selector);
+        vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+    }
+
+    function test_Revert_Permit2_AmountMismatch_Over() public {
+        // NEW-M5 post-fix: permit signed for MORE than the trade also reverts.
+        // Prevents residual Permit2 allowance accumulating on the router.
+        vm.prank(alice);
+        usdc.approve(address(permit2), type(uint256).max);
+
+        IAllowanceTransfer.PermitSingle memory p =
+            _permit(address(usdc), uint160(200e6), uint48(block.timestamp + 1 hours));
+        vm.prank(alice);
+        vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
         router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
     }
 
