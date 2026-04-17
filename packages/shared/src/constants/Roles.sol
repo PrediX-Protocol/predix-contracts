@@ -6,7 +6,9 @@ pragma solidity 0.8.30;
 /// @dev Cross-package consumers (hook, exchange, router, off-chain tooling) reference these
 ///      constants when querying or asserting role membership on the diamond.
 library Roles {
-    /// @notice Root admin role. Holder may grant or revoke any other role, including itself.
+    /// @notice Root admin role. Administers `ADMIN_ROLE`, `OPERATOR_ROLE`, and
+    ///         `PAUSER_ROLE`. Explicitly does NOT administer `CUT_EXECUTOR_ROLE`
+    ///         (that role is self-administered — see below).
     /// @dev Mirrors OpenZeppelin's `DEFAULT_ADMIN_ROLE` value (`bytes32(0)`) so external
     ///      tooling that assumes the OZ convention keeps working.
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
@@ -22,7 +24,9 @@ library Roles {
 
     /// @notice Execute-only role for `DiamondCutFacet.diamondCut`. Meant to be held
     ///         exclusively by an external `TimelockController` so all facet mutations
-    ///         pass through a mandatory delay window. `DEFAULT_ADMIN_ROLE` alone is
-    ///         insufficient to cut, closing the single-tx rug path.
+    ///         pass through a mandatory delay window. The role is self-administered —
+    ///         only a current holder (post-deploy: the Timelock) can grant additional
+    ///         executors, inheriting the 48h delay. `DEFAULT_ADMIN_ROLE` cannot
+    ///         escalate into this role, closing the F-D-01 / NEW-01 bypass path.
     bytes32 internal constant CUT_EXECUTOR_ROLE = keccak256("predix.role.cut_executor");
 }
