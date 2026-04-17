@@ -71,7 +71,7 @@ contract DeployOracles is Script {
             // testnets where Chainlink has not deployed the sequencer feed yet. Documented
             // in ChainlinkOracle.sol lines 24-27.
             address sequencerFeed = vm.envOr("CHAINLINK_SEQUENCER_UPTIME_FEED", address(0));
-            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(deployer, sequencerFeed);
+            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(deployer, sequencerFeed, diamond);
             chainlinkOracle.grantRole(chainlinkOracle.REGISTRAR_ROLE(), registrar);
             chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), multisig);
             chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), deployer);

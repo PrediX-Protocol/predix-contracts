@@ -9,10 +9,12 @@ import {IChainlinkOracle} from "@predix/oracle/interfaces/IChainlinkOracle.sol";
 import {ChainlinkOracle} from "@predix/oracle/adapters/ChainlinkOracle.sol";
 
 import {MockChainlinkAggregator} from "../mocks/MockChainlinkAggregator.sol";
+import {MockDiamondMarket} from "../mocks/MockDiamondMarket.sol";
 
 contract ChainlinkOracleTest is Test {
     ChainlinkOracle internal oracleContract;
     MockChainlinkAggregator internal feed;
+    MockDiamondMarket internal diamondMock;
 
     address internal admin = makeAddr("admin");
     address internal registrar = makeAddr("registrar");
@@ -26,7 +28,10 @@ contract ChainlinkOracleTest is Test {
     function setUp() public {
         vm.warp(SNAPSHOT_AT - 1 days);
 
-        oracleContract = new ChainlinkOracle(admin, address(0));
+        diamondMock = new MockDiamondMarket();
+        diamondMock.setMarket(MARKET_ID, true);
+
+        oracleContract = new ChainlinkOracle(admin, address(0), address(diamondMock));
         bytes32 registrarRole = oracleContract.REGISTRAR_ROLE();
         vm.prank(admin);
         oracleContract.grantRole(registrarRole, registrar);
@@ -58,12 +63,17 @@ contract ChainlinkOracleTest is Test {
 
     function test_Revert_Constructor_ZeroAdmin() public {
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_ZeroAdmin.selector);
-        new ChainlinkOracle(address(0), address(0));
+        new ChainlinkOracle(address(0), address(0), address(diamondMock));
+    }
+
+    function test_Revert_Constructor_ZeroDiamond() public {
+        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_ZeroDiamond.selector);
+        new ChainlinkOracle(admin, address(0), address(0));
     }
 
     function test_Constructor_StoresSequencerFeed() public {
         address seq = makeAddr("sequencer");
-        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, seq);
+        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, seq, address(diamondMock));
         assertEq(l2Oracle.sequencerUptimeFeed(), seq);
     }
 
@@ -79,7 +89,7 @@ contract ChainlinkOracleTest is Test {
         internal
         returns (ChainlinkOracle l2Oracle, MockChainlinkAggregator priceFeed)
     {
-        l2Oracle = new ChainlinkOracle(admin, address(sequencer));
+        l2Oracle = new ChainlinkOracle(admin, address(sequencer), address(diamondMock));
         bytes32 registrarRole = l2Oracle.REGISTRAR_ROLE();
         vm.prank(admin);
         l2Oracle.grantRole(registrarRole, registrar);

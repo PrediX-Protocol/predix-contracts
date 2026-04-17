@@ -32,7 +32,7 @@ contract OracleIntegrationTest is MarketFixture {
         super.setUp();
 
         manualOracle = new ManualOracle(oracleAdmin, address(diamond));
-        chainlinkOracle = new ChainlinkOracle(oracleAdmin, address(0));
+        chainlinkOracle = new ChainlinkOracle(oracleAdmin, address(0), address(diamond));
         feed = new MockChainlinkAggregator(8, "ETH / USD");
 
         bytes32 reporterRole = manualOracle.REPORTER_ROLE();

@@ -219,7 +219,7 @@ contract DeployAll is Script {
         manualAddr = address(manualOracle);
 
         if (env.chainlinkEnabled) {
-            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(env.deployer, env.chainlinkSequencerFeed);
+            ChainlinkOracle chainlinkOracle = new ChainlinkOracle(env.deployer, env.chainlinkSequencerFeed, diamond);
             chainlinkOracle.grantRole(chainlinkOracle.REGISTRAR_ROLE(), env.registrar);
             chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
             chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.deployer);

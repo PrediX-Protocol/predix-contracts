@@ -7,6 +7,7 @@ import {IChainlinkOracle} from "@predix/oracle/interfaces/IChainlinkOracle.sol";
 import {ChainlinkOracle} from "@predix/oracle/adapters/ChainlinkOracle.sol";
 
 import {MockChainlinkAggregator} from "../mocks/MockChainlinkAggregator.sol";
+import {MockDiamondMarket} from "../mocks/MockDiamondMarket.sol";
 
 /// @notice Repro for NEW-M8: when the sequencer uptime feed has not emitted
 ///         any round yet (fresh L2 bootstrap), `latestRoundData().startedAt`
@@ -29,7 +30,9 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         // returns startedAt = 0.
         MockChainlinkAggregator sequencer = new MockChainlinkAggregator(0, "L2 Sequencer");
 
-        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer));
+        MockDiamondMarket diamondMock = new MockDiamondMarket();
+        diamondMock.setMarket(MARKET_ID, true);
+        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer), address(diamondMock));
         bytes32 registrarRole = l2Oracle.REGISTRAR_ROLE();
         vm.prank(admin);
         l2Oracle.grantRole(registrarRole, registrar);
@@ -59,7 +62,9 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         MockChainlinkAggregator sequencer = new MockChainlinkAggregator(0, "L2 Sequencer");
         sequencer.setAnswer(0, block.timestamp - 2 hours); // up for 2h, past 1h grace
 
-        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer));
+        MockDiamondMarket diamondMock = new MockDiamondMarket();
+        diamondMock.setMarket(MARKET_ID, true);
+        ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer), address(diamondMock));
         bytes32 registrarRole = l2Oracle.REGISTRAR_ROLE();
         vm.prank(admin);
         l2Oracle.grantRole(registrarRole, registrar);

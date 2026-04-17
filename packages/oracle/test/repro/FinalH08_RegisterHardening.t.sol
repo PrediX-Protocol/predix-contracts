@@ -7,6 +7,7 @@ import {IChainlinkOracle} from "@predix/oracle/interfaces/IChainlinkOracle.sol";
 import {ChainlinkOracle} from "@predix/oracle/adapters/ChainlinkOracle.sol";
 
 import {MockChainlinkAggregator} from "../mocks/MockChainlinkAggregator.sol";
+import {MockDiamondMarket} from "../mocks/MockDiamondMarket.sol";
 
 /// @notice Repro for FINAL-H08.
 ///         Pre-fix: `register` accepted unhealthy feeds and an unbounded
@@ -31,7 +32,10 @@ contract FinalH08_RegisterHardening is Test {
     function setUp() public {
         vm.warp(SNAPSHOT_AT - 1 days);
 
-        oracleContract = new ChainlinkOracle(admin, address(0));
+        MockDiamondMarket diamondMock = new MockDiamondMarket();
+        diamondMock.setMarket(MARKET_ID, true);
+
+        oracleContract = new ChainlinkOracle(admin, address(0), address(diamondMock));
         bytes32 registrarRole = oracleContract.REGISTRAR_ROLE();
         vm.prank(admin);
         oracleContract.grantRole(registrarRole, registrar);

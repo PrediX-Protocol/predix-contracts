@@ -42,7 +42,7 @@ contract DeployOraclesHandoverTest is Test {
 
     function test_ChainlinkOracle_HandoverSequence() public {
         vm.startPrank(deployer);
-        ChainlinkOracle oracle = new ChainlinkOracle(deployer, address(0));
+        ChainlinkOracle oracle = new ChainlinkOracle(deployer, address(0), diamond);
         oracle.grantRole(oracle.REGISTRAR_ROLE(), registrar);
         oracle.grantRole(DEFAULT_ADMIN_ROLE, multisig);
         oracle.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
@@ -52,5 +52,6 @@ contract DeployOraclesHandoverTest is Test {
         assertFalse(oracle.hasRole(DEFAULT_ADMIN_ROLE, deployer), "deployer renounced DEFAULT_ADMIN_ROLE");
         assertTrue(oracle.hasRole(oracle.REGISTRAR_ROLE(), registrar), "registrar REGISTRAR_ROLE");
         assertEq(oracle.sequencerUptimeFeed(), address(0), "sequencer feed address(0)");
+        assertEq(oracle.diamond(), diamond, "diamond bound");
     }
 }

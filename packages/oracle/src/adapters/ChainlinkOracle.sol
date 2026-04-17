@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
+import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOracle} from "@predix/shared/interfaces/IOracle.sol";
 
 import {IChainlinkOracle} from "../interfaces/IChainlinkOracle.sol";
@@ -39,6 +40,9 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     /// @inheritdoc IChainlinkOracle
     address public immutable override sequencerUptimeFeed;
 
+    /// @inheritdoc IChainlinkOracle
+    address public immutable override diamond;
+
     struct Resolution {
         bool resolved;
         bool outcome;
@@ -54,10 +58,17 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     /// @param admin                   Address granted `DEFAULT_ADMIN_ROLE`; must be non-zero.
     /// @param sequencerUptimeFeed_    Chainlink L2 sequencer uptime feed; pass
     ///                                `address(0)` for L1 deployments to skip the check.
-    constructor(address admin, address sequencerUptimeFeed_) {
+    /// @param diamond_                Address of the diamond this oracle is bound to;
+    ///                                must be non-zero. `register` asserts marketId
+    ///                                exists on this diamond so an adapter reused
+    ///                                across deployments cannot have cross-diamond
+    ///                                marketId collisions. (NEW-02)
+    constructor(address admin, address sequencerUptimeFeed_, address diamond_) {
         if (admin == address(0)) revert ChainlinkOracle_ZeroAdmin();
+        if (diamond_ == address(0)) revert ChainlinkOracle_ZeroDiamond();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         sequencerUptimeFeed = sequencerUptimeFeed_;
+        diamond = diamond_;
     }
 
     /// @inheritdoc IChainlinkOracle
@@ -65,6 +76,11 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         if (cfg.feed == address(0)) revert ChainlinkOracle_ZeroFeed();
         if (cfg.snapshotAt <= block.timestamp) revert ChainlinkOracle_PastSnapshot();
         if (cfg.snapshotAt > block.timestamp + MAX_SNAPSHOT_FUTURE) revert ChainlinkOracle_SnapshotTooFar();
+
+        // NEW-02: bind to the diamond's marketId namespace. A diamond that
+        // has not minted `marketId` returns yesToken == address(0); reject.
+        IMarketFacet.MarketView memory mkt = IMarketFacet(diamond).getMarket(marketId);
+        if (mkt.yesToken == address(0)) revert ChainlinkOracle_MarketNotFound();
 
         AggregatorV3Interface feed = AggregatorV3Interface(cfg.feed);
         (, int256 probe,, uint256 probeUpdatedAt,) = feed.latestRoundData();

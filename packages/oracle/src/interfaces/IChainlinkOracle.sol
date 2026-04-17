@@ -51,6 +51,14 @@ interface IChainlinkOracle is IOracle {
     /// @notice Reverts when constructing the oracle with a zero admin address.
     error ChainlinkOracle_ZeroAdmin();
 
+    /// @notice Reverts when constructing the oracle with a zero diamond address. (NEW-02)
+    error ChainlinkOracle_ZeroDiamond();
+
+    /// @notice Reverts when `register` is called with a marketId the bound
+    ///         diamond does not recognize. Prevents cross-diamond marketId
+    ///         collisions when an adapter is reused across deployments. (NEW-02)
+    error ChainlinkOracle_MarketNotFound();
+
     /// @notice Reverts when `register` is called with a zero feed address.
     error ChainlinkOracle_ZeroFeed();
 
@@ -106,6 +114,10 @@ interface IChainlinkOracle is IOracle {
 
     /// @notice The configured L2 sequencer uptime feed, or `address(0)` on L1 deployments.
     function sequencerUptimeFeed() external view returns (address);
+
+    /// @notice The diamond this oracle is bound to. `register` enforces that
+    ///         marketId must exist on this diamond. (NEW-02)
+    function diamond() external view returns (address);
 
     /// @notice Bind `marketId` to a Chainlink feed config.
     /// @dev Callable only by `REGISTRAR_ROLE`. Probes the feed and captures
