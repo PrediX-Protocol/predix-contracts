@@ -52,7 +52,7 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SequencerRoundInvalid.selector);
-        l2Oracle.resolve(MARKET_ID, ROUND_ID);
+        l2Oracle.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_NEW_M8_initializedSequencerStillWorks() public {
@@ -84,7 +84,7 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
-        l2Oracle.resolve(MARKET_ID, ROUND_ID);
+        l2Oracle.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(l2Oracle.isResolved(MARKET_ID));
     }
 }

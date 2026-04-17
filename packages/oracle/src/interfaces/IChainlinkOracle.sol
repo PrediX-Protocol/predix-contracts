@@ -112,6 +112,18 @@ interface IChainlinkOracle is IOracle {
     ///         on a freshly-deployed L2. (NEW-M8)
     error ChainlinkOracle_SequencerRoundInvalid();
 
+    /// @notice F-D-02: reverts when `prevRoundIdHint >= roundIdHint`. The
+    ///         predecessor-round hint must be strictly less than the round
+    ///         being snapshotted.
+    error ChainlinkOracle_InvalidPrevRound();
+
+    /// @notice F-D-02: reverts when `roundIdHint` and `prevRoundIdHint` are
+    ///         in different Chainlink aggregator phases (top 16 bits differ).
+    ///         Forces the predecessor to be a real prior round in the same
+    ///         phase, closing the edge where `roundIdHint - 1` would cross a
+    ///         phase boundary or hit round 0 on the proxy.
+    error ChainlinkOracle_PhaseMismatch();
+
     /// @notice The configured L2 sequencer uptime feed, or `address(0)` on L1 deployments.
     function sequencerUptimeFeed() external view returns (address);
 
@@ -138,11 +150,20 @@ interface IChainlinkOracle is IOracle {
     /// @notice Snapshot the feed answer and compute the binary outcome for `marketId`.
     /// @dev Permissionless. Reverts if the market is unregistered, already
     ///      resolved, before its snapshot time, if the answer is non-positive,
-    ///      or if `roundIdHint` is not the round containing `snapshotAt`.
-    /// @param marketId     The market being resolved.
-    /// @param roundIdHint  The Chainlink feed round id whose `updatedAt` is
-    ///                     the first timestamp >= the market's `snapshotAt`.
-    function resolve(uint256 marketId, uint80 roundIdHint) external;
+    ///      if the round / prev-round pair does not bracket `snapshotAt`, or
+    ///      if the pair crosses a Chainlink aggregator phase boundary.
+    ///      Caller MUST provide both hints — `roundIdHint` is the round whose
+    ///      `updatedAt` is the first value >= `snapshotAt`, and `prevRoundIdHint`
+    ///      is a prior round in the SAME PHASE whose `updatedAt < snapshotAt`.
+    ///      Phase-safe retrieval replaces the pre-fix `roundIdHint - 1` read,
+    ///      which could cross phases on proxy feeds.
+    /// @param marketId        The market being resolved.
+    /// @param roundIdHint     The Chainlink feed round id containing `snapshotAt`.
+    /// @param prevRoundIdHint A preceding round id in the same phase whose
+    ///                        `updatedAt < snapshotAt`. Typically `roundIdHint - 1`
+    ///                        unless the snapshot round is the first round of a
+    ///                        new phase.
+    function resolve(uint256 marketId, uint80 roundIdHint, uint80 prevRoundIdHint) external;
 
     /// @notice Read the stored configuration for `marketId`.
     function getConfig(uint256 marketId) external view returns (Config memory);

@@ -118,7 +118,7 @@ contract ChainlinkOracleTest is Test {
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
-        l2Oracle.resolve(MARKET_ID, ROUND_ID);
+        l2Oracle.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(l2Oracle.isResolved(MARKET_ID));
         assertTrue(l2Oracle.outcome(MARKET_ID));
     }
@@ -135,7 +135,7 @@ contract ChainlinkOracleTest is Test {
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SequencerDown.selector);
-        l2Oracle.resolve(MARKET_ID, ROUND_ID);
+        l2Oracle.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_L2_SequencerGracePeriodNotOver() public {
@@ -151,7 +151,7 @@ contract ChainlinkOracleTest is Test {
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SequencerGracePeriodNotOver.selector);
-        l2Oracle.resolve(MARKET_ID, ROUND_ID);
+        l2Oracle.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     // -------------------------------------------------------------------
@@ -220,7 +220,7 @@ contract ChainlinkOracleTest is Test {
 
         vm.expectEmit(true, true, true, true);
         emit IChainlinkOracle.MarketResolved(MARKET_ID, 4001e8, true);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
 
         assertTrue(oracleContract.isResolved(MARKET_ID));
         assertTrue(oracleContract.outcome(MARKET_ID));
@@ -229,28 +229,28 @@ contract ChainlinkOracleTest is Test {
     function test_Resolve_GtePath_NoWins() public {
         _register(true);
         _warpAndSetAnswer(3999e8);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertFalse(oracleContract.outcome(MARKET_ID));
     }
 
     function test_Resolve_LtePath_YesWins() public {
         _register(false);
         _warpAndSetAnswer(3999e8);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(oracleContract.outcome(MARKET_ID));
     }
 
     function test_Resolve_LtePath_NoWins() public {
         _register(false);
         _warpAndSetAnswer(4001e8);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertFalse(oracleContract.outcome(MARKET_ID));
     }
 
     function test_Resolve_ExactThreshold_GteYes() public {
         _register(true);
         _warpAndSetAnswer(THRESHOLD);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(oracleContract.outcome(MARKET_ID));
     }
 
@@ -258,7 +258,7 @@ contract ChainlinkOracleTest is Test {
         _register(true);
         _warpAndSetAnswer(4500e8);
         vm.prank(stranger);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(oracleContract.isResolved(MARKET_ID));
     }
 
@@ -266,14 +266,14 @@ contract ChainlinkOracleTest is Test {
         _register(true);
         _warpAndSetAnswer(4500e8);
         assertFalse(oracleContract.isResolved(MARKET_ID));
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(oracleContract.isResolved(MARKET_ID));
     }
 
     function test_Outcome_ReturnsStored() public {
         _register(true);
         _warpAndSetAnswer(4500e8);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
         assertTrue(oracleContract.outcome(MARKET_ID));
     }
 
@@ -283,23 +283,23 @@ contract ChainlinkOracleTest is Test {
 
     function test_Revert_Resolve_NotRegistered() public {
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_NotRegistered.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_AlreadyResolved() public {
         _register(true);
         _warpAndSetAnswer(4500e8);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_AlreadyResolved.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_BeforeSnapshot() public {
         _register(true);
         feed.setAnswer(4500e8, block.timestamp);
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_BeforeSnapshot.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_WrongRoundForSnapshot_HintTooEarly() public {
@@ -308,7 +308,7 @@ contract ChainlinkOracleTest is Test {
         feed.setRound(ROUND_ID, 4500e8, SNAPSHOT_AT - 1);
         vm.warp(SNAPSHOT_AT + 1);
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_WrongRoundForSnapshot.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_WrongRoundForSnapshot_HintTooLate() public {
@@ -319,21 +319,21 @@ contract ChainlinkOracleTest is Test {
         feed.setRound(ROUND_ID + 1, 4600e8, SNAPSHOT_AT + 10);
         vm.warp(SNAPSHOT_AT + 1);
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_WrongRoundForSnapshot.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID + 1);
+        oracleContract.resolve(MARKET_ID, ROUND_ID + 1, ROUND_ID);
     }
 
     function test_Revert_Resolve_InvalidPrice_Zero() public {
         _register(true);
         _warpAndSetAnswer(0);
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_InvalidPrice.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     function test_Revert_Resolve_InvalidPrice_Negative() public {
         _register(true);
         _warpAndSetAnswer(-1);
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_InvalidPrice.selector);
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
     }
 
     // -------------------------------------------------------------------
@@ -368,7 +368,7 @@ contract ChainlinkOracleTest is Test {
         vm.warp(SNAPSHOT_AT + 1);
         feed.setRound(ROUND_ID, price, SNAPSHOT_AT);
 
-        oracleContract.resolve(MARKET_ID, ROUND_ID);
+        oracleContract.resolve(MARKET_ID, ROUND_ID, 0);
 
         bool expected = gte ? price >= threshold : price <= threshold;
         assertEq(oracleContract.outcome(MARKET_ID), expected);

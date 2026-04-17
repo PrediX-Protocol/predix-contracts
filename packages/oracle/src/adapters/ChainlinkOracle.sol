@@ -106,17 +106,27 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     }
 
     /// @inheritdoc IChainlinkOracle
-    function resolve(uint256 marketId, uint80 roundIdHint) external {
+    function resolve(uint256 marketId, uint80 roundIdHint, uint80 prevRoundIdHint) external {
         Config memory cfg = _configs[marketId];
         if (cfg.feed == address(0)) revert ChainlinkOracle_NotRegistered();
         if (_resolutions[marketId].resolved) revert ChainlinkOracle_AlreadyResolved();
         if (block.timestamp < cfg.snapshotAt) revert ChainlinkOracle_BeforeSnapshot();
 
+        // F-D-02: caller provides the preceding round explicitly so the
+        // predecessor read is a real round in the same Chainlink phase
+        // (roundId is `phaseId << 64 | aggregatorRoundId`). Subtracting 1 off
+        // `roundIdHint` would cross a phase boundary at `aggregatorRoundId == 1`
+        // and read round 0 of a new phase — on proxies that return zeros for
+        // unknown rounds the guard silently passes. Explicit same-phase
+        // prev hint closes the edge.
+        if (prevRoundIdHint >= roundIdHint) revert ChainlinkOracle_InvalidPrevRound();
+        if ((prevRoundIdHint >> 64) != (roundIdHint >> 64)) revert ChainlinkOracle_PhaseMismatch();
+
         _checkSequencer();
 
         AggregatorV3Interface feed = AggregatorV3Interface(cfg.feed);
         (, int256 answer,, uint256 updatedAt,) = feed.getRoundData(roundIdHint);
-        (,,, uint256 prevUpdatedAt,) = feed.getRoundData(roundIdHint - 1);
+        (,,, uint256 prevUpdatedAt,) = feed.getRoundData(prevRoundIdHint);
         if (updatedAt < cfg.snapshotAt || prevUpdatedAt >= cfg.snapshotAt) {
             revert ChainlinkOracle_WrongRoundForSnapshot();
         }

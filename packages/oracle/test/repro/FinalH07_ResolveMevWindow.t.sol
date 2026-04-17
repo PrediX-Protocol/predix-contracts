@@ -59,7 +59,8 @@ contract FinalH07_ResolveMevWindow is Test {
         vm.warp(SNAPSHOT_AT + 30 minutes);
 
         // Round 11 is the first round whose updatedAt is >= snapshotAt.
-        oracleContract.resolve(MARKET_ID, 11);
+        // Round 10 is the same-phase predecessor.
+        oracleContract.resolve(MARKET_ID, 11, 10);
         assertTrue(oracleContract.isResolved(MARKET_ID));
         assertTrue(oracleContract.outcome(MARKET_ID), "round 11 > threshold => YES");
     }
@@ -73,7 +74,7 @@ contract FinalH07_ResolveMevWindow is Test {
         vm.warp(SNAPSHOT_AT + 30 minutes);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_WrongRoundForSnapshot.selector);
-        oracleContract.resolve(MARKET_ID, 10);
+        oracleContract.resolve(MARKET_ID, 10, 9);
     }
 
     /// @notice Post-fix: a hint whose previous round is already past
@@ -87,6 +88,6 @@ contract FinalH07_ResolveMevWindow is Test {
         vm.warp(SNAPSHOT_AT + 30 minutes);
 
         vm.expectRevert(IChainlinkOracle.ChainlinkOracle_WrongRoundForSnapshot.selector);
-        oracleContract.resolve(MARKET_ID, 12);
+        oracleContract.resolve(MARKET_ID, 12, 11);
     }
 }
