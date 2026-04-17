@@ -42,6 +42,18 @@ contract DeployAll is Script {
             | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG
     );
 
+    /// @notice Deploy-time floor on the diamond cut timelock. Matches the hook
+    ///         proxy's `_DEFAULT_TIMELOCK` so governance delays are uniform
+    ///         across both upgrade surfaces. A typo-deployed shorter delay
+    ///         would neuter the FINAL-H02 / F-D-01 timelock — reject at boot. (NEW-03)
+    uint256 public constant MIN_TIMELOCK_DELAY = 48 hours;
+
+    /// @notice Pure helper the deploy flow and tests both use so the floor
+    ///         check is unambiguously observable.
+    function _requireTimelockFloor(uint256 delay) internal pure {
+        require(delay >= MIN_TIMELOCK_DELAY, "TIMELOCK_DELAY_SECONDS below 48h floor");
+    }
+
     struct Env {
         uint256 deployerKey;
         address deployer;
@@ -163,6 +175,7 @@ contract DeployAll is Script {
         e.hookProxyAdmin = vm.envAddress("HOOK_PROXY_ADMIN");
         e.hookRuntimeAdmin = vm.envAddress("HOOK_RUNTIME_ADMIN");
         e.timelockDelay = vm.envUint("TIMELOCK_DELAY_SECONDS");
+        _requireTimelockFloor(e.timelockDelay);
         e.usdc = vm.envAddress("USDC_ADDRESS");
         e.poolManager = IPoolManager(vm.envAddress("POOL_MANAGER_ADDRESS"));
         e.permit2 = vm.envAddress("PERMIT2_ADDRESS");
