@@ -98,6 +98,12 @@ interface IChainlinkOracle is IOracle {
     /// @notice Reverts when the L2 sequencer has been back up for less than `SEQUENCER_GRACE_PERIOD`.
     error ChainlinkOracle_SequencerGracePeriodNotOver();
 
+    /// @notice Reverts when the sequencer uptime feed returns `startedAt == 0`
+    ///         (feed has never emitted a status round). Prevents the
+    ///         `block.timestamp - startedAt` comparison from trivially passing
+    ///         on a freshly-deployed L2. (NEW-M8)
+    error ChainlinkOracle_SequencerRoundInvalid();
+
     /// @notice The configured L2 sequencer uptime feed, or `address(0)` on L1 deployments.
     function sequencerUptimeFeed() external view returns (address);
 

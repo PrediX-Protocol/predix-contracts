@@ -144,6 +144,12 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         address feed = sequencerUptimeFeed;
         if (feed == address(0)) return;
         (, int256 answer, uint256 startedAt,,) = AggregatorV3Interface(feed).latestRoundData();
+        // NEW-M8: a freshly-deployed L2 uptime feed that has never emitted
+        // a status round returns startedAt == 0. `block.timestamp - 0`
+        // trivially clears the grace-period check, so the bare comparison
+        // would silently treat an uninitialized sequencer as healthy.
+        // Reject explicitly before the subtraction.
+        if (startedAt == 0) revert ChainlinkOracle_SequencerRoundInvalid();
         if (answer != 0) revert ChainlinkOracle_SequencerDown();
         if (block.timestamp - startedAt < SEQUENCER_GRACE_PERIOD) {
             revert ChainlinkOracle_SequencerGracePeriodNotOver();
