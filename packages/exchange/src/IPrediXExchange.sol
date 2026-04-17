@@ -73,6 +73,10 @@ interface IPrediXExchange {
     error InsufficientLiquidity();
     error Exchange_InsufficientBalanceForMint();
     error Exchange_QueueFull();
+    /// @notice Thrown when `fillMarketOrder` is called with `taker != msg.sender`.
+    ///         Prevents an attacker from spending a victim's USDC allowance to
+    ///         the Exchange by passing `taker = victim, recipient = attacker`.
+    error NotTaker();
 
     // ============ Events ============
 
@@ -132,7 +136,10 @@ interface IPrediXExchange {
     // ============ Taker path (permissionless) ============
 
     /// @notice Fill a market order with 4-way waterfall routing.
-    /// @dev Permissionless — no access control, no `onlyRouter`. Any caller is valid.
+    /// @dev Permissionless — no role gate, no `onlyRouter`. Any caller is valid,
+    ///      but `taker` MUST equal `msg.sender` (E-02 fix). This prevents an
+    ///      attacker from spending a victim's Exchange allowance by passing
+    ///      `taker = victim, recipient = attacker`.
     ///      Upfront pull → loop → refund unused. Each iteration picks the cheapest of:
     ///        - COMPLEMENTARY (direct opposite-side match)
     ///        - SYNTHETIC (same-action opposite-token via MINT or MERGE)
@@ -142,7 +149,7 @@ interface IPrediXExchange {
     /// @param takerSide What the taker wants to acquire/dispose.
     /// @param limitPrice BUY: max price per share. SELL: min price per share. Never crossed.
     /// @param amountIn Taker's input budget (USDC for buy, shares for sell).
-    /// @param taker Address providing input funds (must have approved Exchange).
+    /// @param taker Address providing input funds (MUST equal `msg.sender`).
     /// @param recipient Address receiving output tokens (can differ from taker).
     /// @param maxFills Max iterations. 0 = DEFAULT_MAX_FILLS. No hard upper bound.
     /// @param deadline Transaction deadline. Reverts if expired.

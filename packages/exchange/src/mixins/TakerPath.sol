@@ -52,6 +52,11 @@ abstract contract TakerPath is ExchangeStorage {
         }
         if (amountIn == 0) return (0, 0);
         if (taker == address(0) || recipient == address(0)) revert IPrediXExchange.ZeroAddress();
+        // E-02: taker MUST be msg.sender. Otherwise any attacker with a matching
+        // order could drain any address that has a non-zero USDC allowance to the
+        // Exchange (every address that ever placed a maker order). The router
+        // always calls with taker=address(this), so this constraint is compatible.
+        if (msg.sender != taker) revert IPrediXExchange.NotTaker();
 
         IMarketFacet.MarketView memory mkt = _loadMarket(marketId);
         _validateMarketActive(mkt);
