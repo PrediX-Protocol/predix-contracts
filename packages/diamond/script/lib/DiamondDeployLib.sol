@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 import {IAccessControlFacet} from "@predix/shared/interfaces/IAccessControlFacet.sol";
 import {IDiamondCut} from "@predix/shared/interfaces/IDiamondCut.sol";
@@ -145,6 +146,15 @@ library DiamondDeployLib {
         if (loupe.facetAddress(IDiamondCut.diamondCut.selector) != f.cut) revert DeployFailed("cut route");
         if (loupe.facetAddress(IMarketFacet.createMarket.selector) != f.market) revert DeployFailed("market route");
         if (loupe.facetAddress(IEventFacet.createEvent.selector) != f.eventF) revert DeployFailed("event route");
+
+        // Defense-in-depth for NEW-03: the env-level floor in
+        // `DeployAll._requireTimelockFloor` catches typos in
+        // `TIMELOCK_DELAY_SECONDS`, but if a team reuses an existing timelock
+        // contract whose `getMinDelay()` is below 48h (e.g. a dev timelock),
+        // only this post-deploy assertion catches it.
+        if (TimelockController(payable(timelock)).getMinDelay() < 48 hours) {
+            revert DeployFailed("timelock minDelay");
+        }
     }
 
     // ------------------------------------------------------------------ selectors ---
