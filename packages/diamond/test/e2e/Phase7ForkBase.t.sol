@@ -67,7 +67,16 @@ abstract contract Phase7ForkBase is Test {
     // ================================================================
 
     function setUp() public virtual {
-        vm.createSelectFork(vm.envString("UNICHAIN_RPC_PRIMARY"), FORK_BLOCK);
+        // Skip when the fork URL is not configured so that `make test` (which
+        // does not export environment variables) does not register these as
+        // failures. Running `forge test --match-path 'test/e2e/**'` with the
+        // env loaded is the supported invocation — see SC/FORK_TESTS.md.
+        string memory rpc = vm.envOr("UNICHAIN_RPC_PRIMARY", string(""));
+        if (bytes(rpc).length == 0) {
+            vm.skip(true, "UNICHAIN_RPC_PRIMARY not set");
+            return;
+        }
+        vm.createSelectFork(rpc, FORK_BLOCK);
         _label();
     }
 
