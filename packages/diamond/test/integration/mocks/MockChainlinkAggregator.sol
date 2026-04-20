@@ -47,21 +47,12 @@ contract MockChainlinkAggregator is AggregatorV3Interface {
         return 1;
     }
 
-    function getRoundData(uint80 roundId_)
-        external
-        view
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function getRoundData(uint80 roundId_) external view returns (uint80, int256, uint256, uint256, uint80) {
         return (roundId_, _answers[roundId_], _updatedAts[roundId_], _updatedAts[roundId_], roundId_);
     }
 
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
-        return (
-            _latestRound,
-            _answers[_latestRound],
-            _updatedAts[_latestRound],
-            _updatedAts[_latestRound],
-            _latestRound
-        );
+        return
+            (_latestRound, _answers[_latestRound], _updatedAts[_latestRound], _updatedAts[_latestRound], _latestRound);
     }
 }

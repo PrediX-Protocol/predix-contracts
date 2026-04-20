@@ -41,9 +41,7 @@ contract FinalH02_DiamondCutTimelock is DiamondFixture {
         pausable.pauseModule(Modules.DIAMOND);
 
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.DIAMOND)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.DIAMOND));
         vm.prank(timelock);
         diamondCut.diamondCut(cuts, address(0), "");
     }

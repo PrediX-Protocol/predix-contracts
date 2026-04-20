@@ -148,10 +148,7 @@ contract Phase7BootstrapChildPool is Script {
         }
 
         ModifyLiquidityParams memory params = ModifyLiquidityParams({
-            tickLower: tickLower,
-            tickUpper: tickUpper,
-            liquidityDelta: int256(i.lpLiquidityDelta),
-            salt: bytes32(0)
+            tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: int256(i.lpLiquidityDelta), salt: bytes32(0)
         });
         IPoolModifyLiquidityTest(POOL_MODIFY_LIQUIDITY_TEST).modifyLiquidity(key, params, "");
 
