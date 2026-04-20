@@ -394,9 +394,10 @@ contract RouterIntegrationTest is MarketFixture {
     function test_BuyNo_VirtualPath_FullStack() public {
         (uint256 marketId, address yesToken, address noToken,) = _createMarketWithPool();
 
-        // Quoter spot: 1 USDC → 2 YES → yesPriceSpot = 0.50 → noPriceSpot = 0.50.
-        // mintAmount = usdcIn / noSpot * 0.97.
-        quoter.setExactInResult(2_000_000);
+        // Quoter sell-direction spot: 1 YES -> 0.50 USDC -> effectiveNoPrice = 0.50.
+        // mintAmount = usdcIn / effectiveNoPrice * 0.97. `_computeBuyNoMintAmount`
+        // probes SELL direction because `_callbackBuyNo` flash-sells YES.
+        quoter.setExactInResult(500_000);
 
         uint256 usdcIn = 40e6;
         uint256 mintAmount = (((usdcIn * 1e6) / 500_000) * 9700) / 10_000; // 77_600_000
