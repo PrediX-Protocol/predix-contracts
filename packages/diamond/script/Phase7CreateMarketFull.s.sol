@@ -24,6 +24,14 @@ interface IPoolModifyLiquidityTest {
         returns (int256 delta);
 }
 
+/// @notice TestUSDC open-faucet shape — testnet-only. `USDC_ADDRESS` on
+///         Unichain Sepolia points at a `TestUSDC` deployed under
+///         packages/shared/src/tokens/TestUSDC (see DeployTestUSDC.s.sol)
+///         which exposes `mint(address,uint256)` with no access control.
+interface ITestUSDC {
+    function mint(address to, uint256 amount) external;
+}
+
 /// @notice Phase 7 — end-to-end new-market bootstrap script.
 /// @dev    Runs a single broadcast that:
 ///           1. createMarket(question, endTime, oracle)
@@ -49,6 +57,13 @@ interface IPoolModifyLiquidityTest {
 ///           - LP_USDC_AMOUNT             default: 10_000_000 (10 USDC, raw 6-dec)
 ///           - LP_LIQUIDITY_DELTA         default: 100_000_000 (1e8 raw liquidity)
 ///           - LP_TICK_RANGE              default: 600 (ticks either side of current)
+///           - LP_FULL_RANGE              default: false. When true, ignores
+///                                        LP_TICK_RANGE and seeds ticks to
+///                                        (MIN_TICK_ALIGNED, MAX_TICK_ALIGNED)
+///                                        for a v4 canonical full-range LP
+///                                        (always-available liquidity, unbounded
+///                                        price impact). Pair with a larger
+///                                        LP_USDC_AMOUNT + LP_LIQUIDITY_DELTA.
 contract Phase7CreateMarketFull is Script {
     // Periphery helper on Unichain Sepolia (shared by all v4 deployments there)
     address internal constant POOL_MODIFY_LIQUIDITY_TEST = 0x5fa728C0A5cfd51BEe4B060773f50554c0C8A7AB;
@@ -82,10 +97,31 @@ contract Phase7CreateMarketFull is Script {
     int24 internal constant MIDPOINT_TICK_YES_CURRENCY1 = 6931; // rounded: 6900..6960 bracket
     int24 internal constant MIDPOINT_TICK_YES_CURRENCY0 = -6931; // mirror
 
+    // v4 TickMath MIN/MAX are ±887272; aligned to tickSpacing=60 becomes
+    // ±887220. These are the canonical full-range bounds for a 60-spacing
+    // pool — using anything wider reverts inside PoolManager.
+    int24 internal constant MIN_TICK_ALIGNED = -887220;
+    int24 internal constant MAX_TICK_ALIGNED = 887220;
+
     function run() external {
         Inputs memory i = _loadInputs();
 
+        // Preflight: deployer must hold enough USDC to split (2×LP_USDC_AMOUNT
+        // + slack) + fund the LP side (up to LP_USDC_AMOUNT). USDC_ADDRESS on
+        // Unichain Sepolia is a TestUSDC with an open `mint(address,uint256)`,
+        // so we top the deployer up automatically instead of forcing a manual
+        // step. Matches the `slack = lpUsdcAmount / 1000` used in step 5.
+        uint256 needed = i.lpUsdcAmount * 3 + i.lpUsdcAmount / 1000 + 1;
+        address deployer = vm.addr(i.pk);
+
         vm.startBroadcast(i.pk);
+
+        uint256 bal = IERC20(i.usdc).balanceOf(deployer);
+        if (bal < needed) {
+            uint256 shortfall = needed - bal;
+            console2.log("Deployer USDC short by:", shortfall, "-- auto-minting from TestUSDC");
+            ITestUSDC(i.usdc).mint(deployer, shortfall);
+        }
 
         // Step 1: create market
         uint256 marketId = IMarketFacet(i.diamond).createMarket(i.question, i.endTime, i.oracle);
@@ -117,23 +153,42 @@ contract Phase7CreateMarketFull is Script {
         console2.log("Pool initialized at sqrtPriceX96 =", sqrtPriceX96);
 
         // Step 5: split USDC to get YES + NO for LP
-        //   We need (roughly) LP_USDC_AMOUNT USDC + 2×LP_USDC_AMOUNT YES at midpoint 0.5
-        //   Easier: split 2×LP_USDC_AMOUNT USDC → mints 2×LP_USDC_AMOUNT YES + 2×LP_USDC_AMOUNT NO,
-        //   then keep LP_USDC_AMOUNT USDC + LP_USDC_AMOUNT YES for the position.
-        //   (NO balance stays with deployer for future trading.)
-        uint256 splitAmount = i.lpUsdcAmount * 2;
+        //   Target LP at midpoint p=0.5 (full-range preset): ~LP_USDC_AMOUNT
+        //   USDC + ~2×LP_USDC_AMOUNT YES. Split 2×LP_USDC_AMOUNT USDC →
+        //   mints 2×LP_USDC_AMOUNT YES + 2×LP_USDC_AMOUNT NO. NO stays with
+        //   deployer for future trading.
+        //   Slack of LP_USDC_AMOUNT/1000 absorbs v4's "round against LP" dust
+        //   at full-range seeds where the pool demands splitAmount + 1 raw.
+        uint256 slack = i.lpUsdcAmount / 1000;
+        if (slack == 0) slack = 1;
+        uint256 splitAmount = i.lpUsdcAmount * 2 + slack;
         IERC20(i.usdc).approve(i.diamond, splitAmount);
         IMarketFacet(i.diamond).splitPosition(marketId, splitAmount);
         console2.log("Split", splitAmount, "USDC to fund LP");
 
-        // Step 6: approve tokens to PoolModifyLiquidityTest
-        IERC20(mkt.yesToken).approve(POOL_MODIFY_LIQUIDITY_TEST, splitAmount);
-        IERC20(i.usdc).approve(POOL_MODIFY_LIQUIDITY_TEST, i.lpUsdcAmount * 2);
+        // Step 6: approve tokens to PoolModifyLiquidityTest. Use max so v4's
+        // "round against LP" dust (e.g. pool pulls splitAmount + 1 for a
+        // full-range seed at L = sqrt(x*y)) doesn't trip an off-by-one
+        // ERC20InsufficientAllowance. Testnet helper, protocol-controlled
+        // tokens — no counterparty risk to max approval.
+        IERC20(mkt.yesToken).approve(POOL_MODIFY_LIQUIDITY_TEST, type(uint256).max);
+        IERC20(i.usdc).approve(POOL_MODIFY_LIQUIDITY_TEST, type(uint256).max);
 
-        // Step 7: add liquidity around current tick
-        int24 midTick = yesIsCurrency0 ? MIDPOINT_TICK_YES_CURRENCY0 : MIDPOINT_TICK_YES_CURRENCY1;
-        int24 tickLower = _roundDownToSpacing(midTick - i.lpTickRange);
-        int24 tickUpper = _roundUpToSpacing(midTick + i.lpTickRange);
+        // Step 7: add liquidity. Full-range mode bypasses the narrow
+        // midpoint-centered window and uses v4's canonical min/max ticks so
+        // the pool has liquidity at every reachable price — trades of any
+        // size will fill (with proportional slippage) instead of reverting
+        // on QuoteOutsideSafetyMargin when price drifts past the window.
+        int24 tickLower;
+        int24 tickUpper;
+        if (i.lpFullRange) {
+            tickLower = MIN_TICK_ALIGNED;
+            tickUpper = MAX_TICK_ALIGNED;
+        } else {
+            int24 midTick = yesIsCurrency0 ? MIDPOINT_TICK_YES_CURRENCY0 : MIDPOINT_TICK_YES_CURRENCY1;
+            tickLower = _roundDownToSpacing(midTick - i.lpTickRange);
+            tickUpper = _roundUpToSpacing(midTick + i.lpTickRange);
+        }
 
         ModifyLiquidityParams memory params = ModifyLiquidityParams({
             tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: int256(i.lpLiquidityDelta), salt: bytes32(0)
@@ -157,6 +212,28 @@ contract Phase7CreateMarketFull is Script {
         console2.log("tickLower:    ", int256(tickLower));
         console2.log("tickUpper:    ", int256(tickUpper));
         console2.log("=========================================================");
+
+        // Machine-parseable one-liner for bots/CI (grep on `RESULT_JSON=`).
+        // Keep keys stable — downstream tooling parses them.
+        console2.log(
+            string.concat(
+                "RESULT_JSON={\"marketId\":",
+                vm.toString(marketId),
+                ",\"yesToken\":\"",
+                vm.toString(mkt.yesToken),
+                "\",\"noToken\":\"",
+                vm.toString(mkt.noToken),
+                "\",\"tickLower\":",
+                vm.toString(int256(tickLower)),
+                ",\"tickUpper\":",
+                vm.toString(int256(tickUpper)),
+                ",\"liquidity\":",
+                vm.toString(i.lpLiquidityDelta),
+                ",\"fullRange\":",
+                i.lpFullRange ? "true" : "false",
+                "}"
+            )
+        );
     }
 
     struct Inputs {
@@ -171,6 +248,7 @@ contract Phase7CreateMarketFull is Script {
         uint256 lpUsdcAmount;
         uint256 lpLiquidityDelta;
         int24 lpTickRange;
+        bool lpFullRange;
     }
 
     function _loadInputs() internal view returns (Inputs memory i) {
@@ -186,6 +264,7 @@ contract Phase7CreateMarketFull is Script {
         i.lpUsdcAmount = vm.envOr("LP_USDC_AMOUNT", uint256(10_000_000)); // 10 USDC default
         i.lpLiquidityDelta = vm.envOr("LP_LIQUIDITY_DELTA", uint256(100_000_000)); // 1e8 default
         i.lpTickRange = int24(int256(vm.envOr("LP_TICK_RANGE", uint256(600)))); // ±600 ticks default
+        i.lpFullRange = vm.envOr("LP_FULL_RANGE", false);
     }
 
     function _roundDownToSpacing(int24 tick) internal pure returns (int24) {

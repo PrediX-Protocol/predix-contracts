@@ -75,6 +75,11 @@ contract DeployAll is Script {
         uint256 defaultRedemptionFeeBps;
         uint24 lpFeeFlag;
         int24 tickSpacing;
+        // Staging flag: when false, the deploy skips the governance handover
+        // (multisig grants, deployer renounces, hook completeBootstrap, hook
+        // admin rotation) so the deployer retains admin power for iterative
+        // staging ops. Production mainnet deploys must set to true.
+        bool finalizeGovernance;
     }
 
     struct Addresses {
@@ -148,25 +153,27 @@ contract DeployAll is Script {
         IPrediXHook(out.hookProxy).setTrustedRouter(out.router, true);
         IPrediXHook(out.hookProxy).setTrustedRouter(env.v4Quoter, true);
 
-        // H-H02: close the bootstrap window so post-deploy trust changes
-        // must route through the 48h propose/execute flow. Once this fires,
-        // the legacy immediate-apply `setTrustedRouter` setter is permanently
-        // disabled on this hook instance.
-        IPrediXHook(out.hookProxy).completeBootstrap();
+        if (env.finalizeGovernance) {
+            // H-H02: close the bootstrap window so post-deploy trust changes
+            // must route through the 48h propose/execute flow. Once this fires,
+            // the legacy immediate-apply `setTrustedRouter` setter is permanently
+            // disabled on this hook instance.
+            IPrediXHook(out.hookProxy).completeBootstrap();
 
-        // Propose the final hook runtime admin. Rotation is two-step per SPEC_HOOK_V2:
-        // the incoming admin must call `hook.acceptAdmin()` in a follow-up tx. This is
-        // the only remaining manual post-deploy step — documented in the post-deploy
-        // checklist of `packages/diamond/script/README.md`.
-        if (env.hookRuntimeAdmin != env.deployer) {
-            IPrediXHook(out.hookProxy).setAdmin(env.hookRuntimeAdmin);
+            // Propose the final hook runtime admin. Rotation is two-step per SPEC_HOOK_V2:
+            // the incoming admin must call `hook.acceptAdmin()` in a follow-up tx.
+            if (env.hookRuntimeAdmin != env.deployer) {
+                IPrediXHook(out.hookProxy).setAdmin(env.hookRuntimeAdmin);
+            }
+
+            DiamondDeployLib.transferGovernance(out.diamond, env.deployer, env.multisig, out.timelock);
         }
-
-        DiamondDeployLib.transferGovernance(out.diamond, env.deployer, env.multisig, out.timelock);
 
         vm.stopBroadcast();
 
-        DiamondDeployLib.verifyPostDeploy(out.diamond, out.facets, env.multisig, out.timelock);
+        if (env.finalizeGovernance) {
+            DiamondDeployLib.verifyPostDeploy(out.diamond, out.facets, env.multisig, out.timelock);
+        }
         _logSummary(env, out);
     }
 
@@ -192,6 +199,7 @@ contract DeployAll is Script {
         e.defaultRedemptionFeeBps = vm.envUint("DEFAULT_REDEMPTION_FEE_BPS");
         e.lpFeeFlag = uint24(vm.envUint("LP_FEE_FLAG"));
         e.tickSpacing = int24(vm.envInt("TICK_SPACING"));
+        e.finalizeGovernance = vm.envOr("DIAMOND_FINALIZE_GOVERNANCE", false);
 
         if (e.chainlinkEnabled) {
             e.registrar = vm.envAddress("REGISTRAR_ADDRESS");
@@ -220,15 +228,19 @@ contract DeployAll is Script {
         // the last two calls on each oracle. Mirrors `DiamondDeployLib.transferGovernance`.
         ManualOracle manualOracle = new ManualOracle(env.deployer, diamond);
         manualOracle.grantRole(manualOracle.REPORTER_ROLE(), env.reporter);
-        manualOracle.grantRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
-        manualOracle.renounceRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
+        if (env.finalizeGovernance) {
+            manualOracle.grantRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
+            manualOracle.renounceRole(manualOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
+        }
         manualAddr = address(manualOracle);
 
         if (env.chainlinkEnabled) {
             ChainlinkOracle chainlinkOracle = new ChainlinkOracle(env.deployer, env.chainlinkSequencerFeed, diamond);
             chainlinkOracle.grantRole(chainlinkOracle.REGISTRAR_ROLE(), env.registrar);
-            chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
-            chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
+            if (env.finalizeGovernance) {
+                chainlinkOracle.grantRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.multisig);
+                chainlinkOracle.renounceRole(chainlinkOracle.DEFAULT_ADMIN_ROLE(), env.deployer);
+            }
             chainlinkAddr = address(chainlinkOracle);
         }
     }
