@@ -81,6 +81,32 @@ contract PrediXRouter_BuyYes is RouterFixture {
         assertEq(yes1.balanceOf(alice), 1_000_000e6 + 192e6);
     }
 
+    function test_HappyPath_ClobNearExact_AmmDustYieldsZero() public {
+        // CLOB nearly consumes the input, leaving 1 wei USDC remainder (common outcome of
+        // rounding at each price level). AMM receives 1 wei and returns 0 YES because the
+        // dynamic hook fee eats the sliver — pool settles the 1 wei, yesDelta == 0.
+        // Router must accept the AMM dust leg as zero and ship the CLOB fill, not revert.
+        uint256 usdcIn = 100e6;
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 199e6, usdcIn - 1);
+        if (address(usdc) < address(yes1)) {
+            poolManager.queueSwapResult(-int128(1), int128(0));
+        } else {
+            poolManager.queueSwapResult(int128(0), -int128(1));
+        }
+
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+
+        assertEq(clobFilled, 199e6, "clobFilled");
+        assertEq(ammFilled, 0, "ammFilled dust zero");
+        assertEq(yesOut, 199e6, "yesOut = clob only");
+        assertEq(yes1.balanceOf(alice), 1_000_000e6 + 199e6, "alice yes");
+        assertEq(usdc.balanceOf(address(router)), 0, "router usdc zero");
+        assertEq(yes1.balanceOf(address(router)), 0, "router yes zero");
+    }
+
     function test_HappyPath_RecipientDifferentFromCaller() public {
         uint256 usdcIn = 100e6;
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 150e6, usdcIn);

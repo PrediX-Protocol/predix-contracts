@@ -60,6 +60,30 @@ contract PrediXRouter_SellYes is RouterFixture {
         assertEq(usdcOut, 57e6);
     }
 
+    function test_HappyPath_ClobNearExact_AmmDustYieldsZero() public {
+        // Symmetric to BuyYes dust test: CLOB nearly consumes the YES input, leaving 1 wei
+        // YES dust. AMM swap returns 0 USDC because the fee eats the sliver (usdcDelta == 0).
+        // Router must accept the AMM dust leg as zero and ship the CLOB USDC proceeds.
+        uint256 yesIn = 100e6;
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_YES, 55e6, yesIn - 1);
+        if (address(yes1) < address(usdc)) {
+            poolManager.queueSwapResult(-int128(1), int128(0));
+        } else {
+            poolManager.queueSwapResult(int128(0), -int128(1));
+        }
+
+        _approveYesAsAlice(yesIn);
+        vm.prank(alice);
+        (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
+            router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline());
+
+        assertEq(clobFilled, 55e6, "clobFilled");
+        assertEq(ammFilled, 0, "ammFilled dust zero");
+        assertEq(usdcOut, 55e6, "usdcOut = clob only");
+        assertEq(usdc.balanceOf(address(router)), 0, "router usdc zero");
+        assertEq(yes1.balanceOf(address(router)), 0, "router yes zero");
+    }
+
     function test_HappyPath_RecipientDifferentFromCaller() public {
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_YES, 60e6, 100e6);
         _approveYesAsAlice(100e6);

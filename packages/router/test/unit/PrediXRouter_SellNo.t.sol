@@ -63,12 +63,34 @@ contract PrediXRouter_SellNo is RouterFixture {
         router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
     }
 
-    function test_Revert_SellNo_NoLiquidity() public {
-        quoter.setExactOutResult(200e6); // cost quote > noIn → insufficient liquidity
+    function test_Revert_SellNo_ExactInUnfilled_NoLiquidity() public {
+        // Quoter returns a cost ≥ noIn → virtual-NO leg is unprofitable and
+        // _executeAmmSellNo returns 0 instead of reverting. With no CLOB fill either,
+        // the outer waterfall reports ExactInUnfilled.
+        quoter.setExactOutResult(200e6);
         _approveNoAsAlice(100e6);
         vm.prank(alice);
-        vm.expectRevert(IPrediXRouter.InsufficientLiquidity.selector);
+        vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, 100e6));
         router.sellNo(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+    }
+
+    function test_HappyPath_SellNo_ClobMostly_AmmDustSkipped() public {
+        // CLOB consumes 99 of 100 NO, yielding 55 USDC. On the 1 wei NO remainder the
+        // quoter returns a cost ≥ noIn → virtual-NO leg skipped. Final fill = CLOB only.
+        uint256 noIn = 100e6;
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_NO, 55e6, noIn - 1);
+        quoter.setExactOutResult(200e6);
+
+        _approveNoAsAlice(noIn);
+        vm.prank(alice);
+        (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
+            router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+
+        assertEq(clobFilled, 55e6, "clobFilled");
+        assertEq(ammFilled, 0, "ammFilled dust skipped");
+        assertEq(usdcOut, 55e6, "usdcOut = clob only");
+        assertEq(usdc.balanceOf(address(router)), 0, "router usdc zero");
+        assertEq(no1.balanceOf(address(router)), 0, "router no zero");
     }
 
     function test_Revert_ZeroAmount() public {

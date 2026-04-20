@@ -342,7 +342,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         uint256 clobLimit = _clobSellYesLimit(yesToken);
         uint256 sharesFilled;
-        (sharesFilled, clobPortion) = IPrediXExchangeView(exchange)
+        // previewFillMarketOrder returns (filled, cost) where filled = output
+        // denomination delivered to taker and cost = input denomination consumed
+        // from taker. For SELL_YES: filled = USDC out, cost = YES in.
+        (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills);
 
         uint256 yesLeft = yesIn - sharesFilled;
@@ -390,7 +393,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         uint256 clobLimit = _clobSellNoLimit(yesToken);
         uint256 sharesFilled;
-        (sharesFilled, clobPortion) = IPrediXExchangeView(exchange)
+        // SELL_NO: filled = USDC out, cost = NO in (side-dependent tuple).
+        (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills);
 
         uint256 noLeft = noIn - sharesFilled;
@@ -571,6 +575,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
     /// @notice Callback body for the `BUY_YES` AMM flow. Executes an exact-in USDC → YES swap
     ///         and settles both legs via the v4 flash-accounting pattern.
+    /// @dev Dust tolerance: when the CLOB waterfall leaves sub-fee USDC (e.g. 1 wei after a
+    ///      near-exact match), the swap returns `yesDelta == 0` because the dynamic hook fee
+    ///      consumes the entire input. That is not a liquidity failure — the aggregate fill is
+    ///      satisfied by the CLOB leg. Settle the owed USDC (pool has already taken it) and
+    ///      return 0 so `_buyYesExecute` can enforce `minOut` / non-zero total on the combined
+    ///      CLOB + AMM result rather than reverting here on a negligible remainder.
     function _callbackBuyYes(AmmCtx memory ctx) internal returns (uint256 yesOut) {
         bool zeroForOne = usdc < ctx.yesToken; // USDC → YES if USDC is currency0.
         BalanceDelta delta = poolManager.swap(
@@ -585,7 +595,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         int128 usdcDelta = zeroForOne ? delta.amount0() : delta.amount1();
         int128 yesDelta = zeroForOne ? delta.amount1() : delta.amount0();
-        if (yesDelta <= 0) revert InsufficientLiquidity();
+
+        if (yesDelta == 0) {
+            if (usdcDelta < 0) _settleToken(usdc, uint256(uint128(-usdcDelta)));
+            return 0;
+        }
+        if (yesDelta < 0) revert InsufficientLiquidity();
 
         _settleToken(usdc, uint256(uint128(-usdcDelta)));
         yesOut = uint256(uint128(yesDelta));
@@ -635,6 +650,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @notice Callback body for `SELL_YES`: swap exact-in YES → USDC, settle YES debt, take USDC.
+    /// @dev Symmetric dust tolerance to `_callbackBuyYes` — YES dust from a near-exact CLOB
+    ///      fill yields `usdcDelta == 0` under dynamic fee. Settle the owed YES (pool took it)
+    ///      and return 0 instead of reverting, leaving `_sellYesExecute` to check aggregate
+    ///      minOut / non-zero total.
     function _callbackSellYes(AmmCtx memory ctx) internal returns (uint256 usdcOut) {
         bool zeroForOne = ctx.yesToken < usdc; // YES → USDC if YES is currency0.
         BalanceDelta delta = poolManager.swap(
@@ -649,7 +668,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         int128 yesDelta = zeroForOne ? delta.amount0() : delta.amount1();
         int128 usdcDelta = zeroForOne ? delta.amount1() : delta.amount0();
-        if (usdcDelta <= 0) revert InsufficientLiquidity();
+
+        if (usdcDelta == 0) {
+            if (yesDelta < 0) _settleToken(ctx.yesToken, uint256(uint128(-yesDelta)));
+            return 0;
+        }
+        if (usdcDelta < 0) revert InsufficientLiquidity();
 
         _settleToken(ctx.yesToken, uint256(uint128(-yesDelta)));
         usdcOut = uint256(uint128(usdcDelta));
@@ -666,7 +690,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         returns (uint256 noOut)
     {
         uint256 mintAmount = _computeBuyNoMintAmount(yesToken, usdcIn);
-        if (mintAmount == 0) revert InsufficientLiquidity();
+        // Dust: when `usdcIn` is the CLOB-waterfall remainder and rounds `mintAmount` to zero
+        // (or the pool has no liquidity), skip the AMM leg instead of reverting so the outer
+        // caller can ship the CLOB-only fill.
+        if (mintAmount == 0) return 0;
 
         _enforcePerMarketCap(marketId, mintAmount);
 
@@ -685,6 +712,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Callback body for `BUY_NO`. Router enters holding `usdcIn` USDC. It swaps
     ///         `mintAmount` YES → USDC (flash), takes the USDC proceeds, splits the combined
     ///         balance into `mintAmount` YES + NO, settles the borrowed YES, keeps the NO.
+    /// @dev Dust tolerance: for sub-fee `mintAmount`, the flash-sell can yield `usdcDelta == 0`
+    ///      (fee eats the sliver). We still proceed to `splitPosition` — the original `usdcIn`
+    ///      may be enough to fund the mint. The `balanceOf < mintAmount` check below is the
+    ///      real gate: if the CLOB remainder cannot cover `mintAmount`, it reverts with
+    ///      `QuoteOutsideSafetyMargin`. Only reject on direction-inversion deltas.
     function _callbackBuyNo(AmmCtx memory ctx) internal returns (uint256 noOut) {
         uint256 mintAmount = ctx.amountIn;
         bool zeroForOne = ctx.yesToken < usdc;
@@ -700,7 +732,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         int128 yesDelta = zeroForOne ? delta.amount0() : delta.amount1();
         int128 usdcDelta = zeroForOne ? delta.amount1() : delta.amount0();
-        if (usdcDelta <= 0 || yesDelta >= 0) revert InsufficientLiquidity();
+        if (usdcDelta < 0 || yesDelta >= 0) revert InsufficientLiquidity();
 
         uint256 proceeds = uint256(uint128(usdcDelta));
         _takeToken(usdc, proceeds);
@@ -722,7 +754,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         returns (uint256 usdcOut)
     {
         uint256 maxCost = _computeSellNoMaxCost(yesToken, noIn);
-        if (maxCost >= noIn) revert InsufficientLiquidity();
+        // Virtual-NO sell is only profitable when flash-buying `noIn` YES costs strictly less
+        // than the `noIn` NO being merged. Dust remainders from a CLOB partial fill, or pool
+        // states skewed towards high YES price, fail this test — skip the AMM leg instead of
+        // reverting so the outer caller can ship the CLOB-only fill.
+        if (maxCost >= noIn) return 0;
 
         PoolKey memory key = _buildPoolKey(yesToken);
         PoolId poolId = key.toId();
@@ -844,23 +880,25 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return _complementPrice(yesBuy);
     }
 
-    /// @notice Compute `mintAmount` for `buyNo` using the spot-price identity and 3% margin.
-    /// @dev Quotes `1e6 USDC -> YES` once to derive the YES spot price, then the binary NO
-    ///      identity gives `mintAmount = usdcIn / noPriceSpot * margin`.
+    /// @notice Compute `mintAmount` for `buyNo` using the sell-direction spot price and 3% margin.
+    /// @dev The callback flash-SELLS `mintAmount` YES (USDC ← YES), so the economic identity
+    ///      must use the fee-adjusted SELL-direction spot: `usdcPerYesSell` already bakes the
+    ///      hook's dynamic fee into the proceeds a seller receives. The buy-direction spot
+    ///      (USDC → YES) has the fee applied on the opposite side and returns an inflated YES
+    ///      price — using it would over-estimate `mintAmount` by `fee / (1 - fee)`, leaking the
+    ///      balance check at `_callbackBuyNo` with `QuoteOutsideSafetyMargin`.
+    ///
+    ///      User net spend = `mintAmount - proceeds = mintAmount - mintAmount × usdcPerYesSell
+    ///      = mintAmount × (1 - usdcPerYesSell)`. Solving for mintAmount with budget = usdcIn:
+    ///          mintAmount = usdcIn / (1 - usdcPerYesSell)
+    ///      The 3% margin absorbs additional price impact between the spot-size quoter probe
+    ///      and the actual swap size in the callback.
     function _computeBuyNoMintAmount(address yesToken, uint256 usdcIn) internal returns (uint256 mintAmount) {
-        _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(PRICE_PRECISION), hookData: ""
-        });
-        (uint256 yesPerUsdcUnit,) = quoter.quoteExactInputSingle(params);
-        if (yesPerUsdcUnit == 0) return 0;
+        uint256 usdcPerYesSell = _ammSpotPriceForSell(yesToken);
+        if (usdcPerYesSell == 0 || usdcPerYesSell >= PRICE_PRECISION) return 0;
 
-        uint256 yesPriceSpot = (PRICE_PRECISION * PRICE_PRECISION) / yesPerUsdcUnit;
-        if (yesPriceSpot >= PRICE_PRECISION) return 0;
-
-        uint256 noPriceSpot = PRICE_PRECISION - yesPriceSpot;
-        uint256 targetNo = (usdcIn * PRICE_PRECISION) / noPriceSpot;
+        uint256 effectiveNoPrice = PRICE_PRECISION - usdcPerYesSell;
+        uint256 targetNo = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
         mintAmount = (targetNo * VIRTUAL_SAFETY_MARGIN_BPS) / BPS_DENOMINATOR;
     }
 

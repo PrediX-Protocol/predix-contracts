@@ -35,8 +35,12 @@ contract PrediXRouter_Quotes is RouterFixture {
     }
 
     function test_QuoteSellYes_ClobAndAmm() public {
-        // Mock: 30 shares filled, delivering 60 USDC (cost field is USDC out on sell paths).
-        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_YES, 30e6, 60e6);
+        // previewFillMarketOrder returns (filled, cost): filled = output delivered
+        // to taker, cost = input consumed. For SELL_YES: filled = USDC out,
+        // cost = YES in. Setup reflects real Exchange convention per Views.sol
+        // L61-L87; prior test used the inverted order which masked a Router
+        // tuple-binding bug caught on-chain 2026-04-20.
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_YES, 60e6, 30e6);
         quoter.setExactInResult(18e6);
         (uint256 total, uint256 clob, uint256 amm) = router.quoteSellYes(MARKET_ID, 100e6, 5);
         assertEq(clob, 60e6);
@@ -44,9 +48,25 @@ contract PrediXRouter_Quotes is RouterFixture {
         assertEq(total, 78e6);
     }
 
+    function test_QuoteSellNo_ClobAndAmm() public {
+        // SELL_NO: filled = USDC out, cost = NO in. Coverage for quoteSellNo
+        // CLOB+AMM composition under the fixed tuple binding.
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_NO, 40e6, 50e6);
+        quoter.setExactOutResult(30e6);
+        (uint256 total, uint256 clob, uint256 amm) = router.quoteSellNo(MARKET_ID, 100e6, 5);
+        // noIn=100, cost(sharesFilled)=50 → noLeft = 50.
+        // maxCost = 30e6 * 10000/9700 ≈ 30_927_835 → amm = 50_000_000 - 30_927_835 = 19_072_165
+        assertEq(clob, 40e6);
+        uint256 expectedMax = (uint256(30e6) * 10_000) / 9_700;
+        assertEq(amm, 50e6 - expectedMax);
+        assertEq(total, clob + amm);
+    }
+
     function test_QuoteBuyNo_AmmOnly() public {
-        // No CLOB, Quoter spot 0.5 → noPriceSpot 0.5 → target 80e6 → mintAmount 77.6e6
-        quoter.setExactInResult(2e6); // yesPerUsdcUnit = 2e6 → price 0.5
+        // No CLOB. Quoter SELL-direction spot 0.5 USDC/YES → effectiveNoPrice 0.5 →
+        // target 80e6 → mintAmount 77.6e6. `_computeBuyNoMintAmount` probes SELL because
+        // `_callbackBuyNo` flash-SELLS YES; buy-direction sizing would leak safety margin.
+        quoter.setExactInResult(500_000); // usdcPerYesSell = 500k → price 0.5
         (uint256 total, uint256 clob, uint256 amm) = router.quoteBuyNo(MARKET_ID, 40e6, 5);
         assertEq(clob, 0);
         assertEq(amm, 77_600_000);
