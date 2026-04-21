@@ -201,17 +201,19 @@ cd packages/diamond && forge test -vv
 
 ## 7. Test suite
 
+Default `make test` (unit + fuzz + invariant + integration; **no RPC required**):
+
 | Package | Tests | Focus |
 |---|---|---|
-| `shared` | **31** | OutcomeToken ERC20/Permit primitives, transient-storage reentrancy guard, USDC + Permit2 behaviour forks |
+| `shared` | **11** | OutcomeToken ERC20/Permit primitives, transient-storage reentrancy guard |
 | `oracle` | **76** | Manual + Chainlink adapters, sequencer uptime, round-phase pinning, diamond binding |
-| `diamond` | **272 pass, 5 skipped** | Full lifecycle, access control, module pause, cut-timelock, event coordinator, 4 critical invariants, 7 repro regression locks |
+| `diamond` | **272 pass, 5 skipped** | Full lifecycle, access control, module pause, cut-timelock, event coordinator, 4 critical invariants, repro regression locks |
 | `hook` | **137** | Dynamic fee, identity commit, sandwich detection, permissionless pool binding, proxy upgrade timelock, 2-step admin rotation |
 | `exchange` | **101** | CLOB matching (complementary + synthetic mint/merge), dust filter, 4 strict solvency invariants at 128k ops per run, preview/execute parity |
 | `router` | **74** | Permit2 exact-amount path, CLOB + AMM aggregation, virtual-NO flash-sell path, non-custody invariant |
-| **Total** | **691** | |
+| **Total** | **671 pass / 0 fail / 5 skipped** | |
 
-Fork tests (shared, oracle, diamond, exchange, router) are segregated under `test/fork/*` and require live Unichain Sepolia RPC — run via `make test-fork` with env set per [FORK_TESTS.md](FORK_TESTS.md).
+Fork tests — **+20 tests** in `test/fork/*` across `shared`, `oracle`, `diamond`, `exchange`, `router` — require live Unichain Sepolia RPC and run via `make test-fork` with env set per [FORK_TESTS.md](FORK_TESTS.md). Combined coverage with fork suite enabled: **~691 tests passing**.
 
 ### Critical invariants
 
@@ -225,7 +227,15 @@ Fork tests (shared, oracle, diamond, exchange, router) are segregated under `tes
 | INV-6 | Router non-custody: `balanceOf(router) == 0` post-call | enforced in-contract via `_finalizeAndAssertAllZero`, exercised by router unit + fork tests |
 | INV-7 | Event coordinator: all children share `endTime`; resolved event has exactly one winner | `diamond/test/invariant/EventInvariant.t.sol` |
 
-Ghost-based regression locks for every verified internal-review finding live under `packages/*/test/repro/` (F-D-01..03, FINAL-H02..H11, NEW-01..M8, E-01..02, H-H01..H03). Regressions that reintroduce a fixed bug fail the corresponding repro test.
+**Regression locks** for every verified internal-review finding live under `packages/*/test/repro/` — 20 files total, each named after its finding ID:
+
+- `FinalC01` (asymmetric-burn refund)
+- `FinalH01`..`FinalH11` (create-fee, cut-timelock, sweep-unclaimed, retroactive-fee, oracle-check, MEV-window, register-hardening, two-step admin, report-before-end, initialize price-window)
+- `F_D_01`..`F_D_03` (CUT_EXECUTOR self-admin, Chainlink phase-boundary, resolve-after-oracle-revoke)
+- `H_H01`..`H_H02` (hook refund-mode guard, trusted-router timelock)
+- `NEW_02`, `NEW_M6`, `NEW_M8` (Chainlink diamond-binding, commit-identity self-check, sequencer-round-invalid)
+
+Each repro test fails on the pre-fix code and passes on the post-fix code; regressions that reintroduce a fixed bug fail the corresponding test.
 
 ---
 
@@ -242,12 +252,12 @@ Comprehensive internal audit across all six packages is complete. Findings and r
 
 | Severity | Open | Fixed |
 |---|---:|---:|
-| Critical | 0 | 1 (FINAL-C01) |
-| High | 0 | 11 (FINAL-H01..H11, NEW-01 / F-D-01, H-H01..H03) |
-| Medium | 2 | ~15 (NEW-M5, NEW-M6, NEW-M8, F-D-02..03, E-01..02, etc.) |
+| Critical | 0 | 1 (`FinalC01`) |
+| High | 0 | 11 (`FinalH01`..`FinalH11`, `F_D_01` / NEW-01, `H_H01`..`H_H02`) |
+| Medium | 2 | ≥ 10 (`NEW_02`, `NEW_M6`, `NEW_M8`, `F_D_02`..`F_D_03`, `E-01`, `E-02`, NEW-03 timelock floor, NEW-M5 Permit2 exact-amount, etc.) |
 | Low / Info | documented | — |
 
-The two remaining Mediums (NEW-M4 permissionless-register fee/tickSpacing validation; NEW-M7 virtual-NO execution-vs-quote front-run griefing) are scoped for external-audit review.
+The two remaining Mediums — **NEW-M4** (permissionless `registerMarketPool` lacks `(fee, tickSpacing)` validation against router canonicals; griefs pool binding, no direct user-fund loss) and **NEW-M7** (virtual-NO flash-sell margin bounds the *quote* but not the on-chain execution; front-run can revert the user's tx without stealing funds) — are scoped for external-audit review.
 
 ### Live smoke
 
