@@ -1,8 +1,8 @@
 # PrediX V2
 
-**The first prediction market protocol built natively on Uniswap v4.**
+**A prediction market protocol where a Uniswap v4 AMM and an on-chain CLOB share the same liquidity — aggregated atomically.**
 
-PrediX lets anyone create a market on any future event, backed by USDC, traded with the depth of a Uniswap AMM and the precision of a central limit order book — aggregated in a single click. Live on Unichain Sepolia since 2026-04-17. Mainnet gated on external audit sign-off.
+PrediX lets anyone create a market on any future event, backed by USDC, traded with the depth of a Uniswap AMM and the precision of a central limit order book — routed in a single transaction. Live on Unichain Sepolia since 2026-04-17. Mainnet gated on external audit sign-off.
 
 ---
 
@@ -12,17 +12,18 @@ Prediction markets are the purest price-discovery mechanism humans have ever bui
 
 PrediX fixes all three.
 
-| | PrediX V2 | Polymarket | Augur V2 |
-|---|---|---|---|
-| **Liquidity venue** | Hybrid CLOB **+** Uniswap v4 AMM, router-aggregated | CLOB only (off-chain match) | Single AMM |
-| **Outcome tokens** | ERC-20 YES/NO (composable) | ERC-1155 Conditional Tokens | ERC-20 shares |
-| **Oracle** | Pluggable: manual + Chainlink (round-pinned, MEV-resistant) | UMA optimistic (dispute-based, ~2h latency) | REP dispute |
-| **Fee model** | Time-decaying dynamic fee (protects LPs from expiring-market toxic flow) | Flat 2% on winners | Flat |
-| **Anti-MEV** | Transient-storage identity commit + sandwich detector in the hook | Off-chain sequencer | None |
-| **Architecture** | EIP-2535 Diamond + ERC1967 proxy (upgradeable, modular) | Monolithic contracts | Monolithic |
-| **Chain** | Unichain (OP Stack L2) | Polygon | Ethereum mainnet |
+| | PrediX V2 | Polymarket (2026) |
+|---|---|---|
+| **Liquidity venue** | Hybrid CLOB **+** Uniswap v4 AMM, router-aggregated atomically | CLOB only, off-chain order matching |
+| **Outcome tokens** | ERC-20 YES/NO (composable with the rest of DeFi) | ERC-1155 Conditional Tokens (Gnosis CTF) |
+| **Oracle** | Pluggable: manual + Chainlink (round-pinned, sequencer-aware, MEV-resistant) | UMA optimistic (dispute-based, challenge-window latency) |
+| **Trading fee** | Time-decaying dynamic fee (50 bps → 500 bps as expiry nears; protects LPs from informed flow) | Taker fee up to ~1.80% at 50¢ price; 0% maker; 0% on sell orders |
+| **Fee on winnings** | Configurable, **snapshotted at market creation** (cannot be raised retroactively), 15% hard cap | 0% on winnings |
+| **Anti-MEV** | EIP-1153 transient-storage identity commit + same-block sandwich detector inside the hook | Off-chain sequencing (not on-chain enforced) |
+| **Architecture** | EIP-2535 Diamond + ERC1967 hook proxy (modular, upgradeable behind 48h timelocks) | Monolithic contracts |
+| **Chain** | Unichain (OP Stack L2) | Polygon |
 
-Composable YES/NO tokens are the unlock. A bet on "Will BTC close above $200k by EOY?" is now an ERC-20 you can **lend, stake, collateralize, or hedge against** — exactly like any other token. That's impossible with conditional-token wrappers.
+Composable YES/NO tokens are the unlock. A bet on "Will BTC close above $200k by EOY?" is now an ERC-20 you can **lend, stake, collateralise, or hedge against** — exactly like any other token. That's impossible with conditional-token wrappers, which force every integration to understand an ERC-1155 positionId bitmap.
 
 ---
 
@@ -79,7 +80,7 @@ The `PrediXHookV2` plugs directly into the v4 `PoolManager` and customises three
 - **`afterSwap`** — applies a **time-decaying dynamic fee**: wide near `endTime` (informed flow is expensive for LPs as outcomes crystallise), tight at market creation (bootstrap cheap liquidity). `FeeTiers` ladders through `FEE_NORMAL → FEE_MEDIUM → FEE_HIGH → FEE_VERY_HIGH` as `timeToExpiry` shrinks.
 - **`afterAddLiquidity`** — blocks liquidity provision after a market enters `refundMode` so LPs can't be gamed by last-minute toxic deposits.
 
-Uniswap v4 launched in 2025. PrediX is among the first production protocols built natively on its hook system.
+Uniswap v4 launched on mainnet in January 2025, and its hook system is being exercised by a rapidly growing ecosystem. PrediX is one of the early prediction-market protocols built natively on that system — the hook is not an external plugin sitting next to an AMM, it **is** the AMM's pricing and safety surface.
 
 ### 3. ERC-20 outcome tokens — composable with the entire DeFi stack
 
@@ -193,27 +194,32 @@ cd packages/diamond && forge test -vv
 
 ### Integrate as a consumer
 
-PrediX is designed to be integrated, not wrapped. To route a trade from your own contract or front-end:
+PrediX is designed to be integrated, not wrapped. The router exposes four exact-in trade primitives — `buyYes`, `sellYes`, `buyNo`, `sellNo` — plus Permit2 variants that pull the input token via an off-chain signature instead of a pre-approved allowance. CLOB + AMM routing happens atomically inside each call; the return tuple reports how much came from each venue.
 
 ```solidity
-// Give the router exact-amount Permit2 allowance, then open a position.
-// CLOB + AMM split happens atomically inside `openPosition`.
+// One-signature buy: spend 100 USDC, get at least 230 YES on market 42.
+// Router splits the fill across CLOB and AMM in a single transaction.
 
-IPrediXRouter router = IPrediXRouter(0x6698...7ee0);
+IPrediXRouter router = IPrediXRouter(0x6698253F38F4A4bbBC4A223309B4E560d83D7ee0);
 
-uint256 yesOut = router.openPosition({
+(uint256 yesOut, uint256 clobFilled, uint256 ammFilled) = router.buyYesWithPermit({
     marketId:     42,
-    side:         IPrediXExchange.Side.BUY_YES,
-    amountIn:     100e6,                     // 100 USDC
-    limitPrice:   420_000,                   // 0.42 USDC / YES, slippage bound
-    taker:        msg.sender,
-    permit:       permitSingleSig            // off-chain Permit2 signature
+    usdcIn:       100e6,                     // 100 USDC (6 decimals)
+    minYesOut:    230e6,                     // slippage bound (YES is 6 decimals too)
+    recipient:    msg.sender,
+    maxFills:     5,                         // cap CLOB matches per tx
+    deadline:     block.timestamp + 300,
+    permitSingle: permitData,                // Permit2 PermitSingle struct
+    signature:    permitSig                  // off-chain Permit2 EIP-712 signature
 });
 
 // `yesOut` YES tokens are now held by `msg.sender`, composable with everything.
+// `clobFilled + ammFilled == yesOut`; unused USDC, if any, is refunded (zero-custody).
 ```
 
-Full interface surface lives in [`packages/router/src/interfaces/IPrediXRouter.sol`](packages/router/src/interfaces/IPrediXRouter.sol).
+Non-Permit2 variants (`buyYes`, `sellYes`, `buyNo`, `sellNo`) take the same parameters without the final two permit fields — caller pre-approves the router on the input token. Quote-only views (`quoteBuyYes`, `quoteSellYes`, `quoteBuyNo`, `quoteSellNo`) return `(total, clobPortion, ammPortion)` without executing.
+
+Full interface surface: [`packages/router/src/interfaces/IPrediXRouter.sol`](packages/router/src/interfaces/IPrediXRouter.sol).
 
 ---
 
@@ -289,7 +295,7 @@ PrediX V2 is in pre-mainnet hardening. Issues and pull requests are welcome — 
 ## Links
 
 - **Live deployment**: Unichain Sepolia (chainId 1301) — addresses above
-- **Audit snapshot**: tag [`audit-v3-20260421`](../../releases/tag/audit-v3-20260421)
+- **Audit snapshot**: tag [`audit-v3-20260421`](releases/tag/audit-v3-20260421) (GitHub releases)
 - **Spec**: [`specs/AUDIT_SPEC.md`](specs/AUDIT_SPEC.md)
 - **Fork testing guide**: [`FORK_TESTS.md`](FORK_TESTS.md)
 
