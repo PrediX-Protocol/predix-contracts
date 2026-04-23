@@ -1,0 +1,8 @@
+forge-std/=../../lib/forge-std/src/
+
+@openzeppelin/contracts/=../../lib/uniswap-hooks/lib/v4-core/lib/openzeppelin-contracts/contracts/
+
+@account-abstraction/contracts/=../../lib/account-abstraction/contracts/
+
+@predix/shared/=../shared/src/
+@predix/paymaster/=src/
