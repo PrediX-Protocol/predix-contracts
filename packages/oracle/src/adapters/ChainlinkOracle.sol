@@ -128,6 +128,7 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         // prev hint closes the edge.
         if (prevRoundIdHint >= roundIdHint) revert ChainlinkOracle_InvalidPrevRound();
         if ((prevRoundIdHint >> 64) != (roundIdHint >> 64)) revert ChainlinkOracle_PhaseMismatch();
+        if (prevRoundIdHint + 1 != roundIdHint) revert ChainlinkOracle_NonAdjacentRound();
 
         _checkSequencer();
 

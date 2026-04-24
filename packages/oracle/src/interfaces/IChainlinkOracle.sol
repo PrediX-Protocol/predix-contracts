@@ -132,6 +132,16 @@ interface IChainlinkOracle is IOracle {
     ///         phase boundary or hit round 0 on the proxy.
     error ChainlinkOracle_PhaseMismatch();
 
+    /// @notice FIN-02: reverts when `prevRoundIdHint + 1 != roundIdHint`.
+    ///         The preceding round must be the literal immediate predecessor
+    ///         of `roundIdHint` within the same phase, not just any earlier
+    ///         round. Without this, a caller could skip intermediate rounds
+    ///         — selecting a conveniently old `prevRoundIdHint` whose
+    ///         `updatedAt` happens to sit before `snapshotAt` — and defeat
+    ///         the "first round at or after snapshot" invariant that the
+    ///         timestamp-bracket check relies on.
+    error ChainlinkOracle_NonAdjacentRound();
+
     /// @notice The configured L2 sequencer uptime feed, or `address(0)` on L1 deployments.
     function sequencerUptimeFeed() external view returns (address);
 
