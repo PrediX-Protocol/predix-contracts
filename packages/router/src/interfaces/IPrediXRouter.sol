@@ -119,6 +119,16 @@ interface IPrediXRouter {
     /// @notice Emitted when the router returns unused input to `msg.sender` at the end of a trade.
     event DustRefunded(address indexed recipient, address indexed token, uint256 amount);
 
+    /// @notice H-R1: emitted when the CLOB leg reverted and the router fell back
+    ///         to the AMM route. `reason` is the 4-byte selector of the revert
+    ///         error (or `bytes4(0)` if the revert carried no data). Expected
+    ///         non-bug selectors include the exchange's `ExchangePaused` /
+    ///         `MarketPaused` when that module is temporarily off; any other
+    ///         selector is a signal for ops to investigate. The event turns
+    ///         what was previously a silent catch-all into an observable
+    ///         anomaly stream.
+    event ClobSkipped(uint256 indexed marketId, address indexed recipient, bytes4 reason);
+
     // =========================================================================
     // Exact-in trade primitives
     // =========================================================================

@@ -546,9 +546,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         ) {
             filled = _filled;
             amountInRemaining = amountIn - _cost;
-        } catch {
+        } catch (bytes memory err) {
+            // H-R1: log-and-fallback. Keep the AMM resilience by not re-throwing,
+            // but surface the selector so silent CLOB reverts become observable.
+            // `msg.sender` here is the end user — internal calls preserve it
+            // through the router entry (`buyYes` / `buyNo`).
             filled = 0;
             amountInRemaining = amountIn;
+            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
+            emit ClobSkipped(marketId, msg.sender, sel);
         }
     }
 
@@ -625,9 +631,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         ) {
             filled = _filled;
             amountInRemaining = amountIn - _cost;
-        } catch {
+        } catch (bytes memory err) {
+            // H-R1: mirrors `_tryClobBuy` — see the comment there for rationale.
             filled = 0;
             amountInRemaining = amountIn;
+            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
+            emit ClobSkipped(marketId, msg.sender, sel);
         }
     }
 
