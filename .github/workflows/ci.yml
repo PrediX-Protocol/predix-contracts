@@ -42,9 +42,9 @@ jobs:
         working-directory: packages/${{ matrix.package }}
         run: forge build --sizes
 
-      - name: forge test
+      - name: forge test (skip fork tests — they need UNICHAIN_RPC_PRIMARY)
         working-directory: packages/${{ matrix.package }}
-        run: forge test -vv
+        run: forge test -vv --no-match-path 'test/fork/*'
 
   slither:
     name: Slither (${{ matrix.package }})
