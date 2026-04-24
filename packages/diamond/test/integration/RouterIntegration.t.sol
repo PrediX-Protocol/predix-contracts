@@ -394,13 +394,18 @@ contract RouterIntegrationTest is MarketFixture {
     function test_BuyNo_VirtualPath_FullStack() public {
         (uint256 marketId, address yesToken, address noToken,) = _createMarketWithPool();
 
-        // Quoter sell-direction spot: 1 YES -> 0.50 USDC -> effectiveNoPrice = 0.50.
-        // mintAmount = usdcIn / effectiveNoPrice * 0.97. `_computeBuyNoMintAmount`
-        // probes SELL direction because `_callbackBuyNo` flash-sells YES.
-        quoter.setExactInResult(500_000);
+        // NEW-M7: `_computeBuyNoMintAmount` hits the quoter 3 times in the sell
+        // direction per buyNo — `_clobBuyNoLimit` spot, Pass 1 spot, Pass 2
+        // proceeds at estimatedTarget. No-impact pool: Pass 2 returns linear
+        // proceeds = 80e6 × 0.5 = 40e6. mintAmount = 80e6 × 0.99 = 79_200_000.
+        uint256[] memory sellSeq = new uint256[](3);
+        sellSeq[0] = 500_000;
+        sellSeq[1] = 500_000;
+        sellSeq[2] = 40_000_000;
+        quoter.setExactInSequence(sellSeq);
 
         uint256 usdcIn = 40e6;
-        uint256 mintAmount = (((usdcIn * 1e6) / 500_000) * 9700) / 10_000; // 77_600_000
+        uint256 mintAmount = (((usdcIn * 1e6) / 500_000) * 9900) / 10_000; // 79_200_000
 
         // Pre-stock the diamond so the splitPosition inside the callback can mint.
         // (diamond pulls `mintAmount` USDC from the router during split; router has usdcIn +
@@ -494,14 +499,27 @@ contract IntegrationPoolManager {
     }
 }
 
-/// @dev Minimal IV4Quoter stub. Returns canned exact-in / exact-out quotes. Persistent —
-///      same canned value returned for every call until overridden.
+/// @dev Minimal IV4Quoter stub. Returns canned exact-in / exact-out quotes. Persistent
+///      canned value returned for every call until overridden. FIFO queue via
+///      `setExactInSequence` is consumed first — needed for NEW-M7's two-pass sell
+///      probe, where the same direction must return the spot price on calls 1-2 and
+///      the proceeds at target on call 3.
 contract IntegrationQuoter is IV4Quoter {
     uint256 internal _inOut;
     uint256 internal _outIn;
+    uint256[] internal _inQueue;
+    uint256 internal _inQueueIdx;
 
     function setExactInResult(uint256 v) external {
         _inOut = v;
+    }
+
+    function setExactInSequence(uint256[] memory amounts) external {
+        delete _inQueue;
+        for (uint256 i; i < amounts.length; ++i) {
+            _inQueue.push(amounts[i]);
+        }
+        _inQueueIdx = 0;
     }
 
     function setExactOutResult(uint256 v) external {
@@ -510,11 +528,15 @@ contract IntegrationQuoter is IV4Quoter {
 
     function quoteExactInputSingle(QuoteExactSingleParams memory)
         external
-        view
         override
         returns (uint256 amountOut, uint256 gasEstimate)
     {
-        amountOut = _inOut;
+        if (_inQueueIdx < _inQueue.length) {
+            amountOut = _inQueue[_inQueueIdx];
+            _inQueueIdx += 1;
+        } else {
+            amountOut = _inOut;
+        }
         gasEstimate = 0;
     }
 
