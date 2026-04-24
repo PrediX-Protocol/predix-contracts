@@ -262,6 +262,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function proposeTrustedRouter(address router, bool trusted) external override onlyAdmin {
         if (!_bootstrapped) revert Hook_BootstrapNotComplete();
         if (router == address(0)) revert Hook_ZeroAddress();
+        if (_pendingRouterProposedAt[router] != 0) revert Hook_AlreadyPendingRouter();
         _pendingRouterProposedAt[router] = block.timestamp;
         _pendingRouterState[router] = trusted;
         emit Hook_TrustedRouterProposed(router, trusted, block.timestamp + TRUSTED_ROUTER_DELAY);

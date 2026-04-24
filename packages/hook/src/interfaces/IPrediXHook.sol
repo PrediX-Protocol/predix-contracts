@@ -196,6 +196,12 @@ interface IPrediXHook {
     ///         `TRUSTED_ROUTER_DELAY` has elapsed since the proposal.
     error Hook_TrustedRouterDelayNotElapsed();
 
+    /// @notice FIN-03: reverts when `proposeTrustedRouter` is called while a
+    ///         proposal for the same router is still pending. Admin must
+    ///         cancel the outstanding proposal first; a silent overwrite
+    ///         would let admin reset the 48h timer indefinitely.
+    error Hook_AlreadyPendingRouter();
+
     /// @notice H-H03 / NEW-M6: reverts from `commitSwapIdentityFor` when
     ///         `caller != msg.sender` AND `caller != quoter`. Only two
     ///         cross-slot writes are legitimate — self-commit or the
