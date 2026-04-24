@@ -140,23 +140,8 @@ contract PrediXHookV2Test is Test {
     // Admin functions
     // -----------------------------------------------------------------
 
-    function test_SetDiamond_HappyPath() public {
-        address newDiamond = makeAddr("newDiamond");
-        vm.prank(admin);
-        hook.setDiamond(newDiamond);
-        assertEq(hook.diamond(), newDiamond);
-    }
-
-    function test_Revert_SetDiamond_NotAdmin() public {
-        vm.expectRevert(IPrediXHook.Hook_OnlyAdmin.selector);
-        hook.setDiamond(makeAddr("newDiamond"));
-    }
-
-    function test_Revert_SetDiamond_Zero() public {
-        vm.prank(admin);
-        vm.expectRevert(IPrediXHook.Hook_ZeroAddress.selector);
-        hook.setDiamond(address(0));
-    }
+    // setDiamond single-step removed by F-X-02. Replacement propose/execute/
+    // cancel flow is exercised by `test/repro/FXX02_SetDiamond2Step.t.sol`.
 
     function test_SetAdmin_TwoStep_RotatesAdmin() public {
         address newAdmin = makeAddr("newAdmin");

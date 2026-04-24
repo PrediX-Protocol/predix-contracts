@@ -59,6 +59,15 @@ interface IPrediXHook {
     ///         disabled; trust changes must use the propose/execute flow. (H-H02)
     event Hook_BootstrapCompleted();
 
+    /// @notice Emitted by `proposeDiamond` (F-X-02). `Hook_DiamondUpdated`
+    ///         fires later when `executeDiamondRotation` runs after
+    ///         `DIAMOND_ROTATION_DELAY`.
+    event Hook_DiamondRotationProposed(address indexed diamond, uint256 readyAt);
+
+    /// @notice Emitted when a pending diamond rotation is cancelled before
+    ///         execution. (F-X-02)
+    event Hook_DiamondRotationCancelled(address indexed diamond);
+
     /// @notice Emitted when the diamond registers a new outcome-token / quote-token pool
     ///         with the hook, binding it to `marketId` and freezing the YES/quote ordering.
     event Hook_PoolRegistered(
@@ -202,6 +211,14 @@ interface IPrediXHook {
     ///         would let admin reset the 48h timer indefinitely.
     error Hook_AlreadyPendingRouter();
 
+    /// @notice F-X-02: reverts when `executeDiamondRotation` or
+    ///         `cancelDiamondRotation` is called with no pending proposal.
+    error Hook_NoPendingDiamondChange();
+
+    /// @notice F-X-02: reverts when `executeDiamondRotation` is called
+    ///         before `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
+    error Hook_DiamondDelayNotElapsed();
+
     /// @notice H-H03 / NEW-M6: reverts from `commitSwapIdentityFor` when
     ///         `caller != msg.sender` AND `caller != quoter`. Only two
     ///         cross-slot writes are legitimate — self-commit or the
@@ -218,8 +235,33 @@ interface IPrediXHook {
     ///      `true`. There is intentionally no caller gate here — atomicity is the gate.
     function initialize(address diamond_, address admin_, address quoteToken_) external;
 
-    /// @notice Re-point the hook at a new diamond. Admin-gated, emits `Hook_DiamondUpdated`.
-    function setDiamond(address diamond_) external;
+    /// @notice Propose re-pointing the hook at a new diamond. Admin-gated.
+    ///         Emits `Hook_DiamondRotationProposed`; the rotation applies only
+    ///         after `executeDiamondRotation` is called post
+    ///         `DIAMOND_ROTATION_DELAY`. Replaces the single-step `setDiamond`
+    ///         so a compromised admin cannot instant-redirect market queries
+    ///         to a malicious diamond (F-X-02).
+    /// @dev    Pending storage slots are overwritten by a later propose; there
+    ///         is no pending-exists guard because diamond rotation is a
+    ///         rarely-used ops path and an admin re-evaluating the target
+    ///         address within the delay window is a legitimate case.
+    /// @dev    IMPORTANT — `_poolBinding` and `_marketToPoolId` are NOT
+    ///         auto-cleared on rotation; the ops runbook must re-register
+    ///         markets against the new diamond post-execute.
+    function proposeDiamond(address diamond_) external;
+
+    /// @notice Finalize a pending diamond rotation after the delay has
+    ///         elapsed. Admin-gated. Emits `Hook_DiamondUpdated`.
+    function executeDiamondRotation() external;
+
+    /// @notice Cancel a pending diamond rotation. Admin-gated.
+    function cancelDiamondRotation() external;
+
+    /// @notice View the pending diamond rotation.
+    /// @return pending  Proposed new diamond, `address(0)` if none.
+    /// @return readyAt  Earliest timestamp at which `executeDiamondRotation`
+    ///                  may succeed, zero if no pending change.
+    function pendingDiamond() external view returns (address pending, uint256 readyAt);
 
     /// @notice Propose a new admin. Admin-gated, emits `Hook_AdminChangeProposed`. Per
     ///         FINAL-H09 this only stores the pending address; the rotation is completed

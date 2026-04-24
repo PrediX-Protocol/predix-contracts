@@ -114,10 +114,22 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     mapping(address router => uint256 proposedAt) private _pendingRouterProposedAt;
     mapping(address router => bool trusted) private _pendingRouterState;
 
+    /// @dev F-X-02 append-only storage for the 2-step diamond rotation. Single-
+    ///      step `setDiamond` was removed so a compromised admin cannot instant-
+    ///      redirect market queries to a malicious diamond in one transaction;
+    ///      the 48h delay gives off-chain watchers a window to react.
+    address private _pendingDiamond;
+    uint256 private _pendingDiamondProposedAt;
+
     /// @notice Minimum wait between `proposeTrustedRouter` and
     ///         `executeTrustedRouter`. Matches the diamond/hook-proxy 48h floor
     ///         so governance delays are uniform.
     uint256 public constant TRUSTED_ROUTER_DELAY = 48 hours;
+
+    /// @notice Minimum wait between `proposeDiamond` and
+    ///         `executeDiamondRotation`. Matches the trusted-router / hook-proxy
+    ///         48h floor so governance delays are uniform. (F-X-02)
+    uint256 public constant DIAMOND_ROTATION_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
@@ -210,11 +222,40 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // ---------------------------------------------------------------------
 
     /// @inheritdoc IPrediXHook
-    function setDiamond(address diamond_) external override onlyAdmin {
+    function proposeDiamond(address diamond_) external override onlyAdmin {
         if (diamond_ == address(0)) revert Hook_ZeroAddress();
+        _pendingDiamond = diamond_;
+        _pendingDiamondProposedAt = block.timestamp;
+        emit Hook_DiamondRotationProposed(diamond_, block.timestamp + DIAMOND_ROTATION_DELAY);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function executeDiamondRotation() external override onlyAdmin {
+        address pending = _pendingDiamond;
+        if (pending == address(0)) revert Hook_NoPendingDiamondChange();
+        if (block.timestamp < _pendingDiamondProposedAt + DIAMOND_ROTATION_DELAY) {
+            revert Hook_DiamondDelayNotElapsed();
+        }
         address previous = _diamond;
-        _diamond = diamond_;
-        emit Hook_DiamondUpdated(previous, diamond_);
+        _diamond = pending;
+        delete _pendingDiamond;
+        delete _pendingDiamondProposedAt;
+        emit Hook_DiamondUpdated(previous, pending);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelDiamondRotation() external override onlyAdmin {
+        address cancelled = _pendingDiamond;
+        if (cancelled == address(0)) revert Hook_NoPendingDiamondChange();
+        delete _pendingDiamond;
+        delete _pendingDiamondProposedAt;
+        emit Hook_DiamondRotationCancelled(cancelled);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function pendingDiamond() external view override returns (address pending, uint256 readyAt) {
+        pending = _pendingDiamond;
+        readyAt = pending == address(0) ? 0 : _pendingDiamondProposedAt + DIAMOND_ROTATION_DELAY;
     }
 
     /// @inheritdoc IPrediXHook
