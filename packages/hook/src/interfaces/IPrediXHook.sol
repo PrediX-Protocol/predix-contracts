@@ -219,6 +219,33 @@ interface IPrediXHook {
     ///         before `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
     error Hook_DiamondDelayNotElapsed();
 
+    /// @notice NEW-M4: reverts when the impl constructor is called with
+    ///         `canonicalLpFee_ == 0`. Zero would disable the canonical-key
+    ///         check at registration time.
+    error Hook_InvalidCanonicalFee();
+
+    /// @notice NEW-M4: reverts when the impl constructor is called with
+    ///         `canonicalTickSpacing_ == 0`. Same rationale as
+    ///         `Hook_InvalidCanonicalFee`.
+    error Hook_InvalidCanonicalTickSpacing();
+
+    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
+    ///         `PoolKey` whose `fee` does not match `canonicalLpFee`.
+    ///         Front-run-brick defence.
+    error Hook_NonCanonicalFee();
+
+    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
+    ///         `PoolKey` whose `tickSpacing` does not match
+    ///         `canonicalTickSpacing`. Front-run-brick defence.
+    error Hook_NonCanonicalTickSpacing();
+
+    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
+    ///         `PoolKey` whose `hooks` field does not equal this hook's
+    ///         own address. Prevents registering a pool that routes callbacks
+    ///         to an unrelated contract while holding the canonical marketId
+    ///         binding on this hook.
+    error Hook_WrongHookAddress();
+
     /// @notice H-H03 / NEW-M6: reverts from `commitSwapIdentityFor` when
     ///         `caller != msg.sender` AND `caller != quoter`. Only two
     ///         cross-slot writes are legitimate — self-commit or the

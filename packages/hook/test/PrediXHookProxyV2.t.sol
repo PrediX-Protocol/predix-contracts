@@ -46,7 +46,7 @@ contract PrediXHookProxyV2Test is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         proxy = _deployProxy(address(impl), proxyAdmin, hookAdmin, address(diamond), USDC);
     }
 
@@ -143,7 +143,7 @@ contract PrediXHookProxyV2Test is Test {
     // -----------------------------------------------------------------
 
     function test_ProposeUpgrade_StoresPendingAndReadyAt() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         assertEq(proxy.pendingImplementation(), address(newImpl));
@@ -151,7 +151,7 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_Revert_ProposeUpgrade_NotAdmin() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.expectRevert(IPrediXHookProxy.HookProxy_OnlyAdmin.selector);
         proxy.proposeUpgrade(address(newImpl));
     }
@@ -169,7 +169,7 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_ExecuteUpgrade_AfterTimelockSucceeds() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         vm.warp(block.timestamp + 48 hours);
@@ -181,7 +181,7 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_Revert_ExecuteUpgrade_TooEarly() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         vm.prank(proxyAdmin);
@@ -196,7 +196,7 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_CancelUpgrade_ClearsPending() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         vm.prank(proxyAdmin);
@@ -212,7 +212,7 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_Revert_ExecuteUpgrade_AfterCancel() public {
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         vm.prank(proxyAdmin);
@@ -228,7 +228,7 @@ contract PrediXHookProxyV2Test is Test {
         proxy.setTimelockDuration(72 hours);
         assertEq(proxy.timelockDuration(), 72 hours);
 
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         assertEq(proxy.upgradeReadyAt(), block.timestamp + 72 hours);

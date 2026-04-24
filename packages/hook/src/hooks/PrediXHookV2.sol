@@ -66,6 +66,20 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         require a coordinated router + hook upgrade. (H-H03 / NEW-M6)
     address public immutable quoter;
 
+    /// @notice Canonical LP fee bits every PrediX pool must carry. Matches the
+    ///         Router's `lpFeeFlag` immutable (dynamic-fee sentinel, typically
+    ///         `0x800000`). Enforced at `registerMarketPool` so an attacker
+    ///         cannot front-run a legitimate market registration with a junk
+    ///         fee value and brick the marketId under a non-canonical binding.
+    ///         (NEW-M4)
+    uint24 public immutable canonicalLpFee;
+
+    /// @notice Canonical tick spacing for every PrediX pool. Matches the
+    ///         Router's `tickSpacing` immutable. Enforced at
+    ///         `registerMarketPool` with `canonicalLpFee` to prevent the
+    ///         brick-by-grief attack described in audit §1.2. (NEW-M4)
+    int24 public immutable canonicalTickSpacing;
+
     // ---------------------------------------------------------------------
     // Storage (proxy delegate context)
     // ---------------------------------------------------------------------
@@ -189,10 +203,14 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // Constructor
     // ---------------------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, address quoter_) {
+    constructor(IPoolManager poolManager_, address quoter_, uint24 canonicalLpFee_, int24 canonicalTickSpacing_) {
         if (quoter_ == address(0)) revert Hook_ZeroAddress();
+        if (canonicalLpFee_ == 0) revert Hook_InvalidCanonicalFee();
+        if (canonicalTickSpacing_ == 0) revert Hook_InvalidCanonicalTickSpacing();
         poolManager = poolManager_;
         quoter = quoter_;
+        canonicalLpFee = canonicalLpFee_;
+        canonicalTickSpacing = canonicalTickSpacing_;
         // Defense-in-depth: prevent direct initialization of the bare implementation
         // contract. Only the proxy's delegatecall path (which writes to proxy storage,
         // not impl storage) should run initialize(). Without this guard, an attacker
@@ -338,6 +356,16 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         PoolBinding storage binding = _poolBinding[poolId];
         if (binding.marketId != 0) revert Hook_PoolAlreadyRegistered();
         if (PoolId.unwrap(_marketToPoolId[marketId]) != bytes32(0)) revert Hook_MarketAlreadyHasPool();
+
+        // NEW-M4: canonical PoolKey enforcement. Without this block, an attacker
+        // could front-run the legitimate registration by calling with a junk
+        // fee / tickSpacing / hook address; because `_marketToPoolId[marketId]`
+        // then points at the junk binding, the real deploy cannot overwrite it
+        // and the market is bricked. Enforce that every registered pool carries
+        // the canonical fee, canonical tick spacing, and this hook address.
+        if (key.fee != canonicalLpFee) revert Hook_NonCanonicalFee();
+        if (key.tickSpacing != canonicalTickSpacing) revert Hook_NonCanonicalTickSpacing();
+        if (address(key.hooks) != address(this)) revert Hook_WrongHookAddress();
 
         // Permissionless registration: anyone may call. The security barrier is the
         // validation block below, NOT a caller-address check. The hook requires that

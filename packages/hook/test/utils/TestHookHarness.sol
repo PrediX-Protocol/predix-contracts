@@ -14,7 +14,15 @@ import {PrediXHookV2} from "../../src/hooks/PrediXHookV2.sol";
 ///         helpers as external functions so unit tests can exercise pure logic without
 ///         going through the IHooks dispatchers (which require `msg.sender == poolManager`).
 contract TestHookHarness is PrediXHookV2 {
-    constructor(IPoolManager poolManager_, address quoter_) PrediXHookV2(poolManager_, quoter_) {
+    /// @dev Default canonical pool key parameters used by every fixture that does
+    ///      not exercise the NEW-M4 canonical-key check directly. Matches Router's
+    ///      `lpFeeFlag` (dynamic-fee sentinel) and typical testnet `tickSpacing`.
+    uint24 internal constant _DEFAULT_CANONICAL_LP_FEE = 0x800000;
+    int24 internal constant _DEFAULT_CANONICAL_TICK_SPACING = int24(60);
+
+    constructor(IPoolManager poolManager_, address quoter_)
+        PrediXHookV2(poolManager_, quoter_, _DEFAULT_CANONICAL_LP_FEE, _DEFAULT_CANONICAL_TICK_SPACING)
+    {
         // Reset the defense-in-depth guard that PrediXHookV2's constructor sets.
         // In production the proxy's delegatecall writes to proxy storage (different
         // address) so the impl's `_initialized = true` is irrelevant. In test

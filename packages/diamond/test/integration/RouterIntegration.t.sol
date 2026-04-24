@@ -99,7 +99,7 @@ contract RouterIntegrationTest is MarketFixture {
         permit2 = new IntegrationPermit2();
 
         // Hook impl + salt-mined proxy.
-        hookImpl = new PrediXHookV2(IPoolManager(address(pm)), address(quoter));
+        hookImpl = new PrediXHookV2(IPoolManager(address(pm)), address(quoter), 0x800000, int24(60));
         hookProxy = _deployHookProxy(address(hookImpl));
         hook = IPrediXHook(address(hookProxy));
         pm.setHook(address(hookProxy));

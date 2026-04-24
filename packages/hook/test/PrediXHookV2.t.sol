@@ -113,7 +113,7 @@ contract PrediXHookV2Test is Test {
     ///         because the constructor sets _initialized = true on the impl storage.
     function test_Revert_InitializeImplementationDirectly() public {
         // Deploy a bare PrediXHookV2 (not via proxy, not via TestHookHarness which resets _initialized).
-        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE));
+        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
         vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
         bareImpl.initialize(address(diamond), admin, usdc);
     }
@@ -205,21 +205,25 @@ contract PrediXHookV2Test is Test {
     }
 
     function test_RegisterMarketPool_PermissionlessFromAnyAddress() public {
-        // Fresh market + fresh pool key (unique tickSpacing so the PoolId differs).
+        // Fresh market + fresh YES token so the canonical PoolKey produces a
+        // distinct PoolId from the two pre-registered in setUp. NEW-M4 fixes
+        // fee + tickSpacing at canonical values, so PoolId uniqueness must come
+        // from a different currency pair, not a different tickSpacing.
         uint256 newMarketId = 42;
-        diamond.setMarket(newMarketId, yesLow, noToken, endTime, false, false);
+        address newYes = address(0x10000 - 2);
+        diamond.setMarket(newMarketId, newYes, noToken, endTime, false, false);
         PoolKey memory k = PoolKey({
-            currency0: Currency.wrap(yesLow),
+            currency0: Currency.wrap(newYes),
             currency1: Currency.wrap(usdc),
             fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            tickSpacing: 240,
+            tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         PoolId newPoolId = k.toId();
 
         address randomCaller = makeAddr("randomCaller");
         vm.expectEmit(true, true, false, true);
-        emit IPrediXHook.Hook_PoolRegistered(newMarketId, newPoolId, yesLow, usdc, true);
+        emit IPrediXHook.Hook_PoolRegistered(newMarketId, newPoolId, newYes, usdc, true);
         vm.prank(randomCaller);
         hook.registerMarketPool(newMarketId, k);
 
@@ -231,12 +235,13 @@ contract PrediXHookV2Test is Test {
         // production deploy flow: the router (or its deploy script) is the expected
         // registrar, not the diamond.
         uint256 newMarketId = 43;
-        diamond.setMarket(newMarketId, yesLow, noToken, endTime, false, false);
+        address newYes = address(0x10000 - 3);
+        diamond.setMarket(newMarketId, newYes, noToken, endTime, false, false);
         PoolKey memory k = PoolKey({
-            currency0: Currency.wrap(yesLow),
+            currency0: Currency.wrap(newYes),
             currency1: Currency.wrap(usdc),
             fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            tickSpacing: 300,
+            tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         vm.prank(router);
@@ -253,12 +258,15 @@ contract PrediXHookV2Test is Test {
     /// @notice F9 regression — same marketId cannot register a second pool.
     function test_Revert_RegisterMarketPool_DuplicateMarket() public {
         // MARKET_ID already has key0 registered in setUp. Try registering a
-        // different pool (different tickSpacing) for the same marketId.
+        // different canonical pool (different YES token → different PoolId)
+        // for the same marketId. NEW-M4 locks fee + tickSpacing, so PoolId
+        // uniqueness comes from the currency pair.
+        address altYes = address(0x10000 - 4);
         PoolKey memory k2 = PoolKey({
-            currency0: Currency.wrap(yesLow),
+            currency0: Currency.wrap(altYes),
             currency1: Currency.wrap(usdc),
             fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            tickSpacing: 120,
+            tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         vm.expectRevert(IPrediXHook.Hook_MarketAlreadyHasPool.selector);
@@ -266,11 +274,13 @@ contract PrediXHookV2Test is Test {
     }
 
     function test_Revert_RegisterMarketPool_UnknownMarket() public {
+        // Canonical key targeting a marketId the mock diamond has never seen.
+        address unknownYes = address(0x10000 - 5);
         PoolKey memory k = PoolKey({
-            currency0: Currency.wrap(yesLow),
+            currency0: Currency.wrap(unknownYes),
             currency1: Currency.wrap(usdc),
             fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            tickSpacing: 120,
+            tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         vm.prank(address(diamond));
@@ -279,13 +289,17 @@ contract PrediXHookV2Test is Test {
     }
 
     function test_Revert_RegisterMarketPool_InvalidCurrencies() public {
-        // Set up market 7 with an unrelated YES token
+        // Set up market 7 with `randomYes`. The caller hands in a canonical-
+        // shaped key whose currency0 is `bogusYes` (not market 7's YES, and
+        // not tied to any existing pool — PoolId is fresh). Canonical check
+        // passes, currency check rejects with `Hook_InvalidPoolCurrencies`.
         diamond.setMarket(7, makeAddr("randomYes"), noToken, endTime, false, false);
+        address bogusYes = address(0x10000 - 6);
         PoolKey memory k = PoolKey({
-            currency0: Currency.wrap(yesLow),
+            currency0: Currency.wrap(bogusYes),
             currency1: Currency.wrap(usdc),
             fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            tickSpacing: 200,
+            tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         vm.prank(address(diamond));

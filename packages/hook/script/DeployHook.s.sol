@@ -43,9 +43,14 @@ contract DeployHook is Script {
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
         address quoter = vm.envAddress("V4_QUOTER_ADDRESS");
+        // NEW-M4: canonical pool key params. Same env vars the Router's deploy
+        // script consumes, so (fee, tickSpacing) enforcement on
+        // registerMarketPool is guaranteed to match the Router's own swap path.
+        uint24 canonicalLpFee = uint24(vm.envUint("LP_FEE_FLAG"));
+        int24 canonicalTickSpacing = int24(vm.envInt("TICK_SPACING"));
 
         vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        out = _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter);
+        out = _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing);
         vm.stopBroadcast();
 
         console2.log("PrediXHookV2 (impl):", out.implementation);
@@ -60,9 +65,11 @@ contract DeployHook is Script {
         address hookAdmin,
         address diamond,
         address usdc,
-        address quoter
+        address quoter,
+        uint24 canonicalLpFee,
+        int24 canonicalTickSpacing
     ) external returns (Deployed memory) {
-        return _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter);
+        return _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing);
     }
 
     function _deploy(
@@ -71,9 +78,11 @@ contract DeployHook is Script {
         address hookAdmin,
         address diamond,
         address usdc,
-        address quoter
+        address quoter,
+        uint24 canonicalLpFee,
+        int24 canonicalTickSpacing
     ) internal returns (Deployed memory out) {
-        PrediXHookV2 impl = new PrediXHookV2(poolManager, quoter);
+        PrediXHookV2 impl = new PrediXHookV2(poolManager, quoter, canonicalLpFee, canonicalTickSpacing);
         out.implementation = address(impl);
 
         bytes memory constructorArgs = abi.encode(poolManager, address(impl), proxyAdmin, hookAdmin, diamond, usdc);
