@@ -563,6 +563,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
+        if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
         return IHooks.beforeDonate.selector;
     }
 
