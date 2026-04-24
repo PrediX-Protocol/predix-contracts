@@ -165,18 +165,25 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         assertEq(_usdcBalance(feeRecipient), 5 * ONE_SHARE, "$5 surplus to fee");
     }
 
-    // ============ Phase B MERGE (with surplus to feeRecipient) ============
+    // ============ Phase B MERGE — taker gets price improvement (X1) ============
 
-    function test_PlaceOrder_PhaseB_MergeSurplusFee() public {
+    function test_PlaceOrder_PhaseB_MergeTakerImprovement() public {
+        // X1 (§BACKLOG 2026-04-21): the MERGE path now passes the improvement
+        // to the taker. Alice maker SELL_NO @ 0.40, Bob taker SELL_YES @ 0.55.
+        // Merge proceeds = $100. Maker gets its limit $40. Taker gets the
+        // complement $60 = fillAmt - makerPayout (not its own $55 limit) —
+        // same behaviour as the taker-path fillMarketOrder already exhibits
+        // (see PrediXExchangeTaker.test_fillMarketOrder_syntheticMergeOnly).
+        // Surplus = 0 → no FeeCollected emit in the MERGE path.
         _placeSellNo(alice, 400_000, 100 * ONE_SHARE);
         _giveYesNo(bob, 100 * ONE_SHARE);
 
         vm.prank(bob);
         exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 550_000, 100 * ONE_SHARE);
 
-        assertEq(_usdcBalance(bob), 55 * ONE_SHARE);
-        assertEq(_usdcBalance(alice), 40 * ONE_SHARE);
-        assertEq(_usdcBalance(feeRecipient), 5 * ONE_SHARE, "$5 surplus to fee");
+        assertEq(_usdcBalance(bob), 60 * ONE_SHARE, "taker gets complement $60, not limit $55");
+        assertEq(_usdcBalance(alice), 40 * ONE_SHARE, "maker gets its limit $40");
+        assertEq(_usdcBalance(feeRecipient), 0, "no surplus in MERGE path post-X1");
     }
 
     // ============ cancelOrder happy paths + audit M2 ============

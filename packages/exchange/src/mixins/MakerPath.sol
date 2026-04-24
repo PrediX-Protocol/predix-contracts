@@ -568,9 +568,18 @@ abstract contract MakerPath is ExchangeStorage {
     }
 
     /// @dev Both orders are SELL. Diamond burns YES+NO and returns `fillAmt` USDC.
-    ///      Surplus `(1 - takerPrice - makerPrice) * fillAmt` → `feeRecipient`.
-    ///      `_tryMerge` enforces `takerPrice + makerPrice ≤ PRICE_PRECISION`, so
-    ///      `takerPayout + makerPayout ≤ fillAmt = mergeProceeds` always.
+    ///      BACKLOG 2026-04-21 fix: taker receives the price improvement
+    ///      (`fillAmt - makerPayout`) rather than its own limit; maker always
+    ///      gets its limit. Surplus = 0 by construction — no `FeeCollected`
+    ///      emit in the MERGE path. Aligns with the taker-path synthetic fill
+    ///      (`_executeSyntheticTakerFill`), with the preview
+    ///      (`_previewFillMarketOrder` synthetic branch in `Views.sol`), and
+    ///      with industry CLOB price-improvement convention (Polymarket /
+    ///      Kalshi / Binance / dYdX all pass improvement to the taker).
+    ///      `_tryMerge` enforces `takerPrice + makerPrice ≤ PRICE_PRECISION`,
+    ///      so `makerPayout ≤ fillAmt` and `takerPayout ≥ takerLimit` hold by
+    ///      construction; both are re-asserted with custom-error reverts
+    ///      below for defense-in-depth.
     function _executeMergeFill(
         IPrediXExchange.Order storage taker,
         IPrediXExchange.Order storage maker,
@@ -580,20 +589,18 @@ abstract contract MakerPath is ExchangeStorage {
     ) internal {
         IMarketFacet(diamond).mergePositions(taker.marketId, fillAmt);
 
-        uint256 takerPayout = (fillAmt * takerPrice) / PRICE_PRECISION;
         uint256 makerPayout = (fillAmt * makerPrice) / PRICE_PRECISION;
+        if (makerPayout > fillAmt) revert IPrediXExchange.InsufficientLiquidity();
+        uint256 takerPayout = fillAmt - makerPayout;
+
+        // Sanity: taker receives at least its limit price. `_tryMerge`'s
+        // invariant implies this; the assert protects against a future caller
+        // that skips the invariant check.
+        uint256 takerLimit = (fillAmt * takerPrice) / PRICE_PRECISION;
+        if (takerPayout < takerLimit) revert IPrediXExchange.InsufficientLiquidity();
 
         IERC20(usdc).safeTransfer(taker.owner, takerPayout);
         IERC20(usdc).safeTransfer(maker.owner, makerPayout);
-
-        // Defensive: invariant from `_tryMerge` guarantees this, but a custom revert
-        // beats `assert` (no all-gas burn) if a future caller bypasses the check.
-        if (fillAmt < takerPayout + makerPayout) revert IPrediXExchange.InsufficientLiquidity();
-        uint256 surplus = fillAmt - takerPayout - makerPayout;
-        if (surplus > 0) {
-            IERC20(usdc).safeTransfer(feeRecipient, surplus);
-            emit IPrediXExchange.FeeCollected(taker.marketId, surplus);
-        }
     }
 
     // ============ Helpers ============
