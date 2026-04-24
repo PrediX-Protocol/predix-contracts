@@ -73,6 +73,8 @@ CLAUDE.md
 AGENTS.md
 CURSOR_RULES*.md
 *_prompt.md
+upgrade_v2/
+FINDINGS_DURING_IMPL.md
 
 # ---------- Package-local forge libs (use monorepo lib/ only) ----------
 packages/*/lib/
