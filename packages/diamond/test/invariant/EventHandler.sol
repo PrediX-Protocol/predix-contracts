@@ -22,7 +22,7 @@ contract EventHandler is CommonBase, StdCheats, StdUtils {
     address internal immutable admin;
     uint256 internal immutable eventEndTime;
 
-    address[4] internal users;
+    address[4] public users;
 
     uint256[] public eventIds;
     mapping(uint256 => uint256[]) public eventChildren;

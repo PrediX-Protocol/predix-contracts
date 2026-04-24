@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {IDiamondCut} from "@predix/shared/interfaces/IDiamondCut.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
+import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {MarketFacet} from "@predix/diamond/facets/market/MarketFacet.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
@@ -46,8 +47,14 @@ abstract contract MarketFixture is DiamondFixture {
 
         market = IMarketFacet(address(diamond));
 
-        vm.prank(admin);
+        vm.startPrank(admin);
         market.approveOracle(address(oracle));
+        // SPEC-03: createMarket / createEvent are CREATOR_ROLE-gated. Tests
+        // drive creation from `alice` by convention (see `_createMarket`
+        // below) so the fixture pre-grants the role. Individual tests can
+        // revoke or regrant via `accessControl` to exercise the guard.
+        accessControl.grantRole(Roles.CREATOR_ROLE, alice);
+        vm.stopPrank();
     }
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {

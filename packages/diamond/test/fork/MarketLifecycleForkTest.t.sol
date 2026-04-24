@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDiamondCut} from "@predix/shared/interfaces/IDiamondCut.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
+import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {MarketFacet} from "@predix/diamond/facets/market/MarketFacet.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
@@ -52,8 +53,11 @@ contract MarketLifecycleForkTest is DiamondFixture {
         diamondCut.diamondCut(cuts, address(marketInit), initData);
         market = IMarketFacet(address(diamond));
 
-        vm.prank(admin);
+        vm.startPrank(admin);
         market.approveOracle(address(oracle));
+        // SPEC-03: all fork lifecycle tests drive createMarket from `alice`.
+        accessControl.grantRole(Roles.CREATOR_ROLE, alice);
+        vm.stopPrank();
     }
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {

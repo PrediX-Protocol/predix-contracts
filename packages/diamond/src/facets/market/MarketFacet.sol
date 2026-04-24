@@ -55,6 +55,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         returns (uint256 marketId)
     {
         LibPausable.enforceNotPaused(Modules.MARKET);
+        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Market_NotCreator();
 
         if (bytes(question).length == 0) revert Market_EmptyQuestion();
         if (endTime <= block.timestamp) revert Market_InvalidEndTime();

@@ -4,6 +4,9 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import {IAccessControlFacet} from "@predix/shared/interfaces/IAccessControlFacet.sol";
+import {Roles} from "@predix/shared/constants/Roles.sol";
+
 /// @notice Shared base for Phase 7 end-to-end fork tests.
 /// @dev    Pins to Unichain Sepolia (chainId 1301) at a block taken after the
 ///         Phase 7 deploy + admin rotation. Derived contracts assert behaviour
@@ -78,6 +81,14 @@ abstract contract Phase7ForkBase is Test {
         }
         vm.createSelectFork(rpc, FORK_BLOCK);
         _label();
+
+        // SPEC-03: CREATOR_ROLE is introduced by Bundle A; the pinned fork
+        // block predates the diamondCut that seats MULTISIG as CREATOR_ROLE.
+        // Grant via cheatcode so derived tests' `_createMarket` helpers work.
+        // Remove this block once FORK_BLOCK is advanced past the Bundle A cut
+        // on Unichain Sepolia.
+        vm.prank(MULTISIG);
+        IAccessControlFacet(DIAMOND).grantRole(Roles.CREATOR_ROLE, MULTISIG);
     }
 
     function _label() internal {

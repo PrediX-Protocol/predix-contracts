@@ -131,6 +131,9 @@ interface IMarketFacet {
     /// @notice Reverts when an operation on a child market would bypass the event-level
     ///         mutual-exclusion guarantee. Use the corresponding `IEventFacet` function.
     error Market_PartOfEvent();
+    /// @notice SPEC-03 Phase 1-2: reverts when a non-CREATOR_ROLE caller invokes
+    ///         `createMarket`. Admin can delegate via `AccessControlFacet.grantRole`.
+    error Market_NotCreator();
     /// @notice Reverts when an admin tries to set a redemption fee above
     ///         `MAX_REDEMPTION_FEE_BPS` (15%).
     error Market_FeeTooHigh();

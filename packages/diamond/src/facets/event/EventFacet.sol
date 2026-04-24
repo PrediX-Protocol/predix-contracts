@@ -42,6 +42,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         returns (uint256 eventId, uint256[] memory marketIds)
     {
         LibPausable.enforceNotPaused(Modules.MARKET);
+        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
 
         if (bytes(name).length == 0) revert Event_EmptyName();
         if (endTime <= block.timestamp) revert Event_InvalidEndTime();

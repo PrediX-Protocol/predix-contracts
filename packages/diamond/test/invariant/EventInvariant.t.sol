@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
+import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {EventFixture} from "../utils/EventFixture.sol";
 import {EventHandler} from "./EventHandler.sol";
@@ -18,6 +19,13 @@ contract EventInvariantTest is EventFixture {
         super.setUp();
         eventEndTime = block.timestamp + 365 days;
         handler = new EventHandler(address(diamond), address(usdc), admin, eventEndTime);
+
+        // SPEC-03: handler drives `createEvent` from its `users[0]` identity, so
+        // that address needs CREATOR_ROLE for the fuzzer to make progress.
+        // Read the address first so `vm.prank` is consumed by `grantRole`, not the view.
+        address handlerCreator = handler.users(0);
+        vm.prank(admin);
+        accessControl.grantRole(Roles.CREATOR_ROLE, handlerCreator);
 
         // Seed two events so the invariants have state to walk even if `createEvent`
         // is never selected by the fuzzer.

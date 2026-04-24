@@ -29,4 +29,13 @@ library Roles {
     ///         executors, inheriting the 48h delay. `DEFAULT_ADMIN_ROLE` cannot
     ///         escalate into this role, closing the F-D-01 / NEW-01 bypass path.
     bytes32 internal constant CUT_EXECUTOR_ROLE = keccak256("predix.role.cut_executor");
+
+    /// @notice Market / event creation role. Gates `MarketFacet.createMarket` and
+    ///         `EventFacet.createEvent`. SPEC-03 (Phase 1-2): creation is admin-
+    ///         operated so malformed or malicious markets cannot be onboarded at
+    ///         will. Admin (root admin) can delegate to operators via the standard
+    ///         `AccessControlFacet.grantRole`. Phase 4+ opening creation to the
+    ///         public (gated by a creation bond or other anti-spam mechanism) is
+    ///         future work and out of Bundle A scope.
+    bytes32 internal constant CREATOR_ROLE = keccak256("PREDIX_CREATOR_ROLE");
 }
