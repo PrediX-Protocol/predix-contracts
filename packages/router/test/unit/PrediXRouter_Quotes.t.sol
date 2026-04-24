@@ -63,14 +63,20 @@ contract PrediXRouter_Quotes is RouterFixture {
     }
 
     function test_QuoteBuyNo_AmmOnly() public {
-        // No CLOB. Quoter SELL-direction spot 0.5 USDC/YES → effectiveNoPrice 0.5 →
-        // target 80e6 → mintAmount 77.6e6. `_computeBuyNoMintAmount` probes SELL because
-        // `_callbackBuyNo` flash-SELLS YES; buy-direction sizing would leak safety margin.
-        quoter.setExactInResult(500_000); // usdcPerYesSell = 500k → price 0.5
+        // 3 sell-dir quoter calls during `quoteBuyNo`: clobBuyNoLimit spot,
+        // compute Pass 1 spot, compute Pass 2 proceeds at target 80e6.
+        // No-impact pool → Pass 2 returns 40e6. mintAmount = 80e6 × 0.99 = 79.2e6.
+        bool sellIsZeroForOne = address(yes1) < address(usdc);
+        uint256[] memory sequence = new uint256[](3);
+        sequence[0] = 500_000;
+        sequence[1] = 500_000;
+        sequence[2] = 40_000_000;
+        quoter.setExactInSequence(sellIsZeroForOne, sequence);
+
         (uint256 total, uint256 clob, uint256 amm) = router.quoteBuyNo(MARKET_ID, 40e6, 5);
         assertEq(clob, 0);
-        assertEq(amm, 77_600_000);
-        assertEq(total, 77_600_000);
+        assertEq(amm, 79_200_000);
+        assertEq(total, 79_200_000);
     }
 
     function test_QuoteSellNo_AmmOnly() public {

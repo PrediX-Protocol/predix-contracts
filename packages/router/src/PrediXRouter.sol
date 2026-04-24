@@ -76,6 +76,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         relative to the Quoter's spot-price estimate, absorbing v4 price impact between
     ///         the quote and the actual swap. See spec §6.8.
     uint256 internal constant VIRTUAL_SAFETY_MARGIN_BPS = 9700;
+
+    /// @notice NEW-M7: safety buffer applied to the post-impact mint target
+    ///         computed by the two-pass virtual-NO quote. The first pass
+    ///         extrapolates linearly from spot; the second pass re-quotes at
+    ///         the estimated size and observes the real price-impact. Because
+    ///         the size already reflects actual impact, only a 1% cushion is
+    ///         needed against rounding + minor intra-block drift.
+    uint256 internal constant BUY_NO_POST_IMPACT_MARGIN_BPS = 9900;
+
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
     /// @notice Price precision used by the CLOB and by the AMM fee math (1e6 = 100%).
@@ -903,12 +912,44 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///      The 3% margin absorbs additional price impact between the spot-size quoter probe
     ///      and the actual swap size in the callback.
     function _computeBuyNoMintAmount(address yesToken, uint256 usdcIn) internal returns (uint256 mintAmount) {
+        // Pass 1: spot probe to extrapolate an initial target under a no-
+        // impact assumption. Same as pre-fix behaviour up to this point.
         uint256 usdcPerYesSell = _ammSpotPriceForSell(yesToken);
         if (usdcPerYesSell == 0 || usdcPerYesSell >= PRICE_PRECISION) return 0;
 
         uint256 effectiveNoPrice = PRICE_PRECISION - usdcPerYesSell;
-        uint256 targetNo = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
-        mintAmount = (targetNo * VIRTUAL_SAFETY_MARGIN_BPS) / BPS_DENOMINATOR;
+        uint256 estimatedTarget = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
+
+        // NEW-M7: Pass 2 re-quotes the sell at the estimated target size so
+        // the actual price impact is baked in before committing to the mint.
+        // Without this, a thin pool's linear extrapolation would size the
+        // flash-sell beyond what the pool can absorb; the callback then
+        // reverts `QuoteOutsideSafetyMargin` even when the user's USDC is
+        // sufficient for a smaller but still-fillable order.
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key,
+            // Sell direction: YES in, USDC out. zeroForOne iff YES is currency0.
+            zeroForOne: yesToken < usdc,
+            exactAmount: uint128(estimatedTarget),
+            hookData: ""
+        });
+        (uint256 proceedsAtTarget,) = quoter.quoteExactInputSingle(params);
+
+        // Invariant for the buyNo flash callback: `proceeds + usdcIn >=
+        // estimatedTarget` (user's USDC plus flash-sell proceeds must cover
+        // the mint). If Pass 2 shows the pool cannot absorb the full
+        // estimatedTarget, size down to what is feasible instead of reverting.
+        if (proceedsAtTarget + usdcIn < estimatedTarget) {
+            estimatedTarget = proceedsAtTarget + usdcIn;
+        }
+
+        // Size already reflects actual impact — 1% cushion is enough for
+        // rounding and minor drift. `VIRTUAL_SAFETY_MARGIN_BPS` (3%) stays
+        // unchanged for `_computeSellNoMaxCost` where the margin absorbs a
+        // different error source (exact-out vs exact-in asymmetry).
+        mintAmount = (estimatedTarget * BUY_NO_POST_IMPACT_MARGIN_BPS) / BPS_DENOMINATOR;
     }
 
     /// @notice Compute the USDC cost upper bound for flash-buying `noIn` YES in `sellNo`.

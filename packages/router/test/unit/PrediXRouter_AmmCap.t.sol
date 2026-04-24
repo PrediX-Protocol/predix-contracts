@@ -81,10 +81,17 @@ contract PrediXRouter_AmmCap is RouterFixture {
         uint256 usdcIn = 40e6;
         bool zfoBuyYes = address(usdc) < address(yes1);
         bool zfoSellYes = !zfoBuyYes;
-        quoter.setExactInResult(zfoSellYes, 500_000);
+        // NEW-M7: 3 sell-dir calls per buyNo (clobBuyNoLimit spot + compute
+        // Pass 1 spot + compute Pass 2 proceeds). Buy direction stays
+        // single-shot — used only by `_clobBuyYesLimit` here.
+        uint256[] memory sellSequence = new uint256[](3);
+        sellSequence[0] = 500_000;
+        sellSequence[1] = 500_000;
+        sellSequence[2] = 40_000_000;
+        quoter.setExactInSequence(zfoSellYes, sellSequence);
         quoter.setExactInResult(zfoBuyYes, 2_000_000);
 
-        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9700) / 10_000;
+        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9900) / 10_000;
         uint256 proceeds = expectedMint / 2;
         if (zfoSellYes) {
             poolManager.queueSwapResult(-int128(uint128(expectedMint)), int128(uint128(proceeds)));

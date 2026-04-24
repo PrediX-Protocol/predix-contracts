@@ -261,24 +261,24 @@ contract PrediXRouter_HookCommit_Fork is Test {
     // Virtual-NO AMM spillover — Phase 5 restored compute helpers
     // ─────────────────────────────────────────────────────────────────
 
-    /// @notice BuyNo virtual-NO AMM spillover. The path works mechanically:
-    ///         commitSwapIdentityFor passes, _computeBuyNoMintAmount runs the
-    ///         quoter, and the flash-swap + merge executes. However, on thin test
-    ///         pools the 3% safety margin (`VIRTUAL_SAFETY_MARGIN_BPS = 9700`) may
-    ///         not absorb the round-trip price impact — the quoter quotes at the
-    ///         pre-swap mid-price while the actual flash-swap moves the tick,
-    ///         resulting in `QuoteOutsideSafetyMargin` reverts. The quote path
-    ///         (test_Fork_QuoteBuyNo_EndToEnd) confirms the compute helper and
-    ///         commit gate work; this test documents the thin-pool safety-margin
-    ///         constraint as an expected edge case, not a commit-gate regression.
-    function test_Fork_BuyNo_AmmSpillover_ThinPoolSafetyMargin() public {
+    /// @notice NEW-M7 / T-NEW-03: BuyNo virtual-NO AMM spillover on a
+    ///         concentrated-liquidity pool with a tight tick range (18.7B LP
+    ///         in ±2 tick spacings). Pre-fix this scenario reverted with
+    ///         `QuoteOutsideSafetyMargin` because the linear extrapolation
+    ///         from spot targeted a size the thin CL pool could not absorb.
+    ///         Post-fix the two-pass quote observes the real impact on Pass 2
+    ///         and sizes the mint down to a feasible target, so the trade
+    ///         succeeds instead of reverting.
+    function test_Fork_BuyNo_ConcentratedLiquidity_TightRange_SizeDownSucceeds() public {
+        deal(USDC, alice, 100_000);
         vm.startPrank(alice);
         IERC20(USDC).approve(address(router), type(uint256).max);
-        // On the thin test pool (18.7B LP in ±2 tick spacings), even small
-        // buyNo AMM spillover hits the safety margin. Document as expected revert.
-        vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
-        router.buyNo(MARKET_ID, 100_000, 0, alice, 5, _deadline());
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, 100_000, 0, alice, 5, _deadline());
         vm.stopPrank();
+
+        assertGt(noOut, 0, "NEW-M7 must size down rather than revert on thin CL");
+        assertGt(ammFilled, 0, "AMM leg must produce non-zero NO even with heavy impact");
+        assertEq(IERC20(USDC).balanceOf(address(router)), 0, "router finishes with zero USDC");
     }
 
     function test_Fork_SellNo_AmmSpillover_EndToEnd() public {

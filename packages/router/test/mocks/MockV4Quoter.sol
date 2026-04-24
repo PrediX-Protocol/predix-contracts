@@ -24,12 +24,31 @@ contract MockV4Quoter is IV4Quoter {
     ///      two swap directions within the same call (e.g. CLOB cap derivation for buy/sell).
     mapping(bool => Canned) internal _exactInByDir;
 
+    /// @dev Optional FIFO queue keyed by zeroForOne direction. Each call to
+    ///      `quoteExactInputSingle` consumes the next entry (if any) from the
+    ///      matching direction's queue before falling through to the per-direction
+    ///      override or the global single-shot canned. Used by tests that exercise
+    ///      multi-pass quote paths (NEW-M7 two-pass `_computeBuyNoMintAmount`),
+    ///      where two calls in the same direction must return different values.
+    mapping(bool => uint256[]) internal _queueByDir;
+    mapping(bool => uint256) internal _queueIdxByDir;
+
     function setExactInResult(uint256 amountOut) external {
         _exactIn = Canned({amountOut: amountOut, amountIn: 0, set: true});
     }
 
     function setExactInResult(bool zeroForOne, uint256 amountOut) external {
         _exactInByDir[zeroForOne] = Canned({amountOut: amountOut, amountIn: 0, set: true});
+    }
+
+    /// @notice Queue `amounts` to be returned on successive `quoteExactInputSingle`
+    ///         calls matching `zeroForOne`. Resets the queue pointer.
+    function setExactInSequence(bool zeroForOne, uint256[] memory amounts) external {
+        delete _queueByDir[zeroForOne];
+        for (uint256 i; i < amounts.length; ++i) {
+            _queueByDir[zeroForOne].push(amounts[i]);
+        }
+        _queueIdxByDir[zeroForOne] = 0;
     }
 
     function setExactOutResult(uint256 amountIn) external {
@@ -41,9 +60,16 @@ contract MockV4Quoter is IV4Quoter {
         override
         returns (uint256 amountOut, uint256 gasEstimate)
     {
-        Canned memory c = _exactInByDir[params.zeroForOne];
-        if (!c.set) c = _exactIn;
-        amountOut = c.amountOut;
+        uint256 idx = _queueIdxByDir[params.zeroForOne];
+        uint256[] storage q = _queueByDir[params.zeroForOne];
+        if (idx < q.length) {
+            amountOut = q[idx];
+            _queueIdxByDir[params.zeroForOne] = idx + 1;
+        } else {
+            Canned memory c = _exactInByDir[params.zeroForOne];
+            if (!c.set) c = _exactIn;
+            amountOut = c.amountOut;
+        }
         gasEstimate = 0;
         callCount += 1;
     }
