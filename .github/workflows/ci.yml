@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build + test (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [shared, oracle, diamond, hook, exchange, router, paymaster]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Show forge version
+        run: forge --version
+
+      - name: forge fmt --check
+        working-directory: packages/${{ matrix.package }}
+        run: forge fmt --check
+        continue-on-error: true
+
+      - name: forge build
+        working-directory: packages/${{ matrix.package }}
+        run: forge build --sizes
+
+      - name: forge test
+        working-directory: packages/${{ matrix.package }}
+        run: forge test -vv
+
+  slither:
+    name: Slither (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build-test
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [shared, oracle, diamond, hook, exchange, router, paymaster]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        id: slither
+        continue-on-error: true
+        with:
+          target: packages/${{ matrix.package }}
+          fail-on: none
+          sarif: slither-${{ matrix.package }}.sarif
+
+      - name: Upload Slither SARIF
+        if: always() && steps.slither.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: ${{ steps.slither.outputs.sarif }}
+          category: slither-${{ matrix.package }}

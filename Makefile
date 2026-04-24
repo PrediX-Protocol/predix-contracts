@@ -1,4 +1,4 @@
-PACKAGES := shared oracle diamond hook exchange router
+PACKAGES := shared oracle diamond hook exchange router paymaster
 
 .PHONY: all build test test-fork fmt clean $(PACKAGES)
 
