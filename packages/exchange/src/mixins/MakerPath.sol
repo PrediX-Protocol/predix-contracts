@@ -589,9 +589,10 @@ abstract contract MakerPath is ExchangeStorage {
     ) internal {
         IMarketFacet(diamond).mergePositions(taker.marketId, fillAmt);
 
-        uint256 makerPayout = (fillAmt * makerPrice) / PRICE_PRECISION;
-        if (makerPayout > fillAmt) revert IPrediXExchange.InsufficientLiquidity();
-        uint256 takerPayout = fillAmt - makerPayout;
+        // GAP-C: shared rounding with preview + taker path. `outDelta` is the
+        // taker's USDC share (= `fillAmt - makerShare`) by construction.
+        (, uint256 takerPayout) = MatchMath.computeFillDeltas(makerPrice, fillAmt, false, true);
+        uint256 makerPayout = fillAmt - takerPayout;
 
         // Sanity: taker receives at least its limit price. `_tryMerge`'s
         // invariant implies this; the assert protects against a future caller

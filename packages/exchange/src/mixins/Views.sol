@@ -51,34 +51,12 @@ abstract contract Views is ExchangeStorage {
 
             if (source == FillSource.NONE || fillAmount == 0) break;
 
-            uint256 outDelta;
-            uint256 inDelta;
-
-            if (source == FillSource.COMPLEMENTARY) {
-                uint256 usdcAmount = (fillAmount * makerPrice) / PRICE_PRECISION;
-                // Dust filter parity with `TakerPath._executeComplementaryTakerFill`.
-                if (usdcAmount == 0) break;
-                if (takerIsBuy) {
-                    outDelta = fillAmount;
-                    inDelta = usdcAmount;
-                } else {
-                    outDelta = usdcAmount;
-                    inDelta = fillAmount;
-                }
-            } else {
-                // Synthetic: taker effective price = 1 - makerPrice, zero surplus.
-                uint256 makerShare = (fillAmount * makerPrice) / PRICE_PRECISION;
-                // Dust filter parity with `TakerPath._executeSyntheticTakerFill`.
-                if (makerShare == 0) break;
-                uint256 takerPortion = fillAmount - makerShare;
-                if (takerIsBuy) {
-                    outDelta = fillAmount;
-                    inDelta = takerPortion;
-                } else {
-                    outDelta = takerPortion;
-                    inDelta = fillAmount;
-                }
-            }
+            // GAP-C: preview and execute share `MatchMath.computeFillDeltas`
+            // so their rounding cannot drift. Dust-filter short-circuit:
+            // a zero return collapses the fill into the "break" path that
+            // stops the waterfall, matching the pre-helper behaviour.
+            (uint256 inDelta, uint256 outDelta) =
+                MatchMath.computeFillDeltas(makerPrice, fillAmount, takerIsBuy, source == FillSource.SYNTHETIC);
 
             if (outDelta == 0) break;
 

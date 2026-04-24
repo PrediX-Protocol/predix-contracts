@@ -197,12 +197,13 @@ abstract contract TakerPath is ExchangeStorage {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
-        uint256 usdcAmount = (matchAmount * price) / PRICE_PRECISION;
-        // Dust filter: a per-share price so low that `matchAmount * price`
-        // floors to zero would leak tokens in the refund pathway. Self-skip
-        // before ANY state mutation so `cost` / `filled` stay accurate and
-        // the waterfall loop breaks cleanly on `outDelta == 0`.
-        if (usdcAmount == 0) return (0, 0);
+        // GAP-C: rounding shared with preview via `MatchMath.computeFillDeltas`.
+        // The helper returns `(0, 0)` on dust → self-skip before any state
+        // mutation so `cost` / `filled` stay accurate and the waterfall loop
+        // breaks cleanly on `outDelta == 0`.
+        (inDelta, outDelta) = MatchMath.computeFillDeltas(price, matchAmount, ctx.takerIsBuy, false);
+        if (outDelta == 0) return (0, 0);
+        uint256 usdcAmount = ctx.takerIsBuy ? inDelta : outDelta;
 
         address makerOwner = makerOrder.owner;
         IPrediXExchange.Side makerSide = makerOrder.side;
@@ -216,19 +217,16 @@ abstract contract TakerPath is ExchangeStorage {
         }
         bool fullyFilled = makerOrder.filled >= makerOrder.amount;
 
-        // Interactions: token transfers.
+        // Interactions: token transfers. `inDelta` / `outDelta` are already
+        // set by the helper above; only the tokens move here.
         if (ctx.takerIsBuy) {
             address outToken = ctx.takerSide == IPrediXExchange.Side.BUY_YES ? ctx.yesToken : ctx.noToken;
             IERC20(outToken).safeTransfer(ctx.recipient, matchAmount);
             IERC20(usdc).safeTransfer(makerOwner, usdcAmount);
-            outDelta = matchAmount;
-            inDelta = usdcAmount;
         } else {
             address inToken = ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken;
             IERC20(inToken).safeTransfer(makerOwner, matchAmount);
             IERC20(usdc).safeTransfer(ctx.recipient, usdcAmount);
-            outDelta = usdcAmount;
-            inDelta = matchAmount;
         }
 
         emit IPrediXExchange.OrderMatched(
@@ -263,14 +261,16 @@ abstract contract TakerPath is ExchangeStorage {
         uint8 priceIdx = _priceToIndex(makerOrder.price);
         bool fullyFilled;
 
+        // GAP-C: rounding shared with preview via `MatchMath.computeFillDeltas`.
+        // Same `(inDelta, outDelta)` tuple whether the match is MINT or MERGE;
+        // the only difference is how the proceeds move through the diamond.
+        (inDelta, outDelta) = MatchMath.computeFillDeltas(makerPrice, matchAmount, ctx.takerIsBuy, true);
+        if (outDelta == 0) return (0, 0);
+
         if (ctx.takerIsBuy) {
             // MINT — combined USDC funds `splitPosition`, distribute YES/NO.
-            uint256 makerUsdc = (matchAmount * makerPrice) / PRICE_PRECISION;
-            // Dust filter: zero maker contribution means the maker's
-            // `depositLocked` would not decrement while the split still
-            // pulls `matchAmount` USDC — atomic self-skip.
-            if (makerUsdc == 0) return (0, 0);
-            uint256 takerUsdc = matchAmount - makerUsdc;
+            // `inDelta` = taker's USDC contribution; maker fronts the complement.
+            uint256 makerUsdc = matchAmount - inDelta;
 
             if (makerOrder.depositLocked < makerUsdc) revert IPrediXExchange.InsufficientLiquidity();
 
@@ -289,20 +289,13 @@ abstract contract TakerPath is ExchangeStorage {
             IERC20(takerOut).safeTransfer(ctx.recipient, matchAmount);
             IERC20(makerOut).safeTransfer(makerOwner, matchAmount);
 
-            outDelta = matchAmount;
-            inDelta = takerUsdc;
-
             emit IPrediXExchange.OrderMatched(
                 makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MINT, matchAmount, makerPrice
             );
         } else {
             // MERGE — combined YES+NO funds `mergePositions`, distribute USDC.
-            uint256 makerUsdcShare = (matchAmount * makerPrice) / PRICE_PRECISION;
-            // Dust filter: zero maker share means the maker would receive no
-            // USDC out while still contributing tokens to the merge — atomic
-            // self-skip preserves symmetry with MINT and keeps refund math clean.
-            if (makerUsdcShare == 0) return (0, 0);
-            uint256 takerUsdcShare = matchAmount - makerUsdcShare;
+            // `outDelta` = taker's USDC share; maker gets the complement.
+            uint256 makerUsdcShare = matchAmount - outDelta;
 
             if (makerOrder.depositLocked < matchAmount) revert IPrediXExchange.InsufficientLiquidity();
 
@@ -314,11 +307,8 @@ abstract contract TakerPath is ExchangeStorage {
             // Interactions.
             IMarketFacet(diamond).mergePositions(ctx.marketId, matchAmount);
 
-            IERC20(usdc).safeTransfer(ctx.recipient, takerUsdcShare);
+            IERC20(usdc).safeTransfer(ctx.recipient, outDelta);
             IERC20(usdc).safeTransfer(makerOwner, makerUsdcShare);
-
-            outDelta = takerUsdcShare;
-            inDelta = matchAmount;
 
             emit IPrediXExchange.OrderMatched(
                 makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MERGE, matchAmount, makerPrice

@@ -21,16 +21,13 @@ import {MockDiamond} from "../mocks/MockDiamond.sol";
 ///      execute path consumed `cost=999_999` on identical inputs. The 1-wei skew
 ///      leaked into the Router, where the remainder fell into the AMM leg and
 ///      reverted with `InsufficientLiquidity` after the dynamic fee consumed the
-///      sub-fee input. The Router now tolerates dust (prior session fix) but the
-///      skew itself is a correctness issue — this fuzz is meant to surface the
-///      divergent input space so a root-cause patch can be scoped to the exact
-///      math branch.
+///      sub-fee input.
 ///
-///      Expected to FAIL at call time on the current deploy. Once the math is
-///      aligned between `_previewFillMarketOrder` (Views.sol) and
-///      `_fillMarketOrder` / `_execute{Complementary,Synthetic}TakerFill`
-///      (TakerPath.sol), the invariant flips to PASS and guards against future
-///      drift.
+///      GAP-C fix (§X2, 2026-04-24) routed both preview and execute through the
+///      shared `MatchMath.computeFillDeltas` helper so the rounding is byte-
+///      identical by construction. This fuzz flipped from xfail to
+///      expected-pass at that point; future drift re-introduced by a refactor
+///      that bypasses the helper will trip these assertions immediately.
 contract PreviewExecuteParityTest is Test {
     MockERC20 internal usdc;
     MockDiamond internal diamond;

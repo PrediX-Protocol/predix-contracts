@@ -89,4 +89,46 @@ library MatchMath {
 
         fillAmount = makerCapacity < takerCapacity ? makerCapacity : takerCapacity;
     }
+
+    /// @notice Canonical (inDelta, outDelta) for a single fill. GAP-C fix:
+    ///         both preview (`Views._previewFillMarketOrder`) and execute
+    ///         (`TakerPath._execute{Complementary,Synthetic}TakerFill`,
+    ///         `MakerPath._executeMergeFill`) MUST call this so the rounding
+    ///         is byte-identical and a "preview says X, execute delivers X+1"
+    ///         drift cannot re-emerge.
+    /// @dev    A `(0, 0)` return is the canonical dust signal: the waterfall
+    ///         caller breaks out of its fill loop, matching the pre-helper
+    ///         "`usdcAmount == 0 break;`" short-circuit. Do NOT revert — the
+    ///         outer loop must also stop advancing maker capacity.
+    ///         SYNTHETIC branch covers both MINT (both-BUY, `takerIsBuy=true`)
+    ///         and MERGE (both-SELL, `takerIsBuy=false`) because the rounding
+    ///         formula `takerPortion = fillAmt - makerShare` is identical —
+    ///         only the assignment to `inDelta` vs `outDelta` differs.
+    function computeFillDeltas(uint256 makerPrice, uint256 fillAmt, bool takerIsBuy, bool isSynthetic)
+        internal
+        pure
+        returns (uint256 inDelta, uint256 outDelta)
+    {
+        uint256 makerShare = (fillAmt * makerPrice) / PRICE_PRECISION;
+        if (makerShare == 0) return (0, 0);
+
+        if (!isSynthetic) {
+            if (takerIsBuy) {
+                outDelta = fillAmt;
+                inDelta = makerShare;
+            } else {
+                outDelta = makerShare;
+                inDelta = fillAmt;
+            }
+        } else {
+            uint256 takerPortion = fillAmt - makerShare;
+            if (takerIsBuy) {
+                outDelta = fillAmt;
+                inDelta = takerPortion;
+            } else {
+                outDelta = takerPortion;
+                inDelta = fillAmt;
+            }
+        }
+    }
 }
