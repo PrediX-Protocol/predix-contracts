@@ -21,9 +21,22 @@ interface IPrediXHookProxy {
     /// @notice Emitted when `cancelUpgrade` discards a pending upgrade.
     event HookProxy_UpgradeCancelled(address indexed implementation);
 
-    /// @notice Emitted when `setTimelockDuration` updates the duration applied to FUTURE
-    ///         proposals (current pending proposal, if any, retains its original `readyAt`).
+    /// @notice Emitted by `executeTimelockDuration` when a previously-proposed
+    ///         duration is applied. Current pending upgrade proposals, if any,
+    ///         retain their original `readyAt`.
     event HookProxy_TimelockDurationUpdated(uint256 previous, uint256 current);
+
+    /// @notice SPEC-04 / FINAL-M06: emitted by `proposeTimelockDuration`. The
+    ///         duration becomes effective only after `executeTimelockDuration`
+    ///         is called at or after `readyAt`. `readyAt` is anchored to the
+    ///         CURRENT timelock duration, not the minimum — the timelock
+    ///         self-gates its own change.
+    event HookProxy_TimelockDurationProposed(uint256 duration, uint256 readyAt);
+
+    /// @notice SPEC-04: emitted by `cancelTimelockDuration` when admin discards
+    ///         a pending duration change before `executeTimelockDuration` is
+    ///         called.
+    event HookProxy_TimelockDurationCancelled(uint256 duration);
 
     /// @notice Emitted when `changeProxyAdmin` nominates a new admin. The nominee must call
     ///         `acceptProxyAdmin` to complete the transfer.
@@ -58,9 +71,24 @@ interface IPrediXHookProxy {
     /// @notice Thrown when `executeUpgrade` is called before the timelock elapses.
     error HookProxy_UpgradeNotReady();
 
-    /// @notice Thrown when `setTimelockDuration` is called with a duration below the
-    ///         24-hour floor.
+    /// @notice Thrown when `proposeTimelockDuration` is called with a duration
+    ///         below the 48-hour floor (FINAL-M06).
     error HookProxy_TimelockTooShort();
+
+    /// @notice SPEC-05: thrown when `proposeTimelockDuration` is called with a
+    ///         value less than or equal to the current timelock. The timelock
+    ///         is monotonic increasing — admin may only raise the delay. An
+    ///         equal-value proposal is also rejected so every proposal
+    ///         represents an explicit intent change.
+    error HookProxy_TimelockCannotDecrease();
+
+    /// @notice SPEC-04: thrown when `executeTimelockDuration` or
+    ///         `cancelTimelockDuration` is called with no pending proposal.
+    error HookProxy_NoPendingTimelockChange();
+
+    /// @notice SPEC-04: thrown when `executeTimelockDuration` is called before
+    ///         the delay derived from the current timelock has elapsed.
+    error HookProxy_TimelockDelayNotElapsed();
 
     /// @notice Thrown when the atomic `initialize` delegatecall in the constructor reverts.
     ///         The original revert data is bubbled up via assembly when available; this error
@@ -82,9 +110,20 @@ interface IPrediXHookProxy {
     /// @notice Discard the pending upgrade without applying it. Admin-only.
     function cancelUpgrade() external;
 
-    /// @notice Update the timelock duration applied to FUTURE proposals. Admin-only.
-    /// @dev Floored at 24 hours.
-    function setTimelockDuration(uint256 duration) external;
+    /// @notice SPEC-04 / FINAL-M06: propose a new timelock duration. Applies
+    ///         after `executeTimelockDuration` is called, which is itself
+    ///         gated by the CURRENT timelock. Floored at 48 hours. Monotonic
+    ///         increasing (SPEC-05): `duration` must be strictly greater than
+    ///         the current value. Admin-only.
+    function proposeTimelockDuration(uint256 duration) external;
+
+    /// @notice SPEC-04: finalize a pending timelock duration change after the
+    ///         self-gated delay has elapsed. Admin-only.
+    function executeTimelockDuration() external;
+
+    /// @notice SPEC-04: discard the pending timelock duration change without
+    ///         applying it. Admin-only.
+    function cancelTimelockDuration() external;
 
     // ---------------------------------------------------------------------
     // Admin transfer (two-step)
@@ -104,6 +143,8 @@ interface IPrediXHookProxy {
     function pendingImplementation() external view returns (address);
     function upgradeReadyAt() external view returns (uint256);
     function timelockDuration() external view returns (uint256);
+    /// @notice SPEC-04: pending timelock duration change, or (0, 0) if none.
+    function pendingTimelockDuration() external view returns (uint256 duration, uint256 readyAt);
     function proxyAdmin() external view returns (address);
     function pendingProxyAdmin() external view returns (address);
 }

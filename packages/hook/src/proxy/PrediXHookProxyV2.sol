@@ -50,12 +50,26 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     bytes32 private constant _TIMELOCK_DURATION_SLOT =
         bytes32(uint256(keccak256("predix.hook.proxy.timelock.duration")) - 1);
 
+    /// @dev SPEC-04 self-gated propose/execute for `timelockDuration`. Pending
+    ///      slots are kept at fresh keccak-derived paths to avoid any chance of
+    ///      colliding with the upgrade-flow slots above.
+    bytes32 private constant _PENDING_TIMELOCK_DURATION_SLOT =
+        bytes32(uint256(keccak256("predix.hook.proxy.pending.timelock.duration")) - 1);
+    bytes32 private constant _PENDING_TIMELOCK_READY_AT_SLOT =
+        bytes32(uint256(keccak256("predix.hook.proxy.pending.timelock.ready_at")) - 1);
+
     // ---------------------------------------------------------------------
     // Timelock bounds
     // ---------------------------------------------------------------------
 
+    /// @notice Default timelock applied at construction. Mirrors the diamond /
+    ///         Timelock governance cadence so every slow path is synchronised.
     uint256 private constant _DEFAULT_TIMELOCK = 48 hours;
-    uint256 private constant _MIN_TIMELOCK = 24 hours;
+
+    /// @notice Floor for `proposeTimelockDuration`. Raised from 24h → 48h per
+    ///         FINAL-M06 so the proxy can never drop below the governance
+    ///         cadence admin is committed to elsewhere.
+    uint256 private constant _MIN_TIMELOCK = 48 hours;
 
     // ---------------------------------------------------------------------
     // Modifiers
@@ -155,11 +169,44 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     }
 
     /// @inheritdoc IPrediXHookProxy
-    function setTimelockDuration(uint256 duration) external override onlyProxyAdmin {
+    function proposeTimelockDuration(uint256 duration) external override onlyProxyAdmin {
         if (duration < _MIN_TIMELOCK) revert HookProxy_TimelockTooShort();
+        uint256 current = _readUint(_TIMELOCK_DURATION_SLOT);
+        // SPEC-05: monotonic increase only. `duration < current` would let a
+        // compromised admin shorten the next delay; `duration == current` is
+        // a no-op that should be rejected so proposals always represent an
+        // explicit intent change (noise reduction + audit-trail clarity).
+        if (duration <= current) revert HookProxy_TimelockCannotDecrease();
+        // Self-gated: `readyAt` is anchored to the CURRENT timelock, not
+        // `_MIN_TIMELOCK`. If admin has raised the delay above the floor,
+        // lowering (or even re-raising) follows the higher cadence.
+        uint256 readyAt = block.timestamp + current;
+        _writeUint(_PENDING_TIMELOCK_DURATION_SLOT, duration);
+        _writeUint(_PENDING_TIMELOCK_READY_AT_SLOT, readyAt);
+        emit HookProxy_TimelockDurationProposed(duration, readyAt);
+    }
+
+    /// @inheritdoc IPrediXHookProxy
+    function executeTimelockDuration() external override onlyProxyAdmin {
+        uint256 pending = _readUint(_PENDING_TIMELOCK_DURATION_SLOT);
+        if (pending == 0) revert HookProxy_NoPendingTimelockChange();
+        uint256 readyAt = _readUint(_PENDING_TIMELOCK_READY_AT_SLOT);
+        if (block.timestamp < readyAt) revert HookProxy_TimelockDelayNotElapsed();
+
         uint256 previous = _readUint(_TIMELOCK_DURATION_SLOT);
-        _writeUint(_TIMELOCK_DURATION_SLOT, duration);
-        emit HookProxy_TimelockDurationUpdated(previous, duration);
+        _writeUint(_TIMELOCK_DURATION_SLOT, pending);
+        _writeUint(_PENDING_TIMELOCK_DURATION_SLOT, 0);
+        _writeUint(_PENDING_TIMELOCK_READY_AT_SLOT, 0);
+        emit HookProxy_TimelockDurationUpdated(previous, pending);
+    }
+
+    /// @inheritdoc IPrediXHookProxy
+    function cancelTimelockDuration() external override onlyProxyAdmin {
+        uint256 pending = _readUint(_PENDING_TIMELOCK_DURATION_SLOT);
+        if (pending == 0) revert HookProxy_NoPendingTimelockChange();
+        _writeUint(_PENDING_TIMELOCK_DURATION_SLOT, 0);
+        _writeUint(_PENDING_TIMELOCK_READY_AT_SLOT, 0);
+        emit HookProxy_TimelockDurationCancelled(pending);
     }
 
     // ---------------------------------------------------------------------
@@ -201,6 +248,11 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     function timelockDuration() external view override returns (uint256) {
         return _readUint(_TIMELOCK_DURATION_SLOT);
+    }
+
+    function pendingTimelockDuration() external view override returns (uint256 duration, uint256 readyAt) {
+        duration = _readUint(_PENDING_TIMELOCK_DURATION_SLOT);
+        readyAt = _readUint(_PENDING_TIMELOCK_READY_AT_SLOT);
     }
 
     function proxyAdmin() external view override returns (address) {

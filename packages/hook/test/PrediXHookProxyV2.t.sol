@@ -223,22 +223,9 @@ contract PrediXHookProxyV2Test is Test {
         proxy.executeUpgrade();
     }
 
-    function test_SetTimelockDuration_AppliesToFutureProposals() public {
-        vm.prank(proxyAdmin);
-        proxy.setTimelockDuration(72 hours);
-        assertEq(proxy.timelockDuration(), 72 hours);
-
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
-        vm.prank(proxyAdmin);
-        proxy.proposeUpgrade(address(newImpl));
-        assertEq(proxy.upgradeReadyAt(), block.timestamp + 72 hours);
-    }
-
-    function test_Revert_SetTimelockDuration_BelowMinimum() public {
-        vm.prank(proxyAdmin);
-        vm.expectRevert(IPrediXHookProxy.HookProxy_TimelockTooShort.selector);
-        proxy.setTimelockDuration(23 hours);
-    }
+    // setTimelockDuration single-step removed by SPEC-04. Propose/execute flow
+    // (plus FINAL-M06 48h floor, SPEC-05 monotonic guard) is exercised by
+    // `test/repro/Spec04_TimelockSelfGated.t.sol`.
 
     // -----------------------------------------------------------------
     // Two-step proxy admin rotation
