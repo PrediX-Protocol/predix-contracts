@@ -252,6 +252,13 @@ interface IPrediXHook {
     ///         is called before `MARKET_UNREGISTER_DELAY` has elapsed.
     error Hook_UnregisterDelayNotElapsed();
 
+    /// @notice M-01 universal guard: reverts when `proposeUnregisterMarketPool`
+    ///         is called for a marketId whose unregister proposal is still
+    ///         pending. Mirrors `Hook_AlreadyPendingDiamondChange` /
+    ///         `Hook_AlreadyPendingRouter` so all five propose flows share
+    ///         the same no-silent-reset contract.
+    error Hook_AlreadyPendingUnregister();
+
     /// @notice M-02 audit fix: reverts in `_beforeSwap` /
     ///         `_beforeAddLiquidity` / `_beforeDonate` when the registered
     ///         binding's yesToken position no longer matches the diamond's

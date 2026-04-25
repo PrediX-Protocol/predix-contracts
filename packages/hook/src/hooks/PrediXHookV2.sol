@@ -303,6 +303,11 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function proposeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        // M-01 universal guard: reject re-propose-while-pending. This new
+        // flow joined the propose-family in the H-01 commit; the M-01
+        // generalisation was applied to the four propose flows that existed
+        // before H-01 landed, so this guard catches up the fifth.
+        if (_pendingUnregisterProposedAt[marketId] != 0) revert Hook_AlreadyPendingUnregister();
         if (PoolId.unwrap(_marketToPoolId[marketId]) == bytes32(0)) revert Hook_MarketNotFound();
         _pendingUnregisterProposedAt[marketId] = block.timestamp;
         emit Hook_MarketUnregisterProposed(marketId, block.timestamp + MARKET_UNREGISTER_DELAY);

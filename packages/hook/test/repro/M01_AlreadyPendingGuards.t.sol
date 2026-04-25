@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 import {IPrediXHook} from "../../src/interfaces/IPrediXHook.sol";
@@ -142,18 +144,62 @@ contract M01_AlreadyPendingGuards is Test {
         assertEq(pending, 96 hours, "fresh proposal after cancel");
     }
 
+    // ---------- proposeUnregisterMarketPool (H-01 + M-01 follow-up) ----------
+
+    function test_M01_ProposeUnregister_RePropose_Reverts() public {
+        // Register a market on hook so unregister has a target.
+        address yes1 = address(0x10000 - 1);
+        address noToken = makeAddr("no");
+        uint256 marketId = 7;
+        hookDiamond.setMarket(marketId, yes1, noToken, block.timestamp + 30 days, false, false);
+
+        // Build a canonical PoolKey for hook.registerMarketPool.
+        // (Same shape as TestHookHarness's defaults: fee 0x800000, tickSpacing 60.)
+        // Inline to avoid pulling more imports.
+        // forgefmt: disable-next-item
+        hook.registerMarketPool(
+            marketId,
+            _canonicalKey(yes1)
+        );
+
+        vm.prank(hookAdmin);
+        hook.proposeUnregisterMarketPool(marketId);
+
+        vm.prank(hookAdmin);
+        vm.expectRevert(IPrediXHook.Hook_AlreadyPendingUnregister.selector);
+        hook.proposeUnregisterMarketPool(marketId);
+    }
+
+    function _canonicalKey(address yesToken) internal view returns (PoolKey memory) {
+        return PoolKey({
+            currency0: Currency.wrap(yesToken),
+            currency1: Currency.wrap(USDC),
+            fee: 0x800000,
+            tickSpacing: int24(60),
+            hooks: hook
+        });
+    }
+
     // ---------- Cross-flow consistency ----------
 
-    function test_M01_AllFourProposeFlowsHaveGuards() public {
-        // Symbol-level lock: each guard error must be declared in the
-        // matching interface. Failure here = future refactor removed one of
-        // the four guards without updating the interface, signalling drift.
-        // The interfaces are imported above, so a compilation success at
-        // selector access proves the symbol exists.
+    function test_M01_AllFiveProposeFlowsHaveGuards() public pure {
+        // Symbol-level lock: each guard error must be declared in the matching
+        // interface. Failure here = a future refactor dropped one of the five
+        // guards without updating the interface — drift signal. The
+        // interfaces are imported above, so a successful selector-access
+        // compilation proves each symbol exists.
         bytes4 a = IPrediXHook.Hook_AlreadyPendingRouter.selector; // H4 (existing)
         bytes4 b = IPrediXHook.Hook_AlreadyPendingDiamondChange.selector; // M-01
         bytes4 c = IPrediXHookProxy.HookProxy_AlreadyPendingUpgrade.selector; // M-01
         bytes4 d = IPrediXHookProxy.HookProxy_AlreadyPendingTimelockChange.selector; // M-01
-        assertTrue(a != b && b != c && c != d && a != c && a != d && b != d, "all four guard selectors distinct");
+        bytes4 e = IPrediXHook.Hook_AlreadyPendingUnregister.selector; // M-01 follow-up (H-01 flow)
+
+        // Pairwise distinct — keccak256 collision would be catastrophic but
+        // also functionally impossible; this is mostly a typo / shadow-import
+        // catch.
+        assertTrue(a != b && a != c && a != d && a != e, "selector a unique");
+        assertTrue(b != c && b != d && b != e, "selector b unique");
+        assertTrue(c != d && c != e, "selector c unique");
+        assertTrue(d != e, "selector d unique");
     }
 }
