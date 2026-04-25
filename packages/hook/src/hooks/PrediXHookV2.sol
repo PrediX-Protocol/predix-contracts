@@ -135,6 +135,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     address private _pendingDiamond;
     uint256 private _pendingDiamondProposedAt;
 
+    /// @dev H-01 (audit 2026-04-25) append-only storage for the per-market
+    ///      timelocked unregister flow. Without this flow, post-rotation
+    ///      `_poolBinding` and `_marketToPoolId` would remain locked to the
+    ///      previous diamond's marketIds with no cleanup path. Each pending
+    ///      slot is keyed by marketId; non-zero `proposedAt` = pending.
+    mapping(uint256 marketId => uint256 proposedAt) private _pendingUnregisterProposedAt;
+
     /// @notice Minimum wait between `proposeTrustedRouter` and
     ///         `executeTrustedRouter`. Matches the diamond/hook-proxy 48h floor
     ///         so governance delays are uniform.
@@ -144,6 +151,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         `executeDiamondRotation`. Matches the trusted-router / hook-proxy
     ///         48h floor so governance delays are uniform. (F-X-02)
     uint256 public constant DIAMOND_ROTATION_DELAY = 48 hours;
+
+    /// @notice Minimum wait between `proposeUnregisterMarketPool` and
+    ///         `executeUnregisterMarketPool`. Matches the diamond rotation
+    ///         cadence so binding mutations carry the same governance notice
+    ///         as the rotation that motivated them. (H-01 audit fix)
+    uint256 public constant MARKET_UNREGISTER_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
@@ -242,6 +255,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     /// @inheritdoc IPrediXHook
     function proposeDiamond(address diamond_) external override onlyAdmin {
         if (diamond_ == address(0)) revert Hook_ZeroAddress();
+        // L-04 audit fix: rotation target must be a contract. Mirrors the
+        // existing `proposeUpgrade` code-length check on the proxy side.
+        if (diamond_.code.length == 0) revert Hook_DiamondNotAContract();
         _pendingDiamond = diamond_;
         _pendingDiamondProposedAt = block.timestamp;
         emit Hook_DiamondRotationProposed(diamond_, block.timestamp + DIAMOND_ROTATION_DELAY);
@@ -254,6 +270,10 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (block.timestamp < _pendingDiamondProposedAt + DIAMOND_ROTATION_DELAY) {
             revert Hook_DiamondDelayNotElapsed();
         }
+        // L-04 audit fix: re-validate code length at execute. Defends against
+        // a target that was a contract at propose-time but lost code before
+        // execute (selfdestruct deprecated in Cancun, but principle stands).
+        if (pending.code.length == 0) revert Hook_DiamondNotAContract();
         address previous = _diamond;
         _diamond = pending;
         delete _pendingDiamond;
@@ -274,6 +294,46 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function pendingDiamond() external view override returns (address pending, uint256 readyAt) {
         pending = _pendingDiamond;
         readyAt = pending == address(0) ? 0 : _pendingDiamondProposedAt + DIAMOND_ROTATION_DELAY;
+    }
+
+    /// @inheritdoc IPrediXHook
+    function proposeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        if (PoolId.unwrap(_marketToPoolId[marketId]) == bytes32(0)) revert Hook_MarketNotFound();
+        _pendingUnregisterProposedAt[marketId] = block.timestamp;
+        emit Hook_MarketUnregisterProposed(marketId, block.timestamp + MARKET_UNREGISTER_DELAY);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function executeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        uint256 proposedAt = _pendingUnregisterProposedAt[marketId];
+        if (proposedAt == 0) revert Hook_NoPendingUnregister();
+        if (block.timestamp < proposedAt + MARKET_UNREGISTER_DELAY) {
+            revert Hook_UnregisterDelayNotElapsed();
+        }
+        PoolId poolId = _marketToPoolId[marketId];
+        // Defensive: between propose and execute, the binding could in theory
+        // have been cleared by a concurrent flow. Treat that as a no-op error
+        // so the pending slot is also cleared.
+        if (PoolId.unwrap(poolId) == bytes32(0)) revert Hook_MarketNotFound();
+        delete _poolBinding[poolId];
+        // PoolId is a user-defined value type — `delete` does not apply;
+        // assign the zero-wrapped sentinel explicitly.
+        _marketToPoolId[marketId] = PoolId.wrap(bytes32(0));
+        delete _pendingUnregisterProposedAt[marketId];
+        emit Hook_MarketUnregistered(marketId, poolId);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        if (_pendingUnregisterProposedAt[marketId] == 0) revert Hook_NoPendingUnregister();
+        delete _pendingUnregisterProposedAt[marketId];
+        emit Hook_MarketUnregisterCancelled(marketId);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function pendingUnregisterMarketPool(uint256 marketId) external view override returns (uint256 readyAt) {
+        uint256 proposedAt = _pendingUnregisterProposedAt[marketId];
+        readyAt = proposedAt == 0 ? 0 : proposedAt + MARKET_UNREGISTER_DELAY;
     }
 
     /// @inheritdoc IPrediXHook

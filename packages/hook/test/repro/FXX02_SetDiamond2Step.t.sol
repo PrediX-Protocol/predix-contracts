@@ -39,7 +39,7 @@ contract FXX02_SetDiamond2Step is Test {
     }
 
     function test_FXX02_ProposeDiamond_EmitsEvent() public {
-        address newDiamond = makeAddr("newDiamond");
+        address newDiamond = address(new MockDiamond());
         uint256 expectedReadyAt = block.timestamp + hook.DIAMOND_ROTATION_DELAY();
 
         vm.expectEmit(true, true, true, true, address(hook));
@@ -56,7 +56,7 @@ contract FXX02_SetDiamond2Step is Test {
     }
 
     function test_FXX02_ExecuteDiamondRotation_BeforeDelay_Reverts() public {
-        address newDiamond = makeAddr("newDiamond");
+        address newDiamond = address(new MockDiamond());
         vm.prank(admin);
         hook.proposeDiamond(newDiamond);
 
@@ -69,7 +69,7 @@ contract FXX02_SetDiamond2Step is Test {
     }
 
     function test_FXX02_ExecuteDiamondRotation_AfterDelay_Success() public {
-        address newDiamond = makeAddr("newDiamond");
+        address newDiamond = address(new MockDiamond());
         vm.prank(admin);
         hook.proposeDiamond(newDiamond);
 
@@ -88,7 +88,7 @@ contract FXX02_SetDiamond2Step is Test {
     }
 
     function test_FXX02_CancelDiamondRotation_ClearsState() public {
-        address newDiamond = makeAddr("newDiamond");
+        address newDiamond = address(new MockDiamond());
         vm.prank(admin);
         hook.proposeDiamond(newDiamond);
 
@@ -103,7 +103,7 @@ contract FXX02_SetDiamond2Step is Test {
         assertEq(readyAt, 0, "readyAt cleared");
 
         // Re-propose after cancel — fresh timer anchored to now.
-        address anotherDiamond = makeAddr("another");
+        address anotherDiamond = address(new MockDiamond());
         vm.warp(block.timestamp + 1 hours);
         vm.prank(admin);
         hook.proposeDiamond(anotherDiamond);
@@ -112,9 +112,10 @@ contract FXX02_SetDiamond2Step is Test {
     }
 
     function test_FXX02_OnlyAdmin_CanPropose() public {
+        address newDiamond = address(new MockDiamond());
         vm.prank(rando);
         vm.expectRevert(IPrediXHook.Hook_OnlyAdmin.selector);
-        hook.proposeDiamond(makeAddr("newDiamond"));
+        hook.proposeDiamond(newDiamond);
 
         // execute + cancel are also admin-gated — F-X-02 makes execute admin-
         // only (different from executeTrustedRouter which is permissionless)
@@ -144,9 +145,16 @@ contract FXX02_SetDiamond2Step is Test {
         hook.cancelDiamondRotation();
     }
 
-    function test_FXX02_StaleBindings_DocumentedBehavior() public {
-        // Register a pool under the old diamond so `_poolBinding` and
-        // `_marketToPoolId` are populated.
+    function test_FXX02_PostRotation_BindingsCleared_ViaUnregisterFlow() public {
+        // H-01 audit fix locked in: stale `_poolBinding` / `_marketToPoolId`
+        // are NOT cleared by `executeDiamondRotation` itself. The supported
+        // recovery is the `proposeUnregisterMarketPool` →
+        // `executeUnregisterMarketPool` 48h timelock flow (covered end-to-end
+        // by `H01_UnregisterMarketPool.test_H01_Execute_ClearsBindings_AllowsReRegister`).
+        //
+        // This test only asserts the immediate-post-rotation state — bindings
+        // still present, ready to be cleared via the unregister flow if the
+        // new diamond is incompatible with the old marketId map.
         uint256 marketId = 1;
         address yesLow = address(0x10000 - 1);
         address noToken = makeAddr("no");
@@ -162,18 +170,15 @@ contract FXX02_SetDiamond2Step is Test {
         PoolId poolId = poolKey.toId();
         hook.registerMarketPool(marketId, poolKey);
 
-        // Rotate to a new diamond.
-        address newDiamond = makeAddr("newDiamond");
+        address newDiamond = address(new MockDiamond());
         vm.prank(admin);
         hook.proposeDiamond(newDiamond);
         vm.warp(block.timestamp + hook.DIAMOND_ROTATION_DELAY() + 1);
         vm.prank(admin);
         hook.executeDiamondRotation();
 
-        // Regression lock: stale bindings survive rotation. This is intentional
-        // (spec §H1 IMPORTANT note) — the ops runbook must re-register markets
-        // under the new diamond. Test here so a future "clean up on rotation"
-        // refactor cannot silently change behaviour without updating runbooks.
-        assertEq(hook.poolMarketId(poolId), marketId, "binding survives rotation (manual re-register required)");
+        // Immediate post-rotation: binding still in place. Recovery requires
+        // the unregister flow.
+        assertEq(hook.poolMarketId(poolId), marketId, "binding present immediately after rotation");
     }
 }

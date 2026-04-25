@@ -68,6 +68,19 @@ interface IPrediXHook {
     ///         execution. (F-X-02)
     event Hook_DiamondRotationCancelled(address indexed diamond);
 
+    /// @notice H-01 audit fix: emitted by `proposeUnregisterMarketPool`. The
+    ///         binding stays in place until `executeUnregisterMarketPool` is
+    ///         called at or after `readyAt`.
+    event Hook_MarketUnregisterProposed(uint256 indexed marketId, uint256 readyAt);
+
+    /// @notice H-01 audit fix: emitted by `executeUnregisterMarketPool` when
+    ///         the per-market binding is removed.
+    event Hook_MarketUnregistered(uint256 indexed marketId, PoolId indexed poolId);
+
+    /// @notice H-01 audit fix: emitted when a pending unregister is cancelled
+    ///         before execution.
+    event Hook_MarketUnregisterCancelled(uint256 indexed marketId);
+
     /// @notice Emitted when the diamond registers a new outcome-token / quote-token pool
     ///         with the hook, binding it to `marketId` and freezing the YES/quote ordering.
     event Hook_PoolRegistered(
@@ -219,6 +232,21 @@ interface IPrediXHook {
     ///         before `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
     error Hook_DiamondDelayNotElapsed();
 
+    /// @notice L-04 audit fix: reverts when `proposeDiamond` /
+    ///         `executeDiamondRotation` is called with a target whose
+    ///         `code.length == 0`. Mirrors the proxy's
+    ///         `HookProxy_NotAContract` defence.
+    error Hook_DiamondNotAContract();
+
+    /// @notice H-01 audit fix: reverts when `executeUnregisterMarketPool` /
+    ///         `cancelUnregisterMarketPool` is called with no pending
+    ///         unregister for the marketId.
+    error Hook_NoPendingUnregister();
+
+    /// @notice H-01 audit fix: reverts when `executeUnregisterMarketPool`
+    ///         is called before `MARKET_UNREGISTER_DELAY` has elapsed.
+    error Hook_UnregisterDelayNotElapsed();
+
     /// @notice NEW-M4: reverts when the impl constructor is called with
     ///         `canonicalLpFee_ == 0`. Zero would disable the canonical-key
     ///         check at registration time.
@@ -273,8 +301,10 @@ interface IPrediXHook {
     ///         rarely-used ops path and an admin re-evaluating the target
     ///         address within the delay window is a legitimate case.
     /// @dev    IMPORTANT — `_poolBinding` and `_marketToPoolId` are NOT
-    ///         auto-cleared on rotation; the ops runbook must re-register
-    ///         markets against the new diamond post-execute.
+    ///         auto-cleared on rotation. Use the `proposeUnregisterMarketPool`
+    ///         / `executeUnregisterMarketPool` flow (also 48h timelocked) to
+    ///         clear stale bindings for any marketId whose pool is no longer
+    ///         valid under the new diamond.
     function proposeDiamond(address diamond_) external;
 
     /// @notice Finalize a pending diamond rotation after the delay has
@@ -289,6 +319,30 @@ interface IPrediXHook {
     /// @return readyAt  Earliest timestamp at which `executeDiamondRotation`
     ///                  may succeed, zero if no pending change.
     function pendingDiamond() external view returns (address pending, uint256 readyAt);
+
+    /// @notice H-01 audit fix: schedule removal of a market's pool binding.
+    ///         48h timelock matches the diamond rotation cadence — every
+    ///         binding-affecting operation carries the same governance
+    ///         notice as the rotation that motivated it. Admin-gated.
+    /// @dev    Pending state is keyed per marketId; concurrent unregisters
+    ///         for different markets do not interfere.
+    function proposeUnregisterMarketPool(uint256 marketId) external;
+
+    /// @notice Finalize a pending unregister. Clears `_poolBinding[poolId]`
+    ///         and `_marketToPoolId[marketId]` so a subsequent
+    ///         `registerMarketPool` for the same `marketId` (typically
+    ///         post-rotation under a new diamond) succeeds. Admin-gated.
+    function executeUnregisterMarketPool(uint256 marketId) external;
+
+    /// @notice Cancel a pending unregister before its timelock elapses.
+    ///         Admin-gated.
+    function cancelUnregisterMarketPool(uint256 marketId) external;
+
+    /// @notice View the pending unregister readyAt for a marketId.
+    /// @return readyAt Earliest timestamp at which
+    ///                 `executeUnregisterMarketPool(marketId)` may succeed,
+    ///                 zero if no pending unregister.
+    function pendingUnregisterMarketPool(uint256 marketId) external view returns (uint256 readyAt);
 
     /// @notice Propose a new admin. Admin-gated, emits `Hook_AdminChangeProposed`. Per
     ///         FINAL-H09 this only stores the pending address; the rotation is completed
