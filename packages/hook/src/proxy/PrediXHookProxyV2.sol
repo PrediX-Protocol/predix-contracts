@@ -71,6 +71,16 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     ///         cadence admin is committed to elsewhere.
     uint256 private constant _MIN_TIMELOCK = 48 hours;
 
+    /// @notice Ceiling for `proposeTimelockDuration` (H-02 audit fix). Bounds
+    ///         the timelock to a value that, combined with the SPEC-05
+    ///         monotonic guard, cannot brick the upgrade governance via an
+    ///         arithmetic overflow on `block.timestamp + current`. 30 days is
+    ///         the industry standard upper bound (Aave / OZ TimelockController
+    ///         conventions) — enough headroom for any legitimate cooldown
+    ///         while keeping `block.timestamp + 30 days` safely within
+    ///         uint256.
+    uint256 private constant _MAX_TIMELOCK = 30 days;
+
     // ---------------------------------------------------------------------
     // Modifiers
     // ---------------------------------------------------------------------
@@ -171,6 +181,7 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     /// @inheritdoc IPrediXHookProxy
     function proposeTimelockDuration(uint256 duration) external override onlyProxyAdmin {
         if (duration < _MIN_TIMELOCK) revert HookProxy_TimelockTooShort();
+        if (duration > _MAX_TIMELOCK) revert HookProxy_TimelockTooLong();
         uint256 current = _readUint(_TIMELOCK_DURATION_SLOT);
         // SPEC-05: monotonic increase only. `duration < current` would let a
         // compromised admin shorten the next delay; `duration == current` is

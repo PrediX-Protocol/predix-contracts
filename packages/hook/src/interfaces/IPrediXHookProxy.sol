@@ -75,6 +75,13 @@ interface IPrediXHookProxy {
     ///         below the 48-hour floor (FINAL-M06).
     error HookProxy_TimelockTooShort();
 
+    /// @notice H-02 audit fix: thrown when `proposeTimelockDuration` is called
+    ///         with a duration above the 30-day ceiling. Combined with the
+    ///         SPEC-05 monotonic guard this prevents an admin from bricking
+    ///         the upgrade governance by raising the timelock to a value that
+    ///         overflows `block.timestamp + duration`.
+    error HookProxy_TimelockTooLong();
+
     /// @notice SPEC-05: thrown when `proposeTimelockDuration` is called with a
     ///         value less than or equal to the current timelock. The timelock
     ///         is monotonic increasing — admin may only raise the delay. An
