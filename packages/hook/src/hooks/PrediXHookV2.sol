@@ -669,9 +669,15 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         view
         returns (bytes4)
     {
-        uint256 marketId = _poolBinding[key.toId()].marketId;
+        PoolBinding storage binding = _poolBinding[key.toId()];
+        uint256 marketId = binding.marketId;
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
+        // M-02 audit fix: defence-in-depth against stale binding (e.g. post
+        // diamond rotation where the new diamond's marketId resolves to a
+        // different yesToken). Reverts loudly instead of silently routing
+        // liquidity under a wrong-token assumption.
+        _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
@@ -693,9 +699,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         view
         returns (bytes4)
     {
-        uint256 marketId = _poolBinding[key.toId()].marketId;
+        PoolBinding storage binding = _poolBinding[key.toId()];
+        uint256 marketId = binding.marketId;
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
+        // M-02 audit fix: see `_beforeAddLiquidity` for rationale.
+        _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
@@ -711,6 +720,8 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (marketId == 0) revert Hook_PoolNotRegistered();
 
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
+        // M-02 audit fix: stale-binding defence. See `_beforeAddLiquidity`.
+        _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
@@ -803,6 +814,21 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // ---------------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------------
+
+    /// @dev M-02 audit fix: defence-in-depth against stale binding. After
+    ///      `executeDiamondRotation` (or any state-corrupting upgrade), the
+    ///      diamond's marketId map can resolve to a different yesToken than
+    ///      the binding recorded at `registerMarketPool`. Reading the wrong
+    ///      yesToken would let users swap into a token that no longer
+    ///      represents the market. This helper turns silent corruption into
+    ///      a loud `Hook_StaleBinding` revert in every lifecycle callback.
+    function _assertYesTokenMatchesBinding(PoolKey calldata key, bool yesIsCurrency0, address marketYesToken)
+        private
+        pure
+    {
+        address keyYes = yesIsCurrency0 ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
+        if (keyYes != marketYesToken) revert Hook_StaleBinding();
+    }
 
     /// @dev Per-(router, poolId) transient slot. Block number is NOT included because
     ///      transient storage already auto-resets at end of tx, making the (block, tx)

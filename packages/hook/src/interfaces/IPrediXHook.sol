@@ -252,6 +252,14 @@ interface IPrediXHook {
     ///         is called before `MARKET_UNREGISTER_DELAY` has elapsed.
     error Hook_UnregisterDelayNotElapsed();
 
+    /// @notice M-02 audit fix: reverts in `_beforeSwap` /
+    ///         `_beforeAddLiquidity` / `_beforeDonate` when the registered
+    ///         binding's yesToken position no longer matches the diamond's
+    ///         current marketView for the bound marketId. Catches stale
+    ///         bindings that survived a diamond rotation without being
+    ///         cleared via `proposeUnregisterMarketPool`.
+    error Hook_StaleBinding();
+
     /// @notice NEW-M4: reverts when the impl constructor is called with
     ///         `canonicalLpFee_ == 0`. Zero would disable the canonical-key
     ///         check at registration time.
