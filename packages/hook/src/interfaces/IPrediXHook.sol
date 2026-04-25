@@ -232,6 +232,11 @@ interface IPrediXHook {
     ///         before `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
     error Hook_DiamondDelayNotElapsed();
 
+    /// @notice M-01 audit fix: reverts when `proposeDiamond` is called while
+    ///         a proposal is still pending. Admin must `cancelDiamondRotation`
+    ///         first; mirrors H4's no-silent-reset pattern.
+    error Hook_AlreadyPendingDiamondChange();
+
     /// @notice L-04 audit fix: reverts when `proposeDiamond` /
     ///         `executeDiamondRotation` is called with a target whose
     ///         `code.length == 0`. Mirrors the proxy's

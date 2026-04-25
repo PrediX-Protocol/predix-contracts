@@ -82,6 +82,16 @@ interface IPrediXHookProxy {
     ///         overflows `block.timestamp + duration`.
     error HookProxy_TimelockTooLong();
 
+    /// @notice M-01 audit fix: thrown when `proposeUpgrade` is called while
+    ///         a previous proposal is still pending. Admin must `cancelUpgrade`
+    ///         first; mirrors H4's no-silent-reset pattern.
+    error HookProxy_AlreadyPendingUpgrade();
+
+    /// @notice M-01 audit fix: thrown when `proposeTimelockDuration` is called
+    ///         while a previous duration change is still pending. Admin must
+    ///         `cancelTimelockDuration` first.
+    error HookProxy_AlreadyPendingTimelockChange();
+
     /// @notice SPEC-05: thrown when `proposeTimelockDuration` is called with a
     ///         value less than or equal to the current timelock. The timelock
     ///         is monotonic increasing — admin may only raise the delay. An

@@ -147,6 +147,10 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function proposeUpgrade(address newImpl) external override onlyProxyAdmin {
+        // M-01 audit fix: reject re-propose-while-pending. Admin must call
+        // `cancelUpgrade` first, making any timer extension a two-step
+        // observable action.
+        if (_readAddress(_PENDING_IMPL_SLOT) != address(0)) revert HookProxy_AlreadyPendingUpgrade();
         if (newImpl == address(0)) revert HookProxy_ZeroAddress();
         if (newImpl.code.length == 0) revert HookProxy_NotAContract();
         uint256 readyAt = block.timestamp + _readUint(_TIMELOCK_DURATION_SLOT);
@@ -180,6 +184,9 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function proposeTimelockDuration(uint256 duration) external override onlyProxyAdmin {
+        // M-01 audit fix: reject re-propose-while-pending. Mirrors the
+        // generalisation across all four propose flows.
+        if (_readUint(_PENDING_TIMELOCK_DURATION_SLOT) != 0) revert HookProxy_AlreadyPendingTimelockChange();
         if (duration < _MIN_TIMELOCK) revert HookProxy_TimelockTooShort();
         if (duration > _MAX_TIMELOCK) revert HookProxy_TimelockTooLong();
         uint256 current = _readUint(_TIMELOCK_DURATION_SLOT);

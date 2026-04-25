@@ -254,6 +254,11 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function proposeDiamond(address diamond_) external override onlyAdmin {
+        // M-01 audit fix: reject re-propose-while-pending. Mirrors H4's
+        // `proposeTrustedRouter` guard — admin must explicitly cancel
+        // before re-proposing, so the pending timer cannot be silently
+        // extended and the audit trail records explicit intent.
+        if (_pendingDiamondProposedAt != 0) revert Hook_AlreadyPendingDiamondChange();
         if (diamond_ == address(0)) revert Hook_ZeroAddress();
         // L-04 audit fix: rotation target must be a contract. Mirrors the
         // existing `proposeUpgrade` code-length check on the proxy side.
