@@ -34,6 +34,11 @@ interface IPrediXHook {
     ///         Pairs with `Hook_AdminUpdated` once the pending admin calls `acceptAdmin`.
     event Hook_AdminChangeProposed(address indexed current, address indexed pending);
 
+    /// @notice M-03 (audit Pass 2.1): emitted by `cancelAdminRotation` when
+    ///         a pending admin nomination is discarded before the nominee
+    ///         accepts.
+    event Hook_AdminChangeCancelled(address indexed cancelled);
+
     /// @notice Emitted by `setPaused`. When `paused` is true `_beforeSwap`,
     ///         `_beforeAddLiquidity` and `_beforeDonate` revert; `_beforeRemoveLiquidity`
     ///         is always permitted so LPs can exit.
@@ -259,6 +264,22 @@ interface IPrediXHook {
     ///         the same no-silent-reset contract.
     error Hook_AlreadyPendingUnregister();
 
+    /// @notice M-03 (audit Pass 2.1): reverts when `acceptAdmin` is called
+    ///         before the 48h `ADMIN_ROTATION_DELAY` has elapsed since
+    ///         `setAdmin` proposed the new admin. Brings hook admin rotation
+    ///         in line with the diamond / trusted-router / unregister /
+    ///         upgrade / timelock-duration governance cadence.
+    error Hook_AdminDelayNotElapsed();
+
+    /// @notice M-03 (audit Pass 2.1): reverts when `setAdmin` is called
+    ///         while a previous admin nomination is still pending. Mirrors
+    ///         the universal AlreadyPending pattern (M-01).
+    error Hook_AlreadyPendingAdmin();
+
+    /// @notice M-03 (audit Pass 2.1): reverts when `cancelAdminRotation`
+    ///         is called with no pending admin nomination.
+    error Hook_NoPendingAdminChange();
+
     /// @notice M-02 audit fix: reverts in `_beforeSwap` /
     ///         `_beforeAddLiquidity` / `_beforeDonate` when the registered
     ///         binding's yesToken position no longer matches the diamond's
@@ -364,14 +385,24 @@ interface IPrediXHook {
     ///                 zero if no pending unregister.
     function pendingUnregisterMarketPool(uint256 marketId) external view returns (uint256 readyAt);
 
-    /// @notice Propose a new admin. Admin-gated, emits `Hook_AdminChangeProposed`. Per
-    ///         FINAL-H09 this only stores the pending address; the rotation is completed
-    ///         by `acceptAdmin`, at which point `Hook_AdminUpdated` fires.
+    /// @notice Propose a new admin. Admin-gated, emits `Hook_AdminChangeProposed`.
+    ///         Per FINAL-H09 + M-03 (audit Pass 2.1) this only stores the
+    ///         pending address with a 48h timelock; the rotation is completed
+    ///         by `acceptAdmin` AT OR AFTER `_pendingAdminReadyAt`. The
+    ///         AlreadyPending guard prevents silent overwrite of an in-flight
+    ///         nomination — admin must `cancelAdminRotation` first.
     function setAdmin(address admin_) external;
 
-    /// @notice Complete a pending admin rotation. Callable only by the address previously
-    ///         queued via `setAdmin`. Clears the pending slot and emits `Hook_AdminUpdated`.
+    /// @notice Complete a pending admin rotation after the 48h timelock has
+    ///         elapsed. Callable only by the address previously queued via
+    ///         `setAdmin`. Clears the pending slot and emits `Hook_AdminUpdated`.
     function acceptAdmin() external;
+
+    /// @notice M-03 (audit Pass 2.1): cancel a pending admin nomination
+    ///         before the nominee accepts. Admin-only — gives legitimate
+    ///         admin a recovery window if a compromised admin proposed an
+    ///         attacker key.
+    function cancelAdminRotation() external;
 
     /// @notice Toggle the emergency pause. Admin-gated, emits `Hook_PauseStatusChanged`.
     function setPaused(bool paused_) external;
@@ -453,6 +484,12 @@ interface IPrediXHook {
     /// @return trusted The proposed final state.
     /// @return readyAt Timestamp at which `executeTrustedRouter` becomes callable. Zero if none pending.
     function pendingTrustedRouter(address router) external view returns (bool trusted, uint256 readyAt);
+
+    /// @notice M-03 (audit Pass 2.1): pending admin rotation, or (zero, 0)
+    ///         if none.
+    /// @return pending The proposed new admin address, or zero if no pending.
+    /// @return readyAt Timestamp at which `acceptAdmin` becomes callable.
+    function pendingAdminRotation() external view returns (address pending, uint256 readyAt);
 
     /// @notice Reads the transient identity commitment. Returns `address(0)` outside the
     ///         transaction in which `commitSwapIdentity` was called — useful in tests to

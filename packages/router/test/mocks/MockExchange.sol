@@ -106,7 +106,8 @@ contract MockExchange {
         IPrediXExchangeView.Side takerSide,
         uint256, /*limitPrice*/
         uint256 amountIn,
-        uint256 /*maxFills*/
+        uint256, /*maxFills*/
+        address /*taker*/
     ) external view returns (uint256 filled, uint256 cost) {
         if (revertOnPreview) revert("MockExchange: revertOnPreview");
         Canned memory c = _canned[marketId][takerSide];

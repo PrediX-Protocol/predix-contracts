@@ -107,9 +107,10 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         Side takerSide,
         uint256 limitPrice,
         uint256 amountIn,
-        uint256 maxFills
+        uint256 maxFills,
+        address taker
     ) external view override returns (uint256 filled, uint256 cost) {
-        return _previewFillMarketOrder(marketId, takerSide, limitPrice, amountIn, maxFills);
+        return _previewFillMarketOrder(marketId, takerSide, limitPrice, amountIn, maxFills, taker);
     }
 
     /// @inheritdoc IPrediXExchange

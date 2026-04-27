@@ -21,7 +21,8 @@ contract GapC_PreviewExecuteParity is ExchangeTestBase {
         uint256 maxFills
     ) internal returns (uint256 previewFilled, uint256 previewCost, uint256 actualFilled, uint256 actualCost) {
         uint256 snap = vm.snapshot();
-        (previewFilled, previewCost) = exchange.previewFillMarketOrder(MARKET_ID, side, limitPrice, amountIn, maxFills);
+        (previewFilled, previewCost) =
+            exchange.previewFillMarketOrder(MARKET_ID, side, limitPrice, amountIn, maxFills, address(0));
         vm.revertTo(snap);
 
         vm.prank(taker);

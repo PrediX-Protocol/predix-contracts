@@ -66,12 +66,16 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_GetMarket_IncludesPerMarketFeeFields() public {
-        IMarketFacet.MarketView memory m = market.getMarket(id);
+        // M-02 (audit Pass 2.1): per-market override is bounded by the
+        // snapshotted default. Use a market with snapshot 500 so an override
+        // up to 500 is accepted.
+        uint256 id2 = _createMarketWithDefault(500);
+        IMarketFacet.MarketView memory m = market.getMarket(id2);
         assertEq(m.perMarketRedemptionFeeBps, 0);
         assertFalse(m.redemptionFeeOverridden);
 
-        _setMarketFee(id, 250);
-        m = market.getMarket(id);
+        _setMarketFee(id2, 250);
+        m = market.getMarket(id2);
         assertEq(m.perMarketRedemptionFeeBps, 250);
         assertTrue(m.redemptionFeeOverridden);
     }
@@ -121,8 +125,9 @@ contract MarketRedemptionFeeTest is MarketFixture {
     // -----------------------------------------------------------------------
 
     function test_SetPerMarketRedemptionFeeBps_HappyPath() public {
-        _setMarketFee(id, 500);
-        assertEq(market.effectiveRedemptionFeeBps(id), 500);
+        uint256 id2 = _createMarketWithDefault(500);
+        _setMarketFee(id2, 500);
+        assertEq(market.effectiveRedemptionFeeBps(id2), 500);
     }
 
     function test_SetPerMarketRedemptionFeeBps_ExplicitZero() public {
@@ -136,9 +141,11 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_SetPerMarketRedemptionFeeBps_OverridesDefault() public {
-        _setDefaultFee(200);
-        _setMarketFee(id, 500);
-        assertEq(market.effectiveRedemptionFeeBps(id), 500);
+        // M-02: snapshot is captured at create. To assert override flow,
+        // create a fresh market with a non-zero default first.
+        uint256 id2 = _createMarketWithDefault(500);
+        _setMarketFee(id2, 200);
+        assertEq(market.effectiveRedemptionFeeBps(id2), 200);
     }
 
     function test_Revert_SetPerMarketRedemptionFeeBps_AboveCeiling() public {
@@ -162,11 +169,11 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_ClearPerMarketRedemptionFee_RestoresSnapshot() public {
-        uint256 id2 = _createMarketWithDefault(200);
-        _setMarketFee(id2, 500);
-        assertEq(market.effectiveRedemptionFeeBps(id2), 500);
+        uint256 id2 = _createMarketWithDefault(500);
+        _setMarketFee(id2, 200);
+        assertEq(market.effectiveRedemptionFeeBps(id2), 200);
         _clearMarketFee(id2);
-        assertEq(market.effectiveRedemptionFeeBps(id2), 200, "falls back to snapshot");
+        assertEq(market.effectiveRedemptionFeeBps(id2), 500, "falls back to snapshot");
         IMarketFacet.MarketView memory m = market.getMarket(id2);
         assertFalse(m.redemptionFeeOverridden);
         assertEq(m.perMarketRedemptionFeeBps, 0);
@@ -179,26 +186,28 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_PerMarketRedemptionFeeBps_EmitsEvent() public {
-        vm.expectEmit(true, true, true, true, address(diamond));
-        emit IMarketFacet.PerMarketRedemptionFeeUpdated(id, 400, true);
-        vm.prank(admin);
-        market.setPerMarketRedemptionFeeBps(id, 400);
+        uint256 id2 = _createMarketWithDefault(500);
 
         vm.expectEmit(true, true, true, true, address(diamond));
-        emit IMarketFacet.PerMarketRedemptionFeeUpdated(id, 0, false);
+        emit IMarketFacet.PerMarketRedemptionFeeUpdated(id2, 400, true);
         vm.prank(admin);
-        market.clearPerMarketRedemptionFee(id);
+        market.setPerMarketRedemptionFeeBps(id2, 400);
+
+        vm.expectEmit(true, true, true, true, address(diamond));
+        emit IMarketFacet.PerMarketRedemptionFeeUpdated(id2, 0, false);
+        vm.prank(admin);
+        market.clearPerMarketRedemptionFee(id2);
     }
 
     function test_EffectiveRedemptionFeeBps_FollowsOverrideThenSnapshot() public {
-        uint256 id2 = _createMarketWithDefault(200);
-        assertEq(market.effectiveRedemptionFeeBps(id2), 200);
-        // Override market to 500 → effective 500.
-        _setMarketFee(id2, 500);
+        uint256 id2 = _createMarketWithDefault(500);
         assertEq(market.effectiveRedemptionFeeBps(id2), 500);
-        // Clear override → effective back to snapshot 200.
-        _clearMarketFee(id2);
+        // Override market to 200 (lower than snapshot, allowed) → effective 200.
+        _setMarketFee(id2, 200);
         assertEq(market.effectiveRedemptionFeeBps(id2), 200);
+        // Clear override → effective back to snapshot 500.
+        _clearMarketFee(id2);
+        assertEq(market.effectiveRedemptionFeeBps(id2), 500);
     }
 
     // -----------------------------------------------------------------------
@@ -231,13 +240,16 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_Redeem_PerMarketFee_OverridesDefault() public {
-        _setDefaultFee(200);
-        _setMarketFee(id, 500); // 5%
-        _split(alice, id, 1000e6);
-        _resolveYes();
+        // M-02: create market with snapshot 1000, then lower override to 500.
+        uint256 id2 = _createMarketWithDefault(1000);
+        _setMarketFee(id2, 500); // 5%, below snapshot
+        _split(alice, id2, 1000e6);
+        oracle.setResolution(id2, true);
+        vm.warp(endTime + 1);
+        market.resolveMarket(id2);
         uint256 feeRecipBefore = usdc.balanceOf(feeRecipient);
         vm.prank(alice);
-        uint256 payout = market.redeem(id);
+        uint256 payout = market.redeem(id2);
         assertEq(payout, 950e6);
         assertEq(usdc.balanceOf(feeRecipient) - feeRecipBefore, 50e6);
     }
@@ -370,8 +382,11 @@ contract MarketRedemptionFeeTest is MarketFixture {
 
     function testFuzz_PerMarketBpsRoundtrip(uint16 bpsRaw) public {
         uint256 bps = bound(uint256(bpsRaw), 0, MAX_BPS);
-        _setMarketFee(id, uint16(bps));
-        assertEq(market.effectiveRedemptionFeeBps(id), bps);
+        // M-02: override must be <= snapshotted default. Build a fresh market
+        // whose snapshot equals MAX_BPS so the full bps range is admissible.
+        uint256 id2 = _createMarketWithDefault(MAX_BPS);
+        _setMarketFee(id2, uint16(bps));
+        assertEq(market.effectiveRedemptionFeeBps(id2), bps);
     }
 
     function testFuzz_Revert_OutOfRange(uint256 bpsRaw) public {

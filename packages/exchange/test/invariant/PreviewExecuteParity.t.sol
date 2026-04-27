@@ -109,7 +109,7 @@ contract PreviewExecuteParityTest is Test {
 
         uint256 limitPrice = _isBuy(side) ? 990_000 : 1;
         (uint256 previewFilled, uint256 previewCost) =
-            exchange.previewFillMarketOrder(MARKET_ID, side, limitPrice, amountIn, maxFills);
+            exchange.previewFillMarketOrder(MARKET_ID, side, limitPrice, amountIn, maxFills, address(0));
 
         vm.revertTo(snap);
 

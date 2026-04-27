@@ -13,6 +13,11 @@ interface IAccessControlFacet {
     error AccessControl_MissingRole(bytes32 role, address account);
     error AccessControl_BadConfirmation();
     error AccessControl_LastDefaultAdmin();
+    /// @notice Reverts when revoke/renounce would empty a self-administered role.
+    ///         Self-administered roles (`getRoleAdmin(role) == role`) cannot be
+    ///         re-granted from outside — emptying the holder set bricks the role
+    ///         permanently. Audit-fix L-05 (Pass 2.1).
+    error AccessControl_LastSelfAdministeredHolder(bytes32 role);
 
     /// @notice Whether `account` holds `role`.
     function hasRole(bytes32 role, address account) external view returns (bool);

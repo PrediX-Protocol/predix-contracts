@@ -118,6 +118,8 @@ contract DeployAllHookTrust is Test {
         IPrediXHook(address(proxy)).setTrustedRouter(QUOTER, true);
         IPrediXHook(address(proxy)).setAdmin(FINAL_HOOK_ADMIN);
 
+        // M-03 (audit Pass 2.1): admin rotation now timelocked 48h.
+        vm.warp(block.timestamp + 48 hours + 1);
         vm.prank(FINAL_HOOK_ADMIN);
         IPrediXHook(address(proxy)).acceptAdmin();
 

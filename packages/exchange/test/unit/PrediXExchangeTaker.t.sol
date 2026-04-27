@@ -219,31 +219,39 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         assertEq(_usdcBalance(bob), before, "full refund");
     }
 
-    // ============ 13. self-match complementary reverts ============
+    // ============ 13. self-match complementary silently skips (L-06 audit Pass 2.1) ============
 
-    function test_Revert_fillMarketOrder_selfMatchComplementary() public {
+    function test_fillMarketOrder_selfMatchComplementary_SkipsSilently() public {
+        // L-06: TakerPath now mirrors MakerPath — own orders are skipped via
+        // `_peekBest`'s `taker` filter rather than reverting. The taker gets
+        // a zero-fill (no other liquidity in this fixture).
         _placeSellYes(bob, 500_000, 10 * ONE_SHARE);
         _giveUsdc(bob, 10 * ONE_SHARE);
 
+        uint256 before = _usdcBalance(bob);
         vm.prank(bob);
-        vm.expectRevert(IPrediXExchange.SelfMatchNotAllowed.selector);
-        exchange.fillMarketOrder(
+        (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
             MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
         );
+        assertEq(filled, 0, "no fill - own order skipped");
+        assertEq(cost, 0, "no cost");
+        assertEq(_usdcBalance(bob), before, "full refund");
     }
 
-    // ============ 14. self-match synthetic reverts ============
+    // ============ 14. self-match synthetic silently skips (L-06 audit Pass 2.1) ============
 
-    function test_Revert_fillMarketOrder_selfMatchSynthetic() public {
+    function test_fillMarketOrder_selfMatchSynthetic_SkipsSilently() public {
         _placeBuyNo(bob, 400_000, 10 * ONE_SHARE);
-        // Bob already approved usdc via _giveUsdc inside _placeBuyNo. Top up so he has more.
         usdc.mint(bob, 10 * ONE_SHARE);
+        uint256 before = _usdcBalance(bob);
 
         vm.prank(bob);
-        vm.expectRevert(IPrediXExchange.SelfMatchNotAllowed.selector);
-        exchange.fillMarketOrder(
+        (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
             MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
         );
+        assertEq(filled, 0);
+        assertEq(cost, 0);
+        assertEq(_usdcBalance(bob), before);
     }
 
     // ============ 15. taker not approved reverts ============

@@ -7,68 +7,48 @@ import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {DiamondFixture} from "../utils/DiamondFixture.sol";
 
-/// @notice Repro for AUDIT-L-06 (Professional audit 2026-04-25):
-///         `_enforceLastAdminGuard` only protects `DEFAULT_ADMIN_ROLE`.
-///         `CUT_EXECUTOR_ROLE` is self-administered (F-D-01 / NEW-01) and has
-///         no last-holder guard. If the only executor (Timelock per deploy
-///         policy) ever revokes itself or renounces, `diamondCut` becomes
-///         permanently uncallable.
+/// @notice Fix-lock for AUDIT-L-05 (Pass 2.1, was L-06 in Pass 1):
+///         `_enforceLastAdminGuard` extended to cover self-administered roles
+///         (e.g. `CUT_EXECUTOR_ROLE`). The last holder of a self-administered
+///         role can no longer revoke/renounce because emptying the holder set
+///         is irrecoverable — no other role can grant the role back.
 ///
-///         The `diamondCut` selector is also marked immutable
-///         (`DiamondInit.sol:57`), so the cut facet cannot be replaced via
-///         alternate routes. **DEFAULT_ADMIN_ROLE cannot grant the role back**
-///         because the role is self-administered, not DEFAULT_ADMIN-administered.
-///
-///         This test demonstrates the bug at HEAD `ce524ba`. After the fix
-///         (extend `_enforceLastAdminGuard` to cover self-administered roles),
-///         test_BUG_LastTimelockSelfRevoke_BricksUpgrades should revert.
+///         Test names retained as `test_Revert_*` to lock the fix; the prior
+///         `test_BUG_*` repros (which passed when the bug existed) have been
+///         inverted to assert revert with `AccessControl_LastSelfAdministeredHolder`.
 contract Audit_L06_CutExecutorSelfRevoke is DiamondFixture {
-    /// @dev DEMONSTRATES BUG: timelock is the only CUT_EXECUTOR. It revokes
-    ///      itself. Diamond cut is permanently disabled. No recovery path.
-    function test_BUG_LastTimelockSelfRevoke_BricksUpgrades() public {
+    /// @dev FIX-LOCK: timelock is the only CUT_EXECUTOR. Self-revoke must
+    ///      revert with `AccessControl_LastSelfAdministeredHolder` to prevent
+    ///      the brick.
+    function test_Revert_LastTimelockSelfRevoke_RejectsBrick() public {
         assertTrue(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
 
-        // Self-revoke succeeds — no last-holder guard for CUT_EXECUTOR_ROLE.
         vm.prank(timelock);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControlFacet.AccessControl_LastSelfAdministeredHolder.selector, Roles.CUT_EXECUTOR_ROLE
+            )
+        );
         accessControl.revokeRole(Roles.CUT_EXECUTOR_ROLE, timelock);
 
-        assertFalse(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
-
-        // Diamond cut is now permanently uncallable.
+        // Sanity: timelock still holds, diamondCut still callable.
+        assertTrue(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](0);
         vm.prank(timelock);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControlFacet.AccessControl_MissingRole.selector, Roles.CUT_EXECUTOR_ROLE, timelock
-            )
-        );
         diamondCut.diamondCut(cuts, address(0), "");
-
-        // DEFAULT_ADMIN cannot recover — role is self-administered.
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControlFacet.AccessControl_MissingRole.selector, Roles.CUT_EXECUTOR_ROLE, admin
-            )
-        );
-        accessControl.grantRole(Roles.CUT_EXECUTOR_ROLE, timelock);
     }
 
-    /// @dev DEMONSTRATES BUG variant: renounceRole path. Same outcome.
-    function test_BUG_LastTimelockRenounce_BricksUpgrades() public {
-        vm.prank(timelock);
-        accessControl.renounceRole(Roles.CUT_EXECUTOR_ROLE, timelock);
-
-        assertFalse(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
-
-        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](0);
+    /// @dev FIX-LOCK: renounceRole path also blocked.
+    function test_Revert_LastTimelockRenounce_RejectsBrick() public {
         vm.prank(timelock);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControlFacet.AccessControl_MissingRole.selector, Roles.CUT_EXECUTOR_ROLE, timelock
+                IAccessControlFacet.AccessControl_LastSelfAdministeredHolder.selector, Roles.CUT_EXECUTOR_ROLE
             )
         );
-        diamondCut.diamondCut(cuts, address(0), "");
+        accessControl.renounceRole(Roles.CUT_EXECUTOR_ROLE, timelock);
+
+        assertTrue(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
     }
 
     /// @dev Sanity: with TWO executors, revoking one does NOT brick. Justifies
@@ -95,12 +75,18 @@ contract Audit_L06_CutExecutorSelfRevoke is DiamondFixture {
         accessControl.revokeRole(Roles.DEFAULT_ADMIN_ROLE, admin);
     }
 
-    /// @dev EXPECTED-AFTER-FIX: extending `_enforceLastAdminGuard` to also
-    ///      cover CUT_EXECUTOR_ROLE would make this test FAIL on the bug
-    ///      reproduction (the revoke would revert) and instead pass here.
-    ///      Marker for the fix-lock test that should be added when the fix
-    ///      lands.
-    function test_DESIRED_LastCutExecutorRevokeRejected_PendingFix() public pure {
-        return;
+    /// @dev FIX-LOCK: with two executors, revoking one MUST succeed (only
+    ///      blocks when emptying the holder set).
+    function test_TwoExecutors_RevokeOne_Succeeds() public {
+        address secondExec = makeAddr("secondExec");
+        vm.prank(timelock);
+        accessControl.grantRole(Roles.CUT_EXECUTOR_ROLE, secondExec);
+
+        // Revoking ONE of two is allowed.
+        vm.prank(timelock);
+        accessControl.revokeRole(Roles.CUT_EXECUTOR_ROLE, timelock);
+
+        assertFalse(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock));
+        assertTrue(accessControl.hasRole(Roles.CUT_EXECUTOR_ROLE, secondExec));
     }
 }

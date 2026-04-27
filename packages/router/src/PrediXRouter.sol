@@ -325,7 +325,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 clobLimit = _clobBuyYesLimit(yesToken);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills);
+            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, address(0));
 
         uint256 usdcLeft = usdcIn - clobCost;
         if (usdcLeft > 0) {
@@ -355,7 +355,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         // denomination delivered to taker and cost = input denomination consumed
         // from taker. For SELL_YES: filled = USDC out, cost = YES in.
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills);
+            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, address(0));
 
         uint256 yesLeft = yesIn - sharesFilled;
         if (yesLeft > 0) {
@@ -382,7 +382,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 clobLimit = _clobBuyNoLimit(yesToken);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills);
+            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, address(0));
 
         uint256 usdcLeft = usdcIn - clobCost;
         if (usdcLeft > 0) {
@@ -404,7 +404,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 sharesFilled;
         // SELL_NO: filled = USDC out, cost = NO in (side-dependent tuple).
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills);
+            .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, address(0));
 
         uint256 noLeft = noIn - sharesFilled;
         if (noLeft > 0) {
@@ -964,12 +964,18 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         maxCost = (costQuote * BPS_DENOMINATOR) / VIRTUAL_SAFETY_MARGIN_BPS;
     }
 
-    /// @notice Enforce the diamond's `perMarketCap` against a prospective `splitPosition`.
+    /// @notice Enforce the diamond's effective per-market cap against a prospective `splitPosition`.
     /// @dev `getMarket` is the heavy read — we only pay for it inside the virtual-NO path
     ///      where `splitPosition` is actually invoked. See spec §7 E18.
+    /// @dev L-01 (audit Pass 2.1): mirrors diamond's effective-cap formula
+    ///      `cap = perMarketCap > 0 ? perMarketCap : defaultPerMarketCap`. Pre-fix
+    ///      the router only checked `perMarketCap`, so default-capped markets
+    ///      silently passed pre-flight then reverted deep inside the unlock
+    ///      callback after gas was spent on the flash-sell + swap.
     function _enforcePerMarketCap(uint256 marketId, uint256 mintAmount) internal view {
         IMarketFacet.MarketView memory m = IMarketFacet(diamond).getMarket(marketId);
-        if (m.perMarketCap != 0 && m.totalCollateral + mintAmount > m.perMarketCap) {
+        uint256 cap = m.perMarketCap > 0 ? m.perMarketCap : IMarketFacet(diamond).defaultPerMarketCap();
+        if (cap > 0 && m.totalCollateral + mintAmount > cap) {
             revert PerMarketCapExceeded();
         }
     }

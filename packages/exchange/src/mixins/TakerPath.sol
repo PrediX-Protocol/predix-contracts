@@ -91,7 +91,25 @@ abstract contract TakerPath is ExchangeStorage {
                 ? _executeComplementaryTakerFill(ctx, makerPrice, makerOrderId, fillAmount)
                 : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount);
 
-            if (outDelta == 0) break;
+            if (outDelta == 0) {
+                // M-01 (audit Pass 2.1): zero-fill differentiation.
+                // Type A — maker is structurally dust: `makerRemaining * price / 1e6 == 0`.
+                //          Even a full-take of the maker's residual yields no USDC.
+                //          Force-clean (sweep residual to feeRecipient, drop from queue) and
+                //          continue the waterfall to deeper liquidity. Pre-fix this case was
+                //          a global DoS — the dust order at the FIFO head blocked every
+                //          taker on the side until the maker self-cancelled.
+                // Type B — taker has sub-tick budget remaining; nothing more to extract this
+                //          call. Maker is NOT dust at its own scale, so leave it intact and
+                //          break the waterfall.
+                IPrediXExchange.Order storage outerMaker = orders[makerOrderId];
+                uint256 makerRemaining = outerMaker.amount - outerMaker.filled;
+                if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
+                    _forceCleanDustMaker(ctx.marketId, makerOrderId, makerPrice);
+                    continue;
+                }
+                break;
+            }
 
             filled += outDelta;
             cost += inDelta;
@@ -116,8 +134,13 @@ abstract contract TakerPath is ExchangeStorage {
     {
         (IPrediXExchange.Side compSide, IPrediXExchange.Side synSide) = MatchMath.sidesFor(ctx.takerSide);
 
-        (uint256 compBest, bytes32 compOrderId) = _peekBest(ctx.marketId, compSide);
-        (uint256 synBestMaker, bytes32 synOrderId) = _peekBest(ctx.marketId, synSide);
+        // L-06 (audit Pass 2.1): peek with `taker` filter so own orders are
+        // skipped silently like MakerPath does (mirrors `i++; continue;`).
+        // Without this, a taker holding any resting order at the FIFO head of
+        // the opposite side would have the entire `fillMarketOrder` revert
+        // with `SelfMatchNotAllowed`, even when non-self liquidity sits behind.
+        (uint256 compBest, bytes32 compOrderId) = _peekBest(ctx.marketId, compSide, ctx.taker);
+        (uint256 synBestMaker, bytes32 synOrderId) = _peekBest(ctx.marketId, synSide, ctx.taker);
 
         uint256 synBestEffective = MatchMath.syntheticEffectivePrice(synBestMaker);
 
@@ -145,7 +168,10 @@ abstract contract TakerPath is ExchangeStorage {
     /// @notice Best resting order on `side`, skipping cancelled / fully-filled / zero-deposit entries.
     /// @dev With queue-cleanup discipline (M5) the loop body executes once in the well-behaved case.
     ///      The defensive `continue` chain stays as a safety net for any future leak.
-    function _peekBest(uint256 marketId, IPrediXExchange.Side side)
+    /// @dev L-06 (audit Pass 2.1): `taker` parameter is passed through so
+    ///      self-owned orders are skipped silently (mirroring MakerPath's
+    ///      `i++; continue;`). Pass `address(0)` to disable the filter.
+    function _peekBest(uint256 marketId, IPrediXExchange.Side side, address taker)
         internal
         view
         returns (uint256 price, bytes32 orderId)
@@ -162,6 +188,8 @@ abstract contract TakerPath is ExchangeStorage {
             if (order.cancelled) continue;
             if (order.filled >= order.amount) continue;
             if (order.depositLocked == 0) continue;
+            // L-06: skip own orders so the waterfall progresses past them.
+            if (taker != address(0) && order.owner == taker) continue;
             return (order.price, queue[i]);
         }
         return (0, bytes32(0));
@@ -325,5 +353,44 @@ abstract contract TakerPath is ExchangeStorage {
     function _inputTokenFor(TakerCtx memory ctx) internal view returns (address) {
         if (ctx.takerIsBuy) return usdc;
         return ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken;
+    }
+
+    /// @dev M-01 (audit Pass 2.1): force-clean a dust maker order whose remaining
+    ///      capacity is too small to produce a non-zero fill. Marks the order
+    ///      fully-filled, drops it from the queue/bitmap via `_onMakerFullyFilled`,
+    ///      and sweeps residual `depositLocked` to `feeRecipient`. This keeps the
+    ///      orderbook live and dis-incentivises dust-griefing.
+    function _forceCleanDustMaker(uint256 marketId, bytes32 dustOrderId, uint256 makerPrice) internal {
+        IPrediXExchange.Order storage dust = orders[dustOrderId];
+        IPrediXExchange.Side dustSide = dust.side;
+        address dustOwner = dust.owner;
+        uint8 priceIdx = _priceToIndex(makerPrice);
+        // Mark order fully-filled so subsequent peeks skip it. `filled = amount`
+        // is the canonical terminal-state marker.
+        dust.filled = uint128(dust.amount);
+        // `_onMakerFullyFilled` handles BUY-residual sweep + queue/bitmap
+        // cleanup + per-user count decrement. For SELL orders the residual
+        // (in tokens) is left in `depositLocked`; sweep the token residual
+        // to feeRecipient explicitly because `_onMakerFullyFilled`'s sweep
+        // path only covers the USDC (BUY) leg.
+        if (dustSide == IPrediXExchange.Side.SELL_YES || dustSide == IPrediXExchange.Side.SELL_NO) {
+            uint128 tokenResidual = dust.depositLocked;
+            if (tokenResidual > 0) {
+                dust.depositLocked = 0;
+                address tokenAddr =
+                    dustSide == IPrediXExchange.Side.SELL_YES ? _yesTokenFor(marketId) : _noTokenFor(marketId);
+                IERC20(tokenAddr).safeTransfer(feeRecipient, uint256(tokenResidual));
+                emit IPrediXExchange.FeeCollected(marketId, uint256(tokenResidual));
+            }
+        }
+        _onMakerFullyFilled(marketId, dustSide, priceIdx, dustOrderId, dustOwner);
+    }
+
+    function _yesTokenFor(uint256 marketId) private view returns (address) {
+        return IMarketFacet(diamond).getMarket(marketId).yesToken;
+    }
+
+    function _noTokenFor(uint256 marketId) private view returns (address) {
+        return IMarketFacet(diamond).getMarket(marketId).noToken;
     }
 }

@@ -16,8 +16,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         _placeSellYes(alice, 500_000, 100 * ONE_SHARE);
         _giveUsdc(bob, 100 * ONE_SHARE);
 
-        (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0);
+        (uint256 pf, uint256 pc) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0, address(0)
+        );
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
@@ -32,8 +33,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         _placeBuyNo(alice, 400_000, 100 * ONE_SHARE);
         _giveUsdc(bob, 100 * ONE_SHARE);
 
-        (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, 0);
+        (uint256 pf, uint256 pc) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, 0, address(0)
+        );
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
@@ -48,8 +50,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         _placeSellNo(alice, 400_000, 100 * ONE_SHARE);
         _giveYesNo(bob, 100 * ONE_SHARE);
 
-        (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, 0);
+        (uint256 pf, uint256 pc) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, 0, address(0)
+        );
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
@@ -67,8 +70,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         _placeSellYes(carol, 600_000, 50 * ONE_SHARE);
         _giveUsdc(bob, 100 * ONE_SHARE);
 
-        (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, 0);
+        (uint256 pf, uint256 pc) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, 0, address(0)
+        );
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
@@ -92,7 +96,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         uint256 cnt0 = exchange.userOrderCount(MARKET_ID, alice);
         uint256 makerUsdc0 = _usdcBalance(alice);
 
-        exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0);
+        exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0, address(0)
+        );
 
         (uint256 bbY1, uint256 baY1, uint256 bbN1, uint256 baN1) = exchange.getBestPrices(MARKET_ID);
         IPrediXExchange.Order memory ord1 = exchange.getOrder(mid);
@@ -117,7 +123,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         _placeSellYes(alice, 500_000, 100 * ONE_SHARE);
 
         vm.recordLogs();
-        exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0);
+        exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0, address(0)
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(logs.length, 0, "no events");
     }
@@ -125,8 +133,9 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
     // ============ 4. preview empty CLOB ============
 
     function test_preview_empty_clob() public view {
-        (uint256 f, uint256 c) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0);
+        (uint256 f, uint256 c) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, 0, address(0)
+        );
         assertEq(f, 0);
         assertEq(c, 0);
     }
@@ -138,11 +147,12 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
         diamond.setMarketResolved(MARKET_ID, true);
 
         vm.expectRevert(IPrediXExchange.MarketResolved.selector);
-        exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, 0);
+        exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, 0, address(0));
     }
 
     function test_preview_zeroAmountInReturnsZero() public view {
-        (uint256 f, uint256 c) = exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 0, 0);
+        (uint256 f, uint256 c) =
+            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 0, 0, address(0));
         assertEq(f, 0);
         assertEq(c, 0);
     }

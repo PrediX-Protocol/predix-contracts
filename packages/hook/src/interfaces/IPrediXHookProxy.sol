@@ -46,6 +46,10 @@ interface IPrediXHookProxy {
     ///         the constructor binds the initial admin.
     event HookProxy_AdminChanged(address indexed previous, address indexed current);
 
+    /// @notice M-03 (audit Pass 2.1): emitted when `cancelProxyAdminChange`
+    ///         discards a pending admin nomination before the nominee accepts.
+    event HookProxy_AdminChangeCancelled(address indexed cancelled);
+
     // ---------------------------------------------------------------------
     // Errors
     // ---------------------------------------------------------------------
@@ -107,6 +111,22 @@ interface IPrediXHookProxy {
     ///         the delay derived from the current timelock has elapsed.
     error HookProxy_TimelockDelayNotElapsed();
 
+    /// @notice M-03 (audit Pass 2.1): thrown when `acceptProxyAdmin` is called
+    ///         before the 48h `ADMIN_ROTATION_DELAY` has elapsed since
+    ///         `changeProxyAdmin`. Mirrors the timelock pattern across the
+    ///         other governance-critical flows so a compromised admin cannot
+    ///         instant-rotate to a fresh attacker key.
+    error HookProxy_AdminDelayNotElapsed();
+
+    /// @notice M-03 (audit Pass 2.1): thrown when `changeProxyAdmin` is
+    ///         called while a previous admin nomination is still pending.
+    ///         Mirrors the universal AlreadyPending pattern (M-01).
+    error HookProxy_AlreadyPendingAdmin();
+
+    /// @notice M-03 (audit Pass 2.1): thrown when `cancelProxyAdminChange` is
+    ///         called with no pending admin nomination.
+    error HookProxy_NoPendingAdminChange();
+
     /// @notice Thrown when the atomic `initialize` delegatecall in the constructor reverts.
     ///         The original revert data is bubbled up via assembly when available; this error
     ///         surfaces only when the implementation reverts with empty return data.
@@ -146,11 +166,20 @@ interface IPrediXHookProxy {
     // Admin transfer (two-step)
     // ---------------------------------------------------------------------
 
-    /// @notice Nominate a new proxy admin. The nominee must call `acceptProxyAdmin()`.
+    /// @notice Nominate a new proxy admin. The nominee must call
+    ///         `acceptProxyAdmin()` AT OR AFTER `pendingProxyAdminReadyAt()` —
+    ///         the M-03 (audit Pass 2.1) 48h timelock prevents a compromised
+    ///         admin from instant-rotating to a fresh attacker key.
     function changeProxyAdmin(address newAdmin) external;
 
-    /// @notice Accept a pending proxy-admin nomination. Caller-restricted to the nominee.
+    /// @notice Accept a pending proxy-admin nomination after the 48h
+    ///         timelock has elapsed. Caller-restricted to the nominee.
     function acceptProxyAdmin() external;
+
+    /// @notice M-03 (audit Pass 2.1): cancel a pending admin nomination
+    ///         before the nominee accepts. Admin-only — gives legitimate
+    ///         admin a recovery window if the nominee is suspect.
+    function cancelProxyAdminChange() external;
 
     // ---------------------------------------------------------------------
     // Views
@@ -164,4 +193,8 @@ interface IPrediXHookProxy {
     function pendingTimelockDuration() external view returns (uint256 duration, uint256 readyAt);
     function proxyAdmin() external view returns (address);
     function pendingProxyAdmin() external view returns (address);
+
+    /// @notice M-03 (audit Pass 2.1): timestamp at which `acceptProxyAdmin`
+    ///         becomes callable. Returns 0 when no admin change is pending.
+    function pendingProxyAdminReadyAt() external view returns (uint256);
 }

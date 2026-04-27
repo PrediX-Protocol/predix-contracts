@@ -57,17 +57,23 @@ contract FinalH04_RetroactiveFee is MarketFixture {
     }
 
     function test_Revert_ClearPerMarketRedemptionFee_AfterRefundMode() public {
-        _split(alice, id, 100e6);
+        // M-02 (audit Pass 2.1): override must be <= snapshotted default. Set
+        // default to 1000 and create a fresh market so snapshot=1000 admits
+        // the 500 override below.
         vm.prank(admin);
-        market.setPerMarketRedemptionFeeBps(id, 500);
+        market.setDefaultRedemptionFeeBps(1000);
+        uint256 id2 = _createMarket(block.timestamp + 7 days);
+        _split(alice, id2, 100e6);
+        vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id2, 500);
 
         vm.warp(endTime + 1);
         vm.prank(admin);
-        market.enableRefundMode(id);
+        market.enableRefundMode(id2);
 
         vm.expectRevert(IMarketFacet.Market_FeeLockedAfterFinal.selector);
         vm.prank(admin);
-        market.clearPerMarketRedemptionFee(id);
+        market.clearPerMarketRedemptionFee(id2);
     }
 
     /// @dev New markets created after the admin hike do pick up the new default

@@ -237,6 +237,8 @@ contract PrediXHookProxyV2Test is Test {
         assertEq(proxy.pendingProxyAdmin(), otherAdmin);
         assertEq(proxy.proxyAdmin(), proxyAdmin);
 
+        // M-03 (Pass 2.1): 48h timelock now applies to proxy admin rotation.
+        vm.warp(block.timestamp + proxy.ADMIN_ROTATION_DELAY() + 1);
         vm.prank(otherAdmin);
         proxy.acceptProxyAdmin();
         assertEq(proxy.proxyAdmin(), otherAdmin);

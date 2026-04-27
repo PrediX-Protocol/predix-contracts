@@ -36,11 +36,16 @@ interface IPrediXExchangeView {
     ) external returns (uint256 filled, uint256 cost);
 
     /// @notice Simulate `fillMarketOrder` without execution. Safe to call from `eth_call`.
+    /// @dev L-07 (audit Pass 2.1): `taker` parameter mirrors the self-match
+    ///      filter in `fillMarketOrder` so preview output matches execute when
+    ///      caller has resting orders on the opposite side. Pass `address(0)`
+    ///      to opt out of the filter.
     function previewFillMarketOrder(
         uint256 marketId,
         Side takerSide,
         uint256 limitPrice,
         uint256 amountIn,
-        uint256 maxFills
+        uint256 maxFills,
+        address taker
     ) external view returns (uint256 filled, uint256 cost);
 }

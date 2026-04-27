@@ -142,6 +142,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///      slot is keyed by marketId; non-zero `proposedAt` = pending.
     mapping(uint256 marketId => uint256 proposedAt) private _pendingUnregisterProposedAt;
 
+    /// @dev M-03 (audit Pass 2.1) append-only storage for the 48h-timelocked
+    ///      admin rotation. `_pendingAdmin` already exists at slot ~9; we
+    ///      append `_pendingAdminProposedAt` so legitimate admin has a 48h
+    ///      recovery window via `cancelAdminRotation` if a compromised admin
+    ///      nominates an attacker key.
+    uint256 private _pendingAdminProposedAt;
+
     /// @notice Minimum wait between `proposeTrustedRouter` and
     ///         `executeTrustedRouter`. Matches the diamond/hook-proxy 48h floor
     ///         so governance delays are uniform.
@@ -157,6 +164,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         cadence so binding mutations carry the same governance notice
     ///         as the rotation that motivated them. (H-01 audit fix)
     uint256 public constant MARKET_UNREGISTER_DELAY = 48 hours;
+
+    /// @notice Minimum wait between `setAdmin` and `acceptAdmin`. Mirrors
+    ///         the diamond / trusted-router / unregister cadence so a
+    ///         compromised admin cannot instant-rotate to a fresh attacker
+    ///         key — legitimate admin has 48h to call `cancelAdminRotation`.
+    ///         (M-03 audit fix Pass 2.1)
+    uint256 public constant ADMIN_ROTATION_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
@@ -348,8 +362,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function setAdmin(address admin_) external override onlyAdmin {
+        // M-03 (audit Pass 2.1): apply universal AlreadyPending guard so a
+        // compromised admin cannot silently overwrite a legitimate-admin
+        // recovery nomination.
+        if (_pendingAdminProposedAt != 0) revert Hook_AlreadyPendingAdmin();
         if (admin_ == address(0)) revert Hook_ZeroAddress();
         _pendingAdmin = admin_;
+        _pendingAdminProposedAt = block.timestamp;
         emit Hook_AdminChangeProposed(_admin, admin_);
     }
 
@@ -357,10 +376,25 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function acceptAdmin() external override {
         address pending = _pendingAdmin;
         if (msg.sender != pending) revert Hook_OnlyPendingAdmin();
+        // M-03: enforce 48h delay so legitimate admin has a recovery window
+        // via `cancelAdminRotation`.
+        if (block.timestamp < _pendingAdminProposedAt + ADMIN_ROTATION_DELAY) {
+            revert Hook_AdminDelayNotElapsed();
+        }
         address previous = _admin;
         _admin = pending;
         _pendingAdmin = address(0);
+        delete _pendingAdminProposedAt;
         emit Hook_AdminUpdated(previous, pending);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelAdminRotation() external override onlyAdmin {
+        if (_pendingAdminProposedAt == 0) revert Hook_NoPendingAdminChange();
+        address cancelled = _pendingAdmin;
+        delete _pendingAdmin;
+        delete _pendingAdminProposedAt;
+        emit Hook_AdminChangeCancelled(cancelled);
     }
 
     /// @inheritdoc IPrediXHook
@@ -549,6 +583,11 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         return (_pendingRouterState[router], proposedAt + TRUSTED_ROUTER_DELAY);
     }
 
+    function pendingAdminRotation() external view override returns (address pending, uint256 readyAt) {
+        pending = _pendingAdmin;
+        readyAt = _pendingAdminProposedAt == 0 ? 0 : _pendingAdminProposedAt + ADMIN_ROTATION_DELAY;
+    }
+
     // ---------------------------------------------------------------------
     // Hook permissions
     // ---------------------------------------------------------------------
@@ -662,6 +701,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (!key.fee.isDynamicFee()) revert Hook_PoolFeeNotDynamic();
         PoolBinding storage binding = _poolBinding[key.toId()];
         if (binding.marketId == 0) revert Hook_PoolNotRegistered();
+        // L-03 (audit Pass 2.1): symmetric M-02 stale-binding guard. Without
+        // this, a pool registered against the old diamond and initialized
+        // after a diamond rotation would init successfully but be permanently
+        // unusable (every subsequent swap/add/donate reverts Hook_StaleBinding).
+        // One extra diamond view-call per init; init is one-shot per pool.
+        IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(binding.marketId);
+        _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         uint256 yesPrice = _sqrtPriceToYesPrice(sqrtPriceX96, binding.yesIsCurrency0);
         if (yesPrice < _INIT_PRICE_MIN || yesPrice > _INIT_PRICE_MAX) revert Hook_InitPriceOutOfWindow();
         return IHooks.beforeInitialize.selector;

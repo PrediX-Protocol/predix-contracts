@@ -40,7 +40,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
         _giveUsdc(bob, amountIn);
 
         (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, 0);
+            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, 0, address(0));
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
@@ -60,7 +60,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
         _giveUsdc(bob, amountIn);
 
         (uint256 pf, uint256 pc) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, 0);
+            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, 0, address(0));
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(

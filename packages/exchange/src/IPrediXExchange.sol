@@ -170,12 +170,17 @@ interface IPrediXExchange {
 
     /// @notice Simulate `fillMarketOrder` without execution.
     /// @dev Pure view. Uses virtual consumption tracking. Callers use `eth_call` (free) to preview.
+    /// @dev L-07 (audit Pass 2.1): `taker` parameter mirrors `fillMarketOrder`'s
+    ///      self-match skip so preview output matches the real call when the
+    ///      caller is the FIFO head of an opposite-side level. Pass `address(0)`
+    ///      to disable the filter (matches the pre-fix behaviour).
     function previewFillMarketOrder(
         uint256 marketId,
         Side takerSide,
         uint256 limitPrice,
         uint256 amountIn,
-        uint256 maxFills
+        uint256 maxFills,
+        address taker
     ) external view returns (uint256 filled, uint256 cost);
 
     function getBestPrices(uint256 marketId)

@@ -149,6 +149,8 @@ contract PrediXHookV2Test is Test {
         hook.setAdmin(newAdmin);
         // FINAL-H09: propose leg must not rotate yet.
         assertEq(hook.admin(), admin);
+        // M-03 (Pass 2.1): admin rotation now carries a 48h timelock.
+        vm.warp(block.timestamp + hook.ADMIN_ROTATION_DELAY() + 1);
         vm.prank(newAdmin);
         hook.acceptAdmin();
         assertEq(hook.admin(), newAdmin);

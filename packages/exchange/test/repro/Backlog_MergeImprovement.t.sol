@@ -132,8 +132,9 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
         _placeSellYes(alice, 770_000, 10 * ONE_SHARE);
         _giveYesNo(bob, 10 * ONE_SHARE);
 
-        (uint256 previewFilled,) =
-            exchange.previewFillMarketOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, 10 * ONE_SHARE, 0);
+        (uint256 previewFilled,) = exchange.previewFillMarketOrder(
+            MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, 10 * ONE_SHARE, 0, address(0)
+        );
 
         uint256 bobBefore = _usdcBalance(bob);
         vm.prank(bob);

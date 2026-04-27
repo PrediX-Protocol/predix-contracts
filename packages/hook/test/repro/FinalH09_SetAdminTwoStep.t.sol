@@ -46,6 +46,8 @@ contract FinalH09Test is Test {
     function test_AcceptAdmin_HappyPath_RotatesAdmin() public {
         vm.prank(admin);
         hook.setAdmin(newAdmin);
+        // M-03 (Pass 2.1): 48h timelock now applies to admin rotation.
+        vm.warp(block.timestamp + hook.ADMIN_ROTATION_DELAY() + 1);
         vm.prank(newAdmin);
         hook.acceptAdmin();
         assertEq(hook.admin(), newAdmin);
@@ -71,6 +73,7 @@ contract FinalH09Test is Test {
     function test_AcceptAdmin_ClearsPending_PreventsReplay() public {
         vm.prank(admin);
         hook.setAdmin(newAdmin);
+        vm.warp(block.timestamp + hook.ADMIN_ROTATION_DELAY() + 1);
         vm.prank(newAdmin);
         hook.acceptAdmin();
         // Second acceptance attempt must fail — pending slot cleared.

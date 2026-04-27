@@ -5,20 +5,12 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 
 import {MarketFixture} from "../utils/MarketFixture.sol";
 
-/// @notice Repro for AUDIT-L-05 (Professional audit 2026-04-25):
-///         `enableRefundMode` is admin-gated but does NOT check whether the
-///         oracle has already produced an answer. After endTime passes, an
-///         admin observing an oracle outcome they dislike can call
-///         `enableRefundMode` to override a deterministic resolution.
-///
-///         `emergencyResolve` already checks this asymmetrically (lines
-///         155-159 of MarketFacet — `Market_OracleResolvedUseResolve`).
-///         `enableRefundMode` does not. The audit recommends mirroring
-///         `emergencyResolve`'s try/catch oracle-resolved guard.
-///
-///         These tests demonstrate the bug at HEAD `ce524ba`. After the fix,
-///         test_BUG_AdminOverridesResolvedOracle should revert with
-///         `Market_OracleResolvedUseResolve`.
+/// @notice Fix-lock for AUDIT-L-04 (Pass 2.1, was L-05 in Pass 1):
+///         `enableRefundMode` now mirrors `emergencyResolve`'s try/catch
+///         guard against oracle-resolved markets. Admin can no longer
+///         override a deterministic resolution by racing the permissionless
+///         `resolveMarket`. Oracle-unreachable case still permits legitimate
+///         stall recovery via the catch arm.
 contract Audit_L05_RefundModeOracleRace is MarketFixture {
     uint256 internal id;
     uint256 internal endTime;
@@ -30,31 +22,27 @@ contract Audit_L05_RefundModeOracleRace is MarketFixture {
         id = _createMarket(endTime);
     }
 
-    /// @dev DEMONSTRATES BUG: oracle has resolved YES at endTime+1. Admin
-    ///      front-runs the permissionless `resolveMarket` call by enabling
-    ///      refund mode. Subsequent `resolveMarket` reverts; the deterministic
-    ///      oracle outcome is lost.
-    function test_BUG_AdminFrontRunsResolvedOracle() public {
+    /// @dev FIX-LOCK: oracle has resolved YES at endTime+1. Admin attempt to
+    ///      enable refund mode MUST revert with
+    ///      `Market_OracleResolvedUseResolve` — the deterministic oracle
+    ///      outcome is preserved.
+    function test_Revert_EnableRefundMode_OracleAlreadyResolved() public {
         _split(alice, id, SPLIT_AMT);
         oracle.setResolution(id, true);
         vm.warp(endTime + 1);
 
-        // Oracle is resolved on-chain — anyone could call resolveMarket.
         assertTrue(oracle.isResolved(id), "oracle ready");
 
-        // Admin races ahead and enables refund mode. NO oracle-resolved
-        // check exists in enableRefundMode.
         vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_OracleResolvedUseResolve.selector);
         market.enableRefundMode(id);
 
-        // Subsequent resolveMarket fails — admin override succeeded.
-        vm.expectRevert(IMarketFacet.Market_RefundModeActive.selector);
+        // Sanity — resolveMarket still works; outcome preserved.
         market.resolveMarket(id);
-
-        // Sanity — alice can refund (50/50 burn) but the YES outcome is gone.
         IMarketFacet.MarketView memory m = market.getMarket(id);
-        assertTrue(m.refundModeActive);
-        assertFalse(m.isResolved);
+        assertTrue(m.isResolved);
+        assertTrue(m.outcome);
+        assertFalse(m.refundModeActive);
     }
 
     /// @dev Sanity: emergencyResolve has the symmetric guard. Same scenario,

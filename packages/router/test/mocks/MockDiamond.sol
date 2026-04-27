@@ -26,6 +26,10 @@ contract MockDiamond {
     mapping(uint256 => MarketConfig) internal _markets;
     mapping(bytes32 => bool) internal _modulePaused;
     bool internal _globalPaused;
+    /// @dev L-01 (audit Pass 2.1): MockDiamond must mirror the diamond's
+    ///      `defaultPerMarketCap()` view so router's effective-cap formula
+    ///      (perMarketCap > 0 ? perMarketCap : default) can be exercised.
+    uint256 internal _defaultPerMarketCap;
 
     constructor(address _usdc) {
         usdc = _usdc;
@@ -51,6 +55,14 @@ contract MockDiamond {
 
     function setPerMarketCap(uint256 marketId, uint256 cap) external {
         _markets[marketId].perMarketCap = cap;
+    }
+
+    function setDefaultPerMarketCap(uint256 cap) external {
+        _defaultPerMarketCap = cap;
+    }
+
+    function defaultPerMarketCap() external view returns (uint256) {
+        return _defaultPerMarketCap;
     }
 
     /// @dev Test helper: seed `totalCollateral` without running `splitPosition`. Used when a

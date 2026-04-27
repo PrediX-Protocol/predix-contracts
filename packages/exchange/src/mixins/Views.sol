@@ -25,7 +25,8 @@ abstract contract Views is ExchangeStorage {
         IPrediXExchange.Side takerSide,
         uint256 limitPrice,
         uint256 amountIn,
-        uint256 maxFills
+        uint256 maxFills,
+        address taker
     ) internal view virtual returns (uint256 filled, uint256 cost) {
         if (amountIn == 0) return (0, 0);
 
@@ -46,7 +47,7 @@ abstract contract Views is ExchangeStorage {
             if (remaining == 0) break;
 
             (FillSource source, uint256 makerPrice, bytes32 makerOrderId, uint256 fillAmount) = _pickBestSourceVirtual(
-                marketId, takerSide, limitPrice, remaining, visitedOrderIds, consumedPerOrder, visited
+                marketId, takerSide, limitPrice, remaining, visitedOrderIds, consumedPerOrder, visited, taker
             );
 
             if (source == FillSource.NONE || fillAmount == 0) break;
@@ -77,14 +78,15 @@ abstract contract Views is ExchangeStorage {
         uint256 remainingBudget,
         bytes32[] memory visitedOrderIds,
         uint256[] memory consumedPerOrder,
-        uint256 visited
+        uint256 visited,
+        address taker
     ) internal view returns (FillSource source, uint256 makerPrice, bytes32 makerOrderId, uint256 fillAmount) {
         (IPrediXExchange.Side compSide, IPrediXExchange.Side synSide) = MatchMath.sidesFor(takerSide);
 
         (uint256 compBest, bytes32 compOrderId, uint256 compCapacity) =
-            _peekBestVirtual(marketId, compSide, visitedOrderIds, consumedPerOrder, visited);
+            _peekBestVirtual(marketId, compSide, visitedOrderIds, consumedPerOrder, visited, taker);
         (uint256 synBestMaker, bytes32 synOrderId, uint256 synCapacity) =
-            _peekBestVirtual(marketId, synSide, visitedOrderIds, consumedPerOrder, visited);
+            _peekBestVirtual(marketId, synSide, visitedOrderIds, consumedPerOrder, visited, taker);
 
         uint256 synBestEffective = MatchMath.syntheticEffectivePrice(synBestMaker);
 
@@ -122,7 +124,8 @@ abstract contract Views is ExchangeStorage {
         IPrediXExchange.Side side,
         bytes32[] memory visitedOrderIds,
         uint256[] memory consumedPerOrder,
-        uint256 visited
+        uint256 visited,
+        address taker
     ) internal view returns (uint256 price, bytes32 orderId, uint256 adjustedCapacity) {
         uint256 bitmap = priceBitmap[marketId][side];
         if (bitmap == 0) return (0, bytes32(0), 0);
@@ -139,6 +142,10 @@ abstract contract Views is ExchangeStorage {
                     if (order.cancelled) continue;
                     if (order.filled >= order.amount) continue;
                     if (order.depositLocked == 0) continue;
+                    // L-07 (audit Pass 2.1): mirror taker-path self-match skip
+                    // so preview matches execute when the caller has resting
+                    // orders on the opposite side.
+                    if (taker != address(0) && order.owner == taker) continue;
 
                     uint256 rawCapacity = order.amount - order.filled;
                     uint256 virtuallyConsumed;

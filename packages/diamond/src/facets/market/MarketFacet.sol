@@ -166,9 +166,12 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev L-08 (audit Pass 2.1): post-resolution redemption deliberately
+    ///      bypasses the MARKET pause guard. The outcome is final, no
+    ///      oracle-trust assumption remains, and a compromised PAUSER must
+    ///      not be able to hold winners' funds hostage. Mirrors the existing
+    ///      bypass on `emergencyResolve` / `enableRefundMode` / `sweepUnclaimed`.
     function redeem(uint256 marketId) external override nonReentrant returns (uint256 payout) {
-        LibPausable.enforceNotPaused(Modules.MARKET);
-
         LibMarketStorage.MarketData storage m = _market(marketId);
         if (!m.isResolved) revert Market_NotResolved();
 
@@ -224,20 +227,37 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (m.refundModeActive) revert Market_RefundModeActive();
         if (block.timestamp < m.endTime) revert Market_NotEnded();
 
+        // L-04 (audit Pass 2.1): defer to oracle if it has produced an answer
+        // AND is still in the approved set. Mirrors `emergencyResolve`'s
+        // symmetric guard but adds the approval gate so the F-D-03 escape
+        // path stays open: when admin has revoked an oracle (e.g., post-
+        // compromise), `resolveMarket` already blocks via the approval re-check
+        // at line 122-124, so enableRefundMode is the legitimate escape.
+        // Oracle-unreachable case still permits legitimate stall recovery.
+        if (LibConfigStorage.layout().approvedOracles[m.oracle]) {
+            try IOracle(m.oracle).isResolved(marketId) returns (bool oracleReady) {
+                if (oracleReady) revert Market_OracleResolvedUseResolve();
+            } catch {
+                // Oracle unreachable — refund-mode entry is the legitimate stall recovery.
+            }
+        }
+
         m.refundModeActive = true;
         m.refundEnabledAt = block.timestamp;
         emit RefundModeEnabled(marketId, msg.sender);
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev L-08 (audit Pass 2.1): refund mode is the user-exit path of last
+    ///      resort; like `redeem`, it must not be PAUSER-blockable. Pause
+    ///      gates remain on `splitPosition` / `mergePositions` (entry / exit
+    ///      pre-finality) so trading can be frozen, but exit always succeeds.
     function refund(uint256 marketId, uint256 yesAmount, uint256 noAmount)
         external
         override
         nonReentrant
         returns (uint256 payout)
     {
-        LibPausable.enforceNotPaused(Modules.MARKET);
-
         LibMarketStorage.MarketData storage m = _market(marketId);
         if (!m.refundModeActive) revert Market_RefundModeInactive();
 
@@ -358,6 +378,13 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
         if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
+        // M-02 (audit Pass 2.1): per-market override may only LOWER the
+        // effective fee. Without this bound, admin could raise the per-market
+        // fee post-split up to MAX_REDEMPTION_FEE_BPS and bypass the
+        // `snapshottedDefaultRedemptionFeeBps` protection that exists for the
+        // default-fee path (FINAL-H04 promise). Admin retains the ability to
+        // reduce per-market fees to zero.
+        if (bps > m.snapshottedDefaultRedemptionFeeBps) revert Market_FeeExceedsSnapshot();
         m.perMarketRedemptionFeeBps = bps;
         m.redemptionFeeOverridden = true;
         emit PerMarketRedemptionFeeUpdated(marketId, bps, true);

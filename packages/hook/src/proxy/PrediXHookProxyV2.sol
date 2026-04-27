@@ -58,6 +58,15 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     bytes32 private constant _PENDING_TIMELOCK_READY_AT_SLOT =
         bytes32(uint256(keccak256("predix.hook.proxy.pending.timelock.ready_at")) - 1);
 
+    /// @dev M-03 (audit Pass 2.1): 48h timelock on proxy-admin rotation. The
+    ///      pending admin slot already exists at `_PENDING_ADMIN_SLOT`; we
+    ///      add a fresh ready-at slot. Append-only relative to existing
+    ///      proxy slots (all proxy state lives in distinct keccak-derived
+    ///      preimages, so adding a new slot cannot collide with the impl's
+    ///      regular storage slots 0..N).
+    bytes32 private constant _PENDING_ADMIN_READY_AT_SLOT =
+        bytes32(uint256(keccak256("predix.hook.proxy.pending.admin.ready_at")) - 1);
+
     // ---------------------------------------------------------------------
     // Timelock bounds
     // ---------------------------------------------------------------------
@@ -80,6 +89,12 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     ///         while keeping `block.timestamp + 30 days` safely within
     ///         uint256.
     uint256 private constant _MAX_TIMELOCK = 30 days;
+
+    /// @notice M-03 (audit Pass 2.1): fixed 48h delay for proxy-admin
+    ///         rotation. Mirrors the diamond rotation cadence so admin
+    ///         compromise cannot be exploited by instant-rotation to a
+    ///         fresh attacker key.
+    uint256 public constant ADMIN_ROTATION_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
     // Modifiers
@@ -233,8 +248,14 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function changeProxyAdmin(address newAdmin) external override onlyProxyAdmin {
+        // M-03 (audit Pass 2.1): apply the universal AlreadyPending guard so a
+        // compromised admin cannot silently overwrite a legitimate-admin
+        // recovery nomination.
+        if (_readAddress(_PENDING_ADMIN_SLOT) != address(0)) revert HookProxy_AlreadyPendingAdmin();
         if (newAdmin == address(0)) revert HookProxy_ZeroAddress();
+        uint256 readyAt = block.timestamp + ADMIN_ROTATION_DELAY;
         _writeAddress(_PENDING_ADMIN_SLOT, newAdmin);
+        _writeUint(_PENDING_ADMIN_READY_AT_SLOT, readyAt);
         emit HookProxy_AdminChangeProposed(_readAddress(_ADMIN_SLOT), newAdmin);
     }
 
@@ -242,10 +263,22 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     function acceptProxyAdmin() external override {
         address pending = _readAddress(_PENDING_ADMIN_SLOT);
         if (msg.sender != pending) revert HookProxy_OnlyPendingAdmin();
+        // M-03: enforce 48h delay so legitimate admin has a recovery window.
+        if (block.timestamp < _readUint(_PENDING_ADMIN_READY_AT_SLOT)) revert HookProxy_AdminDelayNotElapsed();
         address previous = _readAddress(_ADMIN_SLOT);
         _writeAddress(_ADMIN_SLOT, pending);
         _writeAddress(_PENDING_ADMIN_SLOT, address(0));
+        _writeUint(_PENDING_ADMIN_READY_AT_SLOT, 0);
         emit HookProxy_AdminChanged(previous, pending);
+    }
+
+    /// @inheritdoc IPrediXHookProxy
+    function cancelProxyAdminChange() external override onlyProxyAdmin {
+        address cancelled = _readAddress(_PENDING_ADMIN_SLOT);
+        if (cancelled == address(0)) revert HookProxy_NoPendingAdminChange();
+        _writeAddress(_PENDING_ADMIN_SLOT, address(0));
+        _writeUint(_PENDING_ADMIN_READY_AT_SLOT, 0);
+        emit HookProxy_AdminChangeCancelled(cancelled);
     }
 
     // ---------------------------------------------------------------------
@@ -279,6 +312,10 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     function pendingProxyAdmin() external view override returns (address) {
         return _readAddress(_PENDING_ADMIN_SLOT);
+    }
+
+    function pendingProxyAdminReadyAt() external view override returns (uint256) {
+        return _readUint(_PENDING_ADMIN_READY_AT_SLOT);
     }
 
     // ---------------------------------------------------------------------
