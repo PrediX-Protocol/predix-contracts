@@ -468,7 +468,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _isBannedRecipient(address recipient) internal view returns (bool) {
         return recipient == address(0) || recipient == address(this) || recipient == diamond || recipient == exchange
             || recipient == hook || recipient == address(poolManager) || recipient == address(quoter)
-            || recipient == address(permit2);
+            || recipient == address(permit2) || recipient == usdc;
     }
 
     /// @notice Construct the canonical `PoolKey` for a PrediX market from its YES token.

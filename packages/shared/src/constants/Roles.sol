@@ -37,5 +37,5 @@ library Roles {
     ///         `AccessControlFacet.grantRole`. Phase 4+ opening creation to the
     ///         public (gated by a creation bond or other anti-spam mechanism) is
     ///         future work and out of Bundle A scope.
-    bytes32 internal constant CREATOR_ROLE = keccak256("PREDIX_CREATOR_ROLE");
+    bytes32 internal constant CREATOR_ROLE = keccak256("predix.role.creator");
 }
