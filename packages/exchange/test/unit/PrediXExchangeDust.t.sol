@@ -160,11 +160,11 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
         (bytes32 bobId, uint256 bobFilled) =
             exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE);
 
-        // Standard MINT surplus path still works ($5 → feeRecipient).
+        // MINT taker price improvement: $5 back to bob (not feeRecipient).
         assertEq(bobFilled, 100 * ONE_SHARE, "bob fully filled");
         assertEq(_yesBalance(bob), 100 * ONE_SHARE, "bob YES");
         assertEq(_noBalance(alice), 100 * ONE_SHARE, "alice NO");
-        assertEq(_usdcBalance(feeRecipient), 5 * ONE_SHARE, "MINT surplus collected");
+        assertEq(_usdcBalance(bob), 5 * ONE_SHARE, "MINT improvement to taker");
 
         IPrediXExchange.Order memory ord = exchange.getOrder(bobId);
         assertEq(ord.filled, 100 * ONE_SHARE);

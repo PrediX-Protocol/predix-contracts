@@ -397,22 +397,9 @@ abstract contract MakerPath is ExchangeStorage {
             uint256 fillAmt = newRemaining < makerRemaining ? newRemaining : makerRemaining;
             address makerOwner = maker.owner;
 
-            // Dust filter (Option 4, MakerPath variant). In MakerPath MINT, both
-            // `makerUsdc` and `takerUsdc` are each floored independently. The sum
-            // can be up to 1 wei less than `fillAmt` when the combined prices
-            // cover the mint cost only with sub-wei precision. Skipping here
-            // atomically preserves the `Σ depositLocked == Exchange USDC`
-            // invariant: we never execute a `splitPosition` pull that the
-            // two orders' deposit decrements can't fund. Unlike TakerPath's
-            // `if (makerUsdc == 0)` filter (which has a different structural
-            // cause), this filter covers the double-flooring gap intrinsic to
-            // computing both sides' USDC independently.
             uint256 makerUsdc = (fillAmt * makerPrice) / PRICE_PRECISION;
             uint256 takerUsdc = (fillAmt * ctx.takerPrice) / PRICE_PRECISION;
             if (makerUsdc + takerUsdc < fillAmt) {
-                // Advance past this maker — same price level can't produce a
-                // clean fill at the current `newRemaining`, so there is no
-                // point retrying this entry.
                 i++;
                 continue;
             }
@@ -423,11 +410,6 @@ abstract contract MakerPath is ExchangeStorage {
             taker.depositLocked -= uint128(takerUsdc);
             bool makerFullyFilled = maker.filled >= maker.amount;
 
-            // Interactions. Pass the strictly-decremented deposit sum so the
-            // helper computes `surplus = depositSum - splitAmt` with the same
-            // flooring the two-order ledger just applied. Using a re-floored
-            // `(fillAmt * (takerPrice + makerPrice)) / 1e6` instead would
-            // over-pay `feeRecipient` by 1 wei on misaligned partial fills.
             _executeMintFill(taker, maker, fillAmt, makerUsdc + takerUsdc, ctx.yesToken, ctx.noToken);
 
             newRemaining -= fillAmt;
@@ -445,14 +427,12 @@ abstract contract MakerPath is ExchangeStorage {
         }
     }
 
-    /// @dev Both orders are BUY. Combined USDC funds `splitPosition`; surplus
-    ///      = (decremented deposit sum) - `splitAmt` flows to `feeRecipient`.
-    ///
-    ///      `depositSum` is the already-floored `makerUsdc + takerUsdc` from the
-    ///      caller — using it here (instead of re-computing from prices) keeps
-    ///      the surplus exactly consistent with what the two orders' ledgers
-    ///      just lost, avoiding a 1-wei under-collateralization that occurs
-    ///      when `floor((a+b)/c)` differs from `floor(a/c) + floor(b/c)`.
+    /// @dev Both orders are BUY. Combined USDC funds `splitPosition`.
+    ///      When `takerPrice + makerPrice > $1.00`, `depositSum > fillAmt`
+    ///      and the surplus is the taker's price improvement — refunded to
+    ///      taker.owner, NOT feeRecipient. This brings MINT in line with
+    ///      COMPLEMENTARY (`_refundPriceImprovement`) and MERGE (taker-gets-
+    ///      complement) conventions.
     function _executeMintFill(
         IPrediXExchange.Order storage taker,
         IPrediXExchange.Order storage maker,
@@ -475,8 +455,7 @@ abstract contract MakerPath is ExchangeStorage {
 
         if (depositSum > fillAmt) {
             uint256 surplus = depositSum - fillAmt;
-            IERC20(usdc).safeTransfer(feeRecipient, surplus);
-            emit IPrediXExchange.FeeCollected(taker.marketId, surplus);
+            IERC20(usdc).safeTransfer(taker.owner, surplus);
         }
     }
 

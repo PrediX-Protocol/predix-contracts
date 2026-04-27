@@ -151,9 +151,12 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         assertEq(exchange.getOrder(buyId).filled, 0);
     }
 
-    // ============ Phase B MINT (with surplus to feeRecipient) ============
+    // ============ Phase B MINT (taker gets price improvement) ============
 
-    function test_PlaceOrder_PhaseB_MintSurplusFee() public {
+    function test_PlaceOrder_PhaseB_MintTakerImprovement() public {
+        // Alice BUY_NO $0.40, Bob BUY_YES $0.65. MINT match.
+        // Bob effective price = $0.60 (complement of $0.40).
+        // Improvement = $0.05 per share = $5 total → refunded to Bob.
         _placeBuyNo(alice, 400_000, 100 * ONE_SHARE);
         _giveUsdc(bob, 65 * ONE_SHARE);
 
@@ -162,7 +165,8 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
 
         assertEq(_yesBalance(bob), 100 * ONE_SHARE);
         assertEq(_noBalance(alice), 100 * ONE_SHARE);
-        assertEq(_usdcBalance(feeRecipient), 5 * ONE_SHARE, "$5 surplus to fee");
+        assertEq(_usdcBalance(bob), 5 * ONE_SHARE, "$5 improvement to taker");
+        assertEq(_usdcBalance(feeRecipient), 0, "no surplus to feeRecipient");
     }
 
     // ============ Phase B MERGE — taker gets price improvement (X1) ============
