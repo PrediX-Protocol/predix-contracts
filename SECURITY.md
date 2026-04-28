@@ -8,9 +8,9 @@ The PrediX team takes security seriously. We appreciate responsible disclosure f
 
 | Severity | Channel | Response SLA |
 |---|---|---|
-| **Critical / High** (fund loss, protocol brick, admin compromise) | **security@predix.markets** | 24 hours acknowledgment, 72 hours initial assessment |
-| **Medium / Low** (DoS, gas griefing, cosmetic, theoretical) | **security@predix.markets** or GitHub Security Advisories | 48 hours acknowledgment |
-| **Bug bounty** | [Immunefi program — link TBD] | Per Immunefi SLA |
+| **Critical / High** (fund loss, protocol brick, admin compromise) | **keyti@predixpro.io** | 24 hours acknowledgment, 72 hours initial assessment |
+| **Medium / Low** (DoS, gas griefing, cosmetic, theoretical) | **keyti@predixpro.io** or GitHub Security Advisories | 48 hours acknowledgment |
+| **Bug bounty** | Contact keyti@predixpro.io | Per Immunefi SLA |
 
 ### What to include
 
@@ -80,8 +80,8 @@ We maintain a Hall of Fame for researchers who responsibly disclose vulnerabilit
 
 ## Contact
 
-- **Email**: security@predix.markets
-- **PGP key**: [TBD — will be published at predix.markets/.well-known/security.txt]
+- **Email**: keyti@predixpro.io
+— Telegram: @keyti_0
 
 ## Supported Versions
 

@@ -201,10 +201,10 @@ Trading has resumed. Thank you for your patience.
 
 | Contact | Channel | Response time |
 |---|---|---|
-| Security email | security@predix.markets | 24h |
-| Bug bounty | [Immunefi link TBD] | 48h |
-| Discord #security | [link TBD] | 4h during business hours |
-| Emergency hotline | [phone TBD] | 15 min (P0 only) |
+| Security email | keyti@predixpro.io | 24h |
+| Bug bounty | Contact keyti@predixpro.io | 48h |
+| Discord #security | Contact @keyti_0 on Telegram | 4h during business hours |
+| Emergency hotline | Telegram @keyti_0 | 15 min (P0 only) |
 
 ## 9. Runbook Quick Reference
 
@@ -268,7 +268,7 @@ cast send $HOOK_PROXY "cancelAdminRotation()" --private-key $HOOK_ADMIN_KEY
 | OpenZeppelin Contracts | security@openzeppelin.com | GitHub advisories |
 | Chainlink (price feeds) | N/A (monitoring via feed health checks) | — |
 | Circle (USDC) | N/A (USDC blacklist = circle.com/contact) | — |
-| Unichain (sequencer) | [Uniswap Foundation contact TBD] | — |
+| Unichain (sequencer) | Contact via Uniswap Discord | — |
 | Permit2 | (part of Uniswap) | — |
 
 ## 12. Revision History

@@ -21,5 +21,5 @@ Responsible for:
 
 ## Contact
 
-- Security reports: security@predix.markets
+- Security reports: keyti@predixpro.io
 - Emergency: KT directly (see internal contact sheet)

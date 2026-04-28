@@ -150,7 +150,7 @@ Solidity 0.8.30, EVM Cancun, `via_ir = true`, optimizer 200 runs.
 
 - **Preferred timeline**: 3-4 weeks
 - **Preferred format**: Detailed finding report with severity ratings, reproduction steps, and recommended fixes
-- **Point of contact**: KT (SP Labs) — [email TBD]
+- **Point of contact**: KT (SP Labs) — keyti@predixpro.io
 - **Repository access**: Private GitHub repo, read access granted upon engagement
 - **Communication**: Weekly sync calls + async on Slack/Telegram
 - **Budget**: Negotiable; ballpark $80K-$150K depending on firm and scope
