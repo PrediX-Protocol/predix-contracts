@@ -48,6 +48,7 @@ contract PrediXExchangeProxy {
     error Proxy_AdminDelayNotElapsed();
     error Proxy_AlreadyPendingAdmin();
     error Proxy_InitReverted();
+    error Proxy_NoETHAccepted();
 
     // ======== Events ========
 
@@ -183,7 +184,7 @@ contract PrediXExchangeProxy {
     // ======== Fallback: delegate everything else to impl ========
 
     fallback() external payable {
-        if (msg.value > 0) revert(); // Exchange is USDC-only, reject ETH.
+        if (msg.value > 0) revert Proxy_NoETHAccepted();
         address impl = _readAddress(_IMPL_SLOT);
         assembly {
             calldatacopy(0, 0, calldatasize())
