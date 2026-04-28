@@ -38,7 +38,8 @@ abstract contract ExchangeTestBase is Test {
     function setUp() public virtual {
         usdc = new MockERC20("USD Coin", "USDC", 6);
         diamond = new MockDiamond(address(usdc));
-        exchange = new PrediXExchange(address(diamond), address(usdc), feeRecipient);
+        exchange = new PrediXExchange();
+        exchange.initialize(address(diamond), address(usdc), feeRecipient);
         (yesToken, noToken) = diamond.createMarket(MARKET_ID, block.timestamp + 7 days, address(this));
     }
 

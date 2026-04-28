@@ -121,7 +121,9 @@ contract DeployAll is Script {
 
         (out.hookImpl, out.hookProxy, out.hookSalt) = _deployHook(env, out.diamond);
 
-        out.exchange = address(new PrediXExchange(out.diamond, env.usdc, env.feeRecipient));
+        PrediXExchange exchangeImpl = new PrediXExchange();
+        exchangeImpl.initialize(out.diamond, env.usdc, env.feeRecipient);
+        out.exchange = address(exchangeImpl);
 
         out.router = address(
             new PrediXRouter(

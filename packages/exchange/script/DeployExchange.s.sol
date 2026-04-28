@@ -27,6 +27,8 @@ contract DeployExchange is Script {
     }
 
     function _deploy(address diamond, address usdc, address feeRecipient) internal returns (address) {
-        return address(new PrediXExchange(diamond, usdc, feeRecipient));
+        PrediXExchange impl = new PrediXExchange();
+        impl.initialize(diamond, usdc, feeRecipient);
+        return address(impl);
     }
 }

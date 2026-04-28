@@ -38,7 +38,8 @@ contract ExchangeIntegrationTest is MarketFixture {
     function setUp() public override {
         super.setUp();
 
-        exchange = new PrediXExchange(address(diamond), address(usdc), feeRecipient);
+        exchange = new PrediXExchange();
+        exchange.initialize(address(diamond), address(usdc), feeRecipient);
     }
 
     // ============ Helpers ============

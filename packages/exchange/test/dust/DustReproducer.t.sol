@@ -40,7 +40,8 @@ contract DustReproducerTest is Test {
     function setUp() public {
         usdc = new MockERC20("USDC", "USDC", 6);
         diamond = new MockDiamond(address(usdc));
-        exchange = new PrediXExchange(address(diamond), address(usdc), feeRecipient);
+        exchange = new PrediXExchange();
+        exchange.initialize(address(diamond), address(usdc), feeRecipient);
         (yesToken, noToken) = diamond.createMarket(MARKET_ID, block.timestamp + 365 days, address(this));
 
         handler = new ExchangeHandler(exchange, usdc, diamond, MARKET_ID, yesToken, noToken);

@@ -20,6 +20,11 @@ import {Views} from "./mixins/Views.sol";
 ///      maker path. The taker path is permissionless and stays callable while paused so
 ///      users can always exit a position.
 ///
+///      DEPLOYMENT MODEL: this contract is the LOGIC CONTRACT behind
+///      `PrediXExchangeProxy`. It uses the initializer pattern — the constructor
+///      only sets `_initialized = true` as defense-in-depth (prevents direct
+///      init on the bare impl). State lives in the proxy's storage context.
+///
 ///      Pause authorisation is delegated to the diamond's `Roles.PAUSER_ROLE`, queried
 ///      via `IAccessControlFacet`. Exchange holds no separate admin key.
 contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, TransientReentrancyGuard {
@@ -31,9 +36,12 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     error ExchangePaused();
     error OnlyPauser();
+    error Exchange_AlreadyInitialized();
 
     event Paused(address indexed account);
     event Unpaused(address indexed account);
+    event Initialized(address indexed diamond, address indexed usdc, address indexed feeRecipient);
+    event FeeRecipientUpdated(address indexed previous, address indexed current);
 
     modifier whenNotPaused() {
         if (paused) revert ExchangePaused();
@@ -49,16 +57,42 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     // ======== Constructor ========
 
-    constructor(address _diamond, address _usdc, address _feeRecipient)
-        ExchangeStorage(_diamond, _usdc, _feeRecipient)
-    {
+    /// @dev No-op. State initialization happens in `initialize()`, called
+    ///      atomically by the proxy constructor. Calling `initialize()` on
+    ///      the bare impl is harmless: the impl has no proxy-storage state,
+    ///      so any "admin" rights set there have no protocol effect.
+    constructor() {}
+
+    // ======== Initializer (called atomically by proxy constructor) ========
+
+    /// @notice One-shot bootstrap. Binds the exchange to its diamond, USDC,
+    ///         and initial fee recipient. MUST be called exactly once via the
+    ///         proxy constructor's delegatecall.
+    /// @dev Pre-approves diamond for max USDC (synthetic MINT path needs
+    ///      diamond to pull USDC for `splitPosition`).
+    function initialize(address _diamond, address _usdc, address _feeRecipient) external {
+        if (_initialized) revert Exchange_AlreadyInitialized();
         if (_diamond == address(0) || _usdc == address(0) || _feeRecipient == address(0)) {
             revert ZeroAddress();
         }
-        // Pre-approve diamond to pull USDC during `splitPosition` (synthetic MINT path).
-        // No approval needed for outcome tokens — `OutcomeToken.burn` is `onlyFactory`
-        // and the diamond burns directly without pulling.
+        diamond = _diamond;
+        usdc = _usdc;
+        feeRecipient = _feeRecipient;
+        _initialized = true;
+
         IERC20(_usdc).forceApprove(_diamond, type(uint256).max);
+        emit Initialized(_diamond, _usdc, _feeRecipient);
+    }
+
+    // ======== Admin: fee recipient rotation ========
+
+    /// @notice Update the fee recipient address. Gated by diamond's ADMIN_ROLE.
+    ///         Enables migration to a FeeController contract without redeploying.
+    function setFeeRecipient(address _feeRecipient) external onlyPauser {
+        if (_feeRecipient == address(0)) revert ZeroAddress();
+        address previous = feeRecipient;
+        feeRecipient = _feeRecipient;
+        emit FeeRecipientUpdated(previous, _feeRecipient);
     }
 
     // ======== Maker path (gated by Exchange pause) ========

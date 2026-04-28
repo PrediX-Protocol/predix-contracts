@@ -105,7 +105,8 @@ contract RouterIntegrationTest is MarketFixture {
         pm.setHook(address(hookProxy));
 
         // Real exchange.
-        exchange = new PrediXExchange(address(diamond), address(usdc), feeRecipient);
+        exchange = new PrediXExchange();
+        exchange.initialize(address(diamond), address(usdc), feeRecipient);
 
         // Real router.
         router = new PrediXRouter(

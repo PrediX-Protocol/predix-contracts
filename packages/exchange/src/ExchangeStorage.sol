@@ -12,22 +12,34 @@ import {IPrediXExchange} from "./IPrediXExchange.sol";
 import {PriceBitmap} from "./libraries/PriceBitmap.sol";
 
 /// @title ExchangeStorage
-/// @notice Shared storage layout + immutables + constants + storage-adjacent helpers
+/// @notice Shared storage layout + constants + storage-adjacent helpers
 ///         + market-validity helpers used by both maker and taker paths.
-/// @dev All mixins inherit this. The small helpers that mutate the order book in
-///      lock-step with the bitmap (`_removeFromQueue`, `_decrementOrderCount`,
-///      `_onMakerFullyFilled`) and the cached-`MarketView` validators
-///      (`_loadMarket`, `_validateMarketActive`) live here so both paths share one
-///      implementation and the same Exchange-owned error surface.
+/// @dev All mixins inherit this. Storage layout is append-only — NEVER reorder
+///      or remove existing slots once the proxy is live.
+///      Proxy upgrade model: `PrediXExchangeProxy` (ERC-1967 style) delegates
+///      all calls to the Exchange implementation. State lives in the proxy's
+///      storage; immutables have been converted to regular storage slots so
+///      the proxy pattern works correctly under delegatecall.
 abstract contract ExchangeStorage {
     using PriceBitmap for uint256;
     using SafeERC20 for IERC20;
 
-    // ======== Immutables ========
+    // ======== Storage (slots 0..N, proxy-delegated) ========
 
-    address public immutable diamond;
-    address public immutable usdc;
-    address public immutable feeRecipient;
+    /// @notice Diamond proxy address. Set once via `initialize`. All market-state
+    ///         reads and split/merge calls go through this address.
+    address public diamond;
+
+    /// @notice USDC collateral token address. Set once via `initialize`.
+    address public usdc;
+
+    /// @notice Protocol fee recipient. Mutable via `setFeeRecipient` so the
+    ///         protocol can redirect fees to a FeeController without redeploying.
+    address public feeRecipient;
+
+    /// @notice Initializer guard. `true` after `initialize` runs (or in the
+    ///         bare impl constructor for defense-in-depth).
+    bool internal _initialized;
 
     // ======== Constants ========
 
@@ -49,7 +61,7 @@ abstract contract ExchangeStorage {
         SYNTHETIC
     }
 
-    // ======== Storage ========
+    // ======== Storage (continued) ========
 
     /// @notice All orders indexed by orderId.
     mapping(bytes32 orderId => IPrediXExchange.Order) public orders;
@@ -67,14 +79,6 @@ abstract contract ExchangeStorage {
 
     /// @notice Monotonic nonce for orderId derivation.
     uint256 internal _orderNonce;
-
-    // ======== Constructor ========
-
-    constructor(address _diamond, address _usdc, address _feeRecipient) {
-        diamond = _diamond;
-        usdc = _usdc;
-        feeRecipient = _feeRecipient;
-    }
 
     // ======== Storage-adjacent helpers ========
 

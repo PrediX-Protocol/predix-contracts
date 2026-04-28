@@ -110,18 +110,29 @@ contract PrediXExchangePauseTest is ExchangeTestBase {
 
     // ============ Constructor zero-address validation ============
 
-    function test_Revert_Constructor_ZeroDiamond() public {
+    function test_Revert_Initialize_ZeroDiamond() public {
+        PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        new PrediXExchange(address(0), address(usdc), feeRecipient);
+        impl.initialize(address(0), address(usdc), feeRecipient);
     }
 
-    function test_Revert_Constructor_ZeroUsdc() public {
+    function test_Revert_Initialize_ZeroUsdc() public {
+        PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        new PrediXExchange(address(diamond), address(0), feeRecipient);
+        impl.initialize(address(diamond), address(0), feeRecipient);
     }
 
-    function test_Revert_Constructor_ZeroFeeRecipient() public {
+    function test_Revert_Initialize_ZeroFeeRecipient() public {
+        PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        new PrediXExchange(address(diamond), address(usdc), address(0));
+        impl.initialize(address(diamond), address(usdc), address(0));
+    }
+
+    function test_Revert_Initialize_AlreadyInitialized() public {
+        PrediXExchange impl = new PrediXExchange();
+        impl.initialize(address(diamond), address(usdc), feeRecipient);
+        // Second call must revert.
+        vm.expectRevert(PrediXExchange.Exchange_AlreadyInitialized.selector);
+        impl.initialize(address(diamond), address(usdc), feeRecipient);
     }
 }
