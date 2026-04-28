@@ -704,7 +704,7 @@ explicit go-ahead:
    When `false`, the default applies. Locked Q4 + Q-F2 (i).
 5. **No fee on refund mode**. Locked Q5.
 6. **Spec-only this round**. The reviewer is not implementing — a
-   coding agent will build this from this document. Locked Q6.
+   developer will build this from this document. Locked Q6.
 7. **`feeRecipient` is a passive address**. No vault interface, no
    notification callback. The protocol team owns the address and may
    change it via the existing `setFeeRecipient`. Locked Q7.
@@ -801,5 +801,5 @@ After you finish, write the report per `SC/CLAUDE.md §10.4`:
 ```
 
 Push back on anything in this spec that looks wrong once you're back
-in the code. The author is another agent — you have the full picture
+in the code. The author is another team member — you have the full picture
 after building it. Just document the disagreement.

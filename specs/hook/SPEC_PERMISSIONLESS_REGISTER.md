@@ -400,5 +400,5 @@ deletion plus NatSpec + tests + (possibly) orphan error cleanup.
 ```
 
 Push back on anything in this spec that looks wrong once you're back
-in the code. The reviewer is another agent — you have the full picture
+in the code. The reviewer is another team member — you have the full picture
 after building it. Just document the disagreement.

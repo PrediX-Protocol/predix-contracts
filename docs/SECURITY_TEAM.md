@@ -13,7 +13,7 @@ Responsible for:
 
 ## Security Practices
 
-- All smart contract changes require security review per `SC/CLAUDE.md §6` (mandatory, non-negotiable)
+- All smart contract changes require security review per internal security guidelines (mandatory, non-negotiable)
 - SWC Registry checklist verified on every commit
 - 16 invariant tests + 22 fuzz tests + 11 attack scenario tests run in CI
 - 25+ security findings identified, fixed, and regression-locked across 3+ audit passes

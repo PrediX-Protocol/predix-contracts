@@ -94,7 +94,7 @@ Omitting `--broadcast` runs the script as a simulation against the forked state 
 transactions are submitted. The script prints every contract address and a formatted
 summary block at the end.
 
-## Live deploy (manual — never run by agents)
+## Live deploy (manual — never run automatically)
 
 ```bash
 forge script DeployAll \

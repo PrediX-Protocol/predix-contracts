@@ -1050,12 +1050,12 @@ If you hit any of these, **stop and ask the reviewer**:
 1. V4Quoter on Unichain does not respect the hook's `OVERRIDE_FEE_FLAG`. The H-03 fix needs a different approach.
 2. `buyNo` / `sellNo` math doesn't close cleanly under V4 concentrated liquidity even with a 3% safety margin. A whale-sized trade reverts at quote re-check.
 3. Permit2's deterministic address is NOT deployed on Unichain. (It should be — every OP Stack chain has it. But verify.)
-4. You discover that the hook commit pattern doesn't actually work the way the hook agent's code suggests. Re-read [PrediXHookV2.sol](../hook/src/hooks/PrediXHookV2.sol) `_resolveIdentity` and the surrounding code before raising.
+4. You discover that the hook commit pattern doesn't actually work the way the hook developer's code suggests. Re-read [PrediXHookV2.sol](../hook/src/hooks/PrediXHookV2.sol) `_resolveIdentity` and the surrounding code before raising.
 5. You find a missing symbol in `@predix/shared/`. Adding to shared is a separate, prior commit — do not do it inline with router work.
 6. Any test in `shared/`, `diamond/`, `oracle/`, `hook/`, or `exchange/`
    regresses because of router changes. (It shouldn't, since you're only
    adding files, not modifying existing ones — but if it happens, stop.)
-7. Exchange agent finishes Phase E4-E5 (full unit/fuzz/invariant tests) and
+7. Exchange developer finishes Phase E4-E5 (full unit/fuzz/invariant tests) and
    discovers a bug that requires changing `IPrediXExchange.fillMarketOrder` or
    `previewFillMarketOrder` signature. Both signatures are confirmed stable
    as of E2c (10/10 smoke tests across all 3 mixins), but if E4-E5 forces a
@@ -1096,5 +1096,5 @@ After you finish, write the report per `SC/CLAUDE.md §10.4`:
 ```
 
 Push back on anything in this spec that looks wrong once you're back in
-the code. The spec author is another agent with limited context — you
+the code. The spec author is another team member with limited context — you
 have the full picture after building it. Just document the disagreement.
