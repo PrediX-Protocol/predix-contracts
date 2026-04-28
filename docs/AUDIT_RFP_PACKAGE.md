@@ -35,27 +35,27 @@ Solidity 0.8.30, EVM Cancun, `via_ir = true`, optimizer 200 runs.
                     └──────┬───────┘
                            │ Permit2 / direct
                     ┌──────▼───────┐
-                    │ PrediXRouter  │  (stateless aggregator)
+                    │ PrediXRouter │  (stateless aggregator)
                     └──┬───────┬───┘
             CLOB leg   │       │   AMM leg
-                ┌──────▼──┐ ┌──▼──────────┐
+                ┌───────▼──┐ ┌──▼──────────┐
                 │ Exchange │ │ PoolManager │
                 │  (CLOB)  │ │  (Uni v4)   │
                 │ ERC-1967 │ └──┬──────────┘
                 └──────┬───┘    │ hook callbacks
-                       │  ┌─────▼─────────┐
+                       │  ┌─────▼──────────┐
                        │  │ PrediXHookV2   │  (via ERC-1967 proxy)
                        │  │ dynamic fee    │
                        │  │ anti-sandwich  │
                        │  │ lifecycle gates│
                        │  └──────┬─────────┘
                        │         │ getMarket()
-                    ┌──▼─────────▼──┐
+                    ┌──▼─────────▼───┐
                     │    Diamond     │  (EIP-2535)
                     │  MarketFacet   │
                     │  EventFacet    │
                     │  AccessCtrl    │
-                    └──────┬────────┘
+                    └──────┬─────────┘
                            │ isResolved() / outcome()
                     ┌──────▼───────┐
                     │   Oracles    │
