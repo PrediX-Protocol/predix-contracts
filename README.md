@@ -76,9 +76,9 @@ The router holds no funds between calls — `balanceOf(router) == 0` is asserted
 
 The `PrediXHookV2` plugs directly into the v4 `PoolManager` and customises three callbacks:
 
-- **`beforeSwap`** — validates that a trusted router committed the user's identity in transient storage (EIP-1153) in the same tx, then flags same-block opposite-direction swaps from the same user as sandwich attempts and reverts. MEV bots can't wrap a user's transaction.
-- **`afterSwap`** — applies a **time-decaying dynamic fee**: wide near `endTime` (informed flow is expensive for LPs as outcomes crystallise), tight at market creation (bootstrap cheap liquidity). `FeeTiers` ladders through `FEE_NORMAL → FEE_MEDIUM → FEE_HIGH → FEE_VERY_HIGH` as `timeToExpiry` shrinks.
-- **`afterAddLiquidity`** — blocks liquidity provision after a market enters `refundMode` so LPs can't be gamed by last-minute toxic deposits.
+- **`beforeSwap`** — validates that a trusted router committed the user's identity in transient storage (EIP-1153) in the same tx, flags same-block opposite-direction swaps from the same user as sandwich attempts, and returns a **time-decaying dynamic fee**: wide near `endTime` (informed flow is expensive for LPs as outcomes crystallise), tight at market creation (bootstrap cheap liquidity). `FeeTiers` ladders through `FEE_NORMAL → FEE_MEDIUM → FEE_HIGH → FEE_VERY_HIGH` as `timeToExpiry` shrinks.
+- **`afterSwap`** — emits the trade event with volume, price, and referral telemetry for off-chain indexers.
+- **`beforeAddLiquidity`** — blocks liquidity provision after a market resolves, expires, or enters `refundMode` so LPs can't be gamed by last-minute toxic deposits.
 
 Uniswap v4 launched on mainnet in January 2025, and its hook system is being exercised by a rapidly growing ecosystem. PrediX is one of the early prediction-market protocols built natively on that system — the hook is not an external plugin sitting next to an AMM, it **is** the AMM's pricing and safety surface.
 
@@ -148,7 +148,7 @@ Six independent packages, one-way dependency graph. Contracts communicate by add
 | [`oracle`](packages/oracle/) | `ManualOracle` and `ChainlinkOracle` adapters behind `IOracle` |
 | [`diamond`](packages/diamond/) | EIP-2535 proxy + market lifecycle facet + event coordinator facet + access/pause/cut facets |
 | [`hook`](packages/hook/) | Uniswap v4 hook + ERC1967 proxy with 48h timelock + 2-step admin rotation |
-| [`exchange`](packages/exchange/) | On-chain CLOB with 4-way match waterfall + strict solvency invariants |
+| [`exchange`](packages/exchange/) | On-chain CLOB with 4-way match waterfall + strict solvency invariants + ERC1967 upgradeable proxy |
 | [`router`](packages/router/) | Stateless CLOB + AMM aggregator with Permit2 and revert-and-decode quoting |
 
 ---
@@ -242,12 +242,14 @@ Prediction markets hold user collateral until resolution, sometimes for months. 
 
 **What we've done:**
 
-- **Internal security review** across all six packages, with per-finding **regression locks** under `packages/*/test/repro/` (20 files). Every High and Medium finding from the review has a dedicated test that fails on the pre-fix code and passes post-fix.
-- **691 tests** covering unit, fuzz, invariant, integration, and fork suites. Solvency invariants run at 128,000 ops per invariant per run.
+- **Multiple internal security review passes** across all seven packages, with per-finding **regression locks** under `packages/*/test/repro/` (~40 files). Every finding has a dedicated test that fails on the pre-fix code and passes post-fix.
+- **815 tests** covering unit, fuzz, invariant, integration, attack scenario, and fork suites. 16 solvency invariants run at 128,000+ ops per invariant per run.
 - **~195 live broadcasts** on Unichain Sepolia exercising every happy path, every revert path, reentrancy surface, storage slot invariants (`cast storage`), gas benchmarks, ERC-20 allowance edge cases, and multi-market isolation.
-- **Findings status at audit snapshot `audit-v3-20260421`**: **0 Critical open · 0 High open · 2 Medium open** (both griefing-class, no fund-loss, scoped for external review).
+- **Findings status**: **0 Critical · 0 High · 0 Medium · 0 Low open**. All findings from internal review have been fixed and regression-locked.
+- **Vulnerability disclosure policy** published at [`SECURITY.md`](SECURITY.md).
+- **Incident response plan** with roles, procedures, runbooks at [`docs/INCIDENT_RESPONSE_PLAN.md`](docs/INCIDENT_RESPONSE_PLAN.md).
 
-**External audit is in progress.** Mainnet deploy is gated on a clean external sign-off.
+**External audit engagement in progress.** Mainnet deploy is gated on a clean external sign-off.
 
 Full engagement brief for the external auditor is [specs/AUDIT_SPEC.md](specs/AUDIT_SPEC.md).
 
