@@ -1,0 +1,76 @@
+# PrediX V2 — Production Environment Template (Unichain Mainnet)
+# Copy to .testenv.production and fill in real values.
+# NEVER commit .testenv.production — it contains secrets.
+
+# ============ CHAIN ============
+RPC_URL=https://rpc.unichain.org
+CHAIN_ID=130
+ETHERSCAN_API_KEY=
+
+# ============ DEPLOYER ============
+# Deployer key: used ONCE for initial deploy, then all roles revoked.
+# After deploy: destroy this key or move to cold storage.
+DEPLOYER_PRIVATE_KEY=0x_REPLACE_WITH_DEPLOYER_PRIVATE_KEY
+
+# ============ GOVERNANCE ============
+# Safe 3-of-5 multisig address. Deploy Safe FIRST at https://app.safe.global
+# then paste address here.
+MULTISIG_ADDRESS=0x_REPLACE_WITH_SAFE_MULTISIG_ADDRESS
+
+# TimelockController: deployed by DeployAll.s.sol automatically.
+# Proposer + executor = MULTISIG_ADDRESS.
+# Min delay = 48 hours (172800 seconds).
+TIMELOCK_DELAY_SECONDS=172800
+
+# ============ ADMIN KEYS ============
+# Hook runtime admin: controls pause, diamond rotation, trusted-router.
+# Set to MULTISIG_ADDRESS for production.
+HOOK_RUNTIME_ADMIN=0x_SAME_AS_MULTISIG_OR_SEPARATE_MULTISIG
+
+# Hook proxy admin: controls impl upgrades. SEPARATE from runtime admin.
+# Set to MULTISIG_ADDRESS or a different multisig for blast-radius isolation.
+HOOK_PROXY_ADMIN=0x_SAME_AS_MULTISIG_OR_SEPARATE_MULTISIG
+
+# Fee recipient: receives redemption fees, creation fees, sweep.
+# Set to MULTISIG_ADDRESS initially, change to FeeController later.
+FEE_RECIPIENT=0x_SAME_AS_MULTISIG_OR_TREASURY_ADDRESS
+
+# ============ OPERATIONAL KEYS (hot wallets) ============
+# These need fast response. Use separate EOA keys, NOT multisig.
+# Fund each with ~0.1 ETH for gas.
+REPORTER_ADDRESS=0x_MANUAL_ORACLE_REPORTER_HOT_WALLET
+REGISTRAR_ADDRESS=0x_CHAINLINK_REGISTRAR_HOT_WALLET
+
+# ============ EXTERNAL CONTRACTS (Unichain Mainnet) ============
+USDC_ADDRESS=0x_UNICHAIN_USDC_ADDRESS
+POOL_MANAGER_ADDRESS=0x_UNISWAP_V4_POOL_MANAGER
+PERMIT2_ADDRESS=0x000000000022D473030F116dDEE9F6B43aC78BA3
+V4_QUOTER_ADDRESS=0x_UNISWAP_V4_QUOTER
+
+# ============ CHAINLINK ============
+CHAINLINK_ENABLED=true
+# L2 sequencer uptime feed (Unichain = OP Stack).
+# Set to 0x0 if not available on this chain.
+CHAINLINK_SEQUENCER_UPTIME_FEED=0x_SEQUENCER_UPTIME_FEED_OR_ZERO
+
+# ============ PROTOCOL PARAMETERS ============
+# Market creation fee: 0 = free (launch default). Unit: USDC raw (6 decimals).
+MARKET_CREATION_FEE=0
+
+# Default per-market cap: 0 = unlimited. Unit: USDC raw.
+DEFAULT_PER_MARKET_CAP=0
+
+# Default redemption fee: 0-1500 bps (0% - 15%). Launch default: 200 (2%).
+DEFAULT_REDEMPTION_FEE_BPS=200
+
+# ============ AMM PARAMETERS ============
+# LP fee flag: 0x800000 = Uniswap v4 dynamic fee sentinel.
+LP_FEE_FLAG=8388608
+
+# Tick spacing: 60 = standard for prediction markets.
+TICK_SPACING=60
+
+# ============ GOVERNANCE FLAGS ============
+# Set to true for production deploy (transfers all roles to multisig).
+# Set to false for testnet (keeps deployer as admin for convenience).
+DIAMOND_FINALIZE_GOVERNANCE=true
