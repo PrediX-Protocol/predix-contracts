@@ -22,7 +22,7 @@ abstract contract TakerPath is ExchangeStorage {
     /// @dev Hot-path context cached once at the top of `_fillMarketOrder`. Avoids
     ///      stack-too-deep in `_executeComplementaryTakerFill` /
     ///      `_executeSyntheticTakerFill` and prevents the helpers from re-reading
-    ///      `getMarket` (audit-flagged hot-path waste).
+    ///      `getMarket` (hot-path waste).
     struct TakerCtx {
         uint256 marketId;
         IPrediXExchange.Side takerSide;
@@ -52,8 +52,8 @@ abstract contract TakerPath is ExchangeStorage {
         }
         if (amountIn == 0) return (0, 0);
         if (taker == address(0) || recipient == address(0)) revert IPrediXExchange.ZeroAddress();
-        // E-02: taker MUST be msg.sender. Otherwise any attacker with a matching
-        // order could drain any address that has a non-zero USDC allowance to the
+        // Taker MUST be msg.sender. Otherwise any attacker with a matching order
+        // could drain any address that has a non-zero USDC allowance to the
         // Exchange (every address that ever placed a maker order). The router
         // always calls with taker=address(this), so this constraint is compatible.
         if (msg.sender != taker) revert IPrediXExchange.NotTaker();
@@ -92,16 +92,16 @@ abstract contract TakerPath is ExchangeStorage {
                 : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount);
 
             if (outDelta == 0) {
-                // M-01 (audit Pass 2.1): zero-fill differentiation.
+                // Zero-fill differentiation:
                 // Type A — maker is structurally dust: `makerRemaining * price / 1e6 == 0`.
                 //          Even a full-take of the maker's residual yields no USDC.
-                //          Force-clean (sweep residual to feeRecipient, drop from queue) and
-                //          continue the waterfall to deeper liquidity. Pre-fix this case was
-                //          a global DoS — the dust order at the FIFO head blocked every
-                //          taker on the side until the maker self-cancelled.
-                // Type B — taker has sub-tick budget remaining; nothing more to extract this
-                //          call. Maker is NOT dust at its own scale, so leave it intact and
-                //          break the waterfall.
+                //          Force-clean (sweep residual to feeRecipient, drop from queue)
+                //          and continue the waterfall to deeper liquidity. Without this,
+                //          the dust order at the FIFO head blocks every taker on the side
+                //          until the maker self-cancels.
+                // Type B — taker has sub-tick budget remaining; nothing more to extract
+                //          this call. Maker is NOT dust at its own scale, so leave it
+                //          intact and break the waterfall.
                 IPrediXExchange.Order storage outerMaker = orders[makerOrderId];
                 uint256 makerRemaining = outerMaker.amount - outerMaker.filled;
                 if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
@@ -134,11 +134,11 @@ abstract contract TakerPath is ExchangeStorage {
     {
         (IPrediXExchange.Side compSide, IPrediXExchange.Side synSide) = MatchMath.sidesFor(ctx.takerSide);
 
-        // L-06 (audit Pass 2.1): peek with `taker` filter so own orders are
-        // skipped silently like MakerPath does (mirrors `i++; continue;`).
-        // Without this, a taker holding any resting order at the FIFO head of
-        // the opposite side would have the entire `fillMarketOrder` revert
-        // with `SelfMatchNotAllowed`, even when non-self liquidity sits behind.
+        // Peek with `taker` filter so own orders are skipped silently like
+        // MakerPath does (mirrors `i++; continue;`). Without this, a taker
+        // holding any resting order at the FIFO head of the opposite side
+        // would have the entire `fillMarketOrder` revert with
+        // `SelfMatchNotAllowed`, even when non-self liquidity sits behind.
         (uint256 compBest, bytes32 compOrderId) = _peekBest(ctx.marketId, compSide, ctx.taker);
         (uint256 synBestMaker, bytes32 synOrderId) = _peekBest(ctx.marketId, synSide, ctx.taker);
 
@@ -166,11 +166,11 @@ abstract contract TakerPath is ExchangeStorage {
     }
 
     /// @notice Best resting order on `side`, skipping cancelled / fully-filled / zero-deposit entries.
-    /// @dev With queue-cleanup discipline (M5) the loop body executes once in the well-behaved case.
+    /// @dev With queue-cleanup discipline the loop body executes once in the well-behaved case.
     ///      The defensive `continue` chain stays as a safety net for any future leak.
-    /// @dev L-06 (audit Pass 2.1): `taker` parameter is passed through so
-    ///      self-owned orders are skipped silently (mirroring MakerPath's
-    ///      `i++; continue;`). Pass `address(0)` to disable the filter.
+    /// @dev `taker` parameter is passed through so self-owned orders are skipped
+    ///      silently (mirroring MakerPath's `i++; continue;`). Pass `address(0)`
+    ///      to disable the filter.
     function _peekBest(uint256 marketId, IPrediXExchange.Side side, address taker)
         internal
         view
@@ -188,7 +188,7 @@ abstract contract TakerPath is ExchangeStorage {
             if (order.cancelled) continue;
             if (order.filled >= order.amount) continue;
             if (order.depositLocked == 0) continue;
-            // L-06: skip own orders so the waterfall progresses past them.
+            // Skip own orders so the waterfall progresses past them.
             if (taker != address(0) && order.owner == taker) continue;
             return (order.price, queue[i]);
         }
@@ -225,7 +225,7 @@ abstract contract TakerPath is ExchangeStorage {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
-        // GAP-C: rounding shared with preview via `MatchMath.computeFillDeltas`.
+        // Rounding shared with preview via `MatchMath.computeFillDeltas`.
         // The helper returns `(0, 0)` on dust → self-skip before any state
         // mutation so `cost` / `filled` stay accurate and the waterfall loop
         // breaks cleanly on `outDelta == 0`.
@@ -289,7 +289,7 @@ abstract contract TakerPath is ExchangeStorage {
         uint8 priceIdx = _priceToIndex(makerOrder.price);
         bool fullyFilled;
 
-        // GAP-C: rounding shared with preview via `MatchMath.computeFillDeltas`.
+        // Rounding shared with preview via `MatchMath.computeFillDeltas`.
         // Same `(inDelta, outDelta)` tuple whether the match is MINT or MERGE;
         // the only difference is how the proceeds move through the diamond.
         (inDelta, outDelta) = MatchMath.computeFillDeltas(makerPrice, matchAmount, ctx.takerIsBuy, true);
@@ -355,11 +355,11 @@ abstract contract TakerPath is ExchangeStorage {
         return ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken;
     }
 
-    /// @dev M-01 (audit Pass 2.1): force-clean a dust maker order whose remaining
-    ///      capacity is too small to produce a non-zero fill. Marks the order
-    ///      fully-filled, drops it from the queue/bitmap via `_onMakerFullyFilled`,
-    ///      and sweeps residual `depositLocked` to `feeRecipient`. This keeps the
-    ///      orderbook live and dis-incentivises dust-griefing.
+    /// @dev Force-clean a dust maker order whose remaining capacity is too small to
+    ///      produce a non-zero fill. Marks the order fully-filled, drops it from the
+    ///      queue/bitmap via `_onMakerFullyFilled`, and sweeps residual `depositLocked`
+    ///      to `feeRecipient`. This keeps the orderbook live and dis-incentivises
+    ///      dust-griefing.
     function _forceCleanDustMaker(uint256 marketId, bytes32 dustOrderId, uint256 makerPrice) internal {
         IPrediXExchange.Order storage dust = orders[dustOrderId];
         IPrediXExchange.Side dustSide = dust.side;

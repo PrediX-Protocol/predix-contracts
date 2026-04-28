@@ -22,7 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SC_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Load env. `.env` is a symlink to testenv.local per root CLAUDE.md convention.
+# Load env. `.env` is a symlink to testenv.local.
 set -a
 # shellcheck disable=SC1091
 source "$SC_ROOT/.env"

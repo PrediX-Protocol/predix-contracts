@@ -131,8 +131,8 @@ interface IMarketFacet {
     /// @notice Reverts when an operation on a child market would bypass the event-level
     ///         mutual-exclusion guarantee. Use the corresponding `IEventFacet` function.
     error Market_PartOfEvent();
-    /// @notice SPEC-03 Phase 1-2: reverts when a non-CREATOR_ROLE caller invokes
-    ///         `createMarket`. Admin can delegate via `AccessControlFacet.grantRole`.
+    /// @notice Reverts when a non-CREATOR_ROLE caller invokes `createMarket`.
+    ///         Admin can delegate via `AccessControlFacet.grantRole`.
     error Market_NotCreator();
     /// @notice Reverts when an admin tries to set a redemption fee above
     ///         `MAX_REDEMPTION_FEE_BPS` (15%).
@@ -142,13 +142,13 @@ interface IMarketFacet {
     ///         mode). The effective fee for a market is snapshotted at creation
     ///         to protect users from retroactive mutation.
     error Market_FeeLockedAfterFinal();
-    /// @notice M-02 (Pass 2.1): reverts when admin tries to set a per-market
-    ///         redemption fee override above the snapshotted default fee. The
-    ///         override path can only LOWER the effective fee — never raise
-    ///         it — so the snapshot promise made to depositors at create-time
-    ///         is preserved. Admin can still call `setDefaultRedemptionFeeBps`
-    ///         to raise the global default, but it only applies to NEW markets
-    ///         (snapshot is captured at create).
+    /// @notice Reverts when admin tries to set a per-market redemption fee
+    ///         override above the snapshotted default fee. The override path
+    ///         can only LOWER the effective fee — never raise it — so the
+    ///         snapshot promise made to depositors at create-time is preserved.
+    ///         Admin can still call `setDefaultRedemptionFeeBps` to raise the
+    ///         global default, but it only applies to new markets (snapshot is
+    ///         captured at create).
     error Market_FeeExceedsSnapshot();
     /// @notice Reverts from `sweepUnclaimed` when the market's tracked collateral
     ///         is less than the outstanding claim supply — indicates a prior

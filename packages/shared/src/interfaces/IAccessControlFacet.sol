@@ -16,7 +16,7 @@ interface IAccessControlFacet {
     /// @notice Reverts when revoke/renounce would empty a self-administered role.
     ///         Self-administered roles (`getRoleAdmin(role) == role`) cannot be
     ///         re-granted from outside — emptying the holder set bricks the role
-    ///         permanently. Audit-fix L-05 (Pass 2.1).
+    ///         permanently.
     error AccessControl_LastSelfAdministeredHolder(bytes32 role);
 
     /// @notice Whether `account` holds `role`.

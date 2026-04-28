@@ -62,7 +62,7 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     ///                                must be non-zero. `register` asserts marketId
     ///                                exists on this diamond so an adapter reused
     ///                                across deployments cannot have cross-diamond
-    ///                                marketId collisions. (NEW-02)
+    ///                                marketId collisions.
     constructor(address admin, address sequencerUptimeFeed_, address diamond_) {
         if (admin == address(0)) revert ChainlinkOracle_ZeroAdmin();
         if (diamond_ == address(0)) revert ChainlinkOracle_ZeroDiamond();
@@ -77,8 +77,8 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         if (cfg.snapshotAt <= block.timestamp) revert ChainlinkOracle_PastSnapshot();
         if (cfg.snapshotAt > block.timestamp + MAX_SNAPSHOT_FUTURE) revert ChainlinkOracle_SnapshotTooFar();
 
-        // NEW-02: bind to the diamond's marketId namespace. A diamond that
-        // has not minted `marketId` returns yesToken == address(0); reject.
+        // Bind to the diamond's marketId namespace. A diamond that has not
+        // minted `marketId` returns yesToken == address(0); reject.
         IMarketFacet.MarketView memory mkt = IMarketFacet(diamond).getMarket(marketId);
         if (mkt.yesToken == address(0)) revert ChainlinkOracle_MarketNotFound();
 
@@ -119,8 +119,8 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         if (_resolutions[marketId].resolved) revert ChainlinkOracle_AlreadyResolved();
         if (block.timestamp < cfg.snapshotAt) revert ChainlinkOracle_BeforeSnapshot();
 
-        // F-D-02: caller provides the preceding round explicitly so the
-        // predecessor read is a real round in the same Chainlink phase
+        // Caller provides the preceding round explicitly so the predecessor
+        // read is a real round in the same Chainlink phase
         // (roundId is `phaseId << 64 | aggregatorRoundId`). Subtracting 1 off
         // `roundIdHint` would cross a phase boundary at `aggregatorRoundId == 1`
         // and read round 0 of a new phase — on proxies that return zeros for
@@ -178,8 +178,8 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         address feed = sequencerUptimeFeed;
         if (feed == address(0)) return;
         (, int256 answer, uint256 startedAt,,) = AggregatorV3Interface(feed).latestRoundData();
-        // NEW-M8: a freshly-deployed L2 uptime feed that has never emitted
-        // a status round returns startedAt == 0. `block.timestamp - 0`
+        // A freshly-deployed L2 uptime feed that has never emitted a status
+        // round returns startedAt == 0. `block.timestamp - 0`
         // trivially clears the grace-period check, so the bare comparison
         // would silently treat an uninitialized sequencer as healthy.
         // Reject explicitly before the subtraction.

@@ -63,7 +63,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         `commitSwapIdentityFor` may target (beyond self). Frozen at
     ///         impl deployment because the router relies on it for the
     ///         simulate-and-revert quote path, and changing the target would
-    ///         require a coordinated router + hook upgrade. (H-H03 / NEW-M6)
+    ///         require a coordinated router + hook upgrade.
     address public immutable quoter;
 
     /// @notice Canonical LP fee bits every PrediX pool must carry. Matches the
@@ -71,13 +71,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         `0x800000`). Enforced at `registerMarketPool` so an attacker
     ///         cannot front-run a legitimate market registration with a junk
     ///         fee value and brick the marketId under a non-canonical binding.
-    ///         (NEW-M4)
     uint24 public immutable canonicalLpFee;
 
     /// @notice Canonical tick spacing for every PrediX pool. Matches the
     ///         Router's `tickSpacing` immutable. Enforced at
-    ///         `registerMarketPool` with `canonicalLpFee` to prevent the
-    ///         brick-by-grief attack described in audit §1.2. (NEW-M4)
+    ///         `registerMarketPool` with `canonicalLpFee` to prevent a
+    ///         brick-by-grief attack via front-running with non-canonical params.
     int24 public immutable canonicalTickSpacing;
 
     // ---------------------------------------------------------------------
@@ -107,9 +106,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///      replacement (post-launch optimization).
     mapping(bytes32 lastSwapKey => uint256 packed) private _lastSwap;
 
-    /// @dev FINAL-H09: pending admin for the 2-step rotation. Appended at the end of
-    ///      storage so the proxy's ERC-1967 layout is not disturbed — EVERY new state
-    ///      variable MUST come after this line for the same reason.
+    /// @dev Pending admin for the 2-step rotation. Appended at the end of storage so
+    ///      the proxy's ERC-1967 layout is not disturbed — EVERY new state variable
+    ///      MUST come after this line for the same reason.
     address private _pendingAdmin;
 
     /// @dev Reverse mapping enforcing 1-market-1-pool uniqueness. Each marketId can
@@ -118,35 +117,35 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///      `_pendingAdmin` per the append-only storage rule.
     mapping(uint256 marketId => PoolId) private _marketToPoolId;
 
-    /// @dev H-H02 append-only storage for the 2-step trusted-router rotation.
-    ///      Bootstrap window: while `_bootstrapped == false`, `setTrustedRouter`
-    ///      takes effect immediately so the deploy script can wire the canonical
-    ///      router + quoter atomically. After `completeBootstrap()` the legacy
-    ///      setter is locked out and trust changes must go through
-    ///      `proposeTrustedRouter` → 48h delay → `executeTrustedRouter`.
+    /// @dev Append-only storage for the 2-step trusted-router rotation. Bootstrap
+    ///      window: while `_bootstrapped == false`, `setTrustedRouter` takes effect
+    ///      immediately so the deploy script can wire the canonical router + quoter
+    ///      atomically. After `completeBootstrap()` the legacy setter is locked out
+    ///      and trust changes must go through `proposeTrustedRouter` → 48h delay →
+    ///      `executeTrustedRouter`.
     bool private _bootstrapped;
     mapping(address router => uint256 proposedAt) private _pendingRouterProposedAt;
     mapping(address router => bool trusted) private _pendingRouterState;
 
-    /// @dev F-X-02 append-only storage for the 2-step diamond rotation. Single-
-    ///      step `setDiamond` was removed so a compromised admin cannot instant-
-    ///      redirect market queries to a malicious diamond in one transaction;
-    ///      the 48h delay gives off-chain watchers a window to react.
+    /// @dev Append-only storage for the 2-step diamond rotation. Single-step
+    ///      `setDiamond` was removed so a compromised admin cannot instant-redirect
+    ///      market queries to a malicious diamond in one transaction; the 48h delay
+    ///      gives off-chain watchers a window to react.
     address private _pendingDiamond;
     uint256 private _pendingDiamondProposedAt;
 
-    /// @dev H-01 (audit 2026-04-25) append-only storage for the per-market
-    ///      timelocked unregister flow. Without this flow, post-rotation
-    ///      `_poolBinding` and `_marketToPoolId` would remain locked to the
-    ///      previous diamond's marketIds with no cleanup path. Each pending
-    ///      slot is keyed by marketId; non-zero `proposedAt` = pending.
+    /// @dev Append-only storage for the per-market timelocked unregister flow.
+    ///      Without this flow, post-rotation `_poolBinding` and `_marketToPoolId`
+    ///      would remain locked to the previous diamond's marketIds with no cleanup
+    ///      path. Each pending slot is keyed by marketId; non-zero `proposedAt` =
+    ///      pending.
     mapping(uint256 marketId => uint256 proposedAt) private _pendingUnregisterProposedAt;
 
-    /// @dev M-03 (audit Pass 2.1) append-only storage for the 48h-timelocked
-    ///      admin rotation. `_pendingAdmin` already exists at slot ~9; we
-    ///      append `_pendingAdminProposedAt` so legitimate admin has a 48h
-    ///      recovery window via `cancelAdminRotation` if a compromised admin
-    ///      nominates an attacker key.
+    /// @dev Append-only storage for the 48h-timelocked admin rotation.
+    ///      `_pendingAdmin` already exists at slot ~9; we append
+    ///      `_pendingAdminProposedAt` so legitimate admin has a 48h recovery
+    ///      window via `cancelAdminRotation` if a compromised admin nominates
+    ///      an attacker key.
     uint256 private _pendingAdminProposedAt;
 
     /// @notice Minimum wait between `proposeTrustedRouter` and
@@ -156,20 +155,19 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @notice Minimum wait between `proposeDiamond` and
     ///         `executeDiamondRotation`. Matches the trusted-router / hook-proxy
-    ///         48h floor so governance delays are uniform. (F-X-02)
+    ///         48h floor so governance delays are uniform.
     uint256 public constant DIAMOND_ROTATION_DELAY = 48 hours;
 
     /// @notice Minimum wait between `proposeUnregisterMarketPool` and
     ///         `executeUnregisterMarketPool`. Matches the diamond rotation
     ///         cadence so binding mutations carry the same governance notice
-    ///         as the rotation that motivated them. (H-01 audit fix)
+    ///         as the rotation that motivated them.
     uint256 public constant MARKET_UNREGISTER_DELAY = 48 hours;
 
     /// @notice Minimum wait between `setAdmin` and `acceptAdmin`. Mirrors
     ///         the diamond / trusted-router / unregister cadence so a
     ///         compromised admin cannot instant-rotate to a fresh attacker
     ///         key — legitimate admin has 48h to call `cancelAdminRotation`.
-    ///         (M-03 audit fix Pass 2.1)
     uint256 public constant ADMIN_ROTATION_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
@@ -194,7 +192,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     uint256 private constant _DIR_BOTH = 0x3;
 
     // ---------------------------------------------------------------------
-    // Init price window (FINAL-H11)
+    // Init price window
     // ---------------------------------------------------------------------
 
     /// @dev Binary markets must initialise near the 50¢ midpoint. Tolerance is ±5% of
@@ -268,14 +266,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function proposeDiamond(address diamond_) external override onlyAdmin {
-        // M-01 audit fix: reject re-propose-while-pending. Mirrors H4's
-        // `proposeTrustedRouter` guard — admin must explicitly cancel
-        // before re-proposing, so the pending timer cannot be silently
-        // extended and the audit trail records explicit intent.
+        // Reject re-propose-while-pending. Admin must explicitly cancel before
+        // re-proposing, so the pending timer cannot be silently extended.
         if (_pendingDiamondProposedAt != 0) revert Hook_AlreadyPendingDiamondChange();
         if (diamond_ == address(0)) revert Hook_ZeroAddress();
-        // L-04 audit fix: rotation target must be a contract. Mirrors the
-        // existing `proposeUpgrade` code-length check on the proxy side.
+        // Rotation target must be a contract. Mirrors the existing
+        // `proposeUpgrade` code-length check on the proxy side.
         if (diamond_.code.length == 0) revert Hook_DiamondNotAContract();
         _pendingDiamond = diamond_;
         _pendingDiamondProposedAt = block.timestamp;
@@ -289,9 +285,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (block.timestamp < _pendingDiamondProposedAt + DIAMOND_ROTATION_DELAY) {
             revert Hook_DiamondDelayNotElapsed();
         }
-        // L-04 audit fix: re-validate code length at execute. Defends against
-        // a target that was a contract at propose-time but lost code before
-        // execute (selfdestruct deprecated in Cancun, but principle stands).
+        // Re-validate code length at execute. Defends against a target that was
+        // a contract at propose-time but lost code before execute (selfdestruct
+        // deprecated in Cancun, but principle stands).
         if (pending.code.length == 0) revert Hook_DiamondNotAContract();
         address previous = _diamond;
         _diamond = pending;
@@ -317,10 +313,8 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function proposeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
-        // M-01 universal guard: reject re-propose-while-pending. This new
-        // flow joined the propose-family in the H-01 commit; the M-01
-        // generalisation was applied to the four propose flows that existed
-        // before H-01 landed, so this guard catches up the fifth.
+        // Reject re-propose-while-pending. Admin must explicitly cancel first
+        // to prevent silent timer extension.
         if (_pendingUnregisterProposedAt[marketId] != 0) revert Hook_AlreadyPendingUnregister();
         if (PoolId.unwrap(_marketToPoolId[marketId]) == bytes32(0)) revert Hook_MarketNotFound();
         _pendingUnregisterProposedAt[marketId] = block.timestamp;
@@ -362,9 +356,8 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function setAdmin(address admin_) external override onlyAdmin {
-        // M-03 (audit Pass 2.1): apply universal AlreadyPending guard so a
-        // compromised admin cannot silently overwrite a legitimate-admin
-        // recovery nomination.
+        // Reject re-propose-while-pending so a compromised admin cannot
+        // silently overwrite a legitimate-admin recovery nomination.
         if (_pendingAdminProposedAt != 0) revert Hook_AlreadyPendingAdmin();
         if (admin_ == address(0)) revert Hook_ZeroAddress();
         _pendingAdmin = admin_;
@@ -376,8 +369,8 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function acceptAdmin() external override {
         address pending = _pendingAdmin;
         if (msg.sender != pending) revert Hook_OnlyPendingAdmin();
-        // M-03: enforce 48h delay so legitimate admin has a recovery window
-        // via `cancelAdminRotation`.
+        // Enforce 48h delay so legitimate admin has a recovery window via
+        // `cancelAdminRotation`.
         if (block.timestamp < _pendingAdminProposedAt + ADMIN_ROTATION_DELAY) {
             revert Hook_AdminDelayNotElapsed();
         }
@@ -404,9 +397,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     }
 
     /// @inheritdoc IPrediXHook
-    /// @dev H-H02: immediate-apply setter is available only during the
-    ///      bootstrap window (`!_bootstrapped`). After `completeBootstrap()`
-    ///      all trust changes must route through the propose/execute flow.
+    /// @dev Immediate-apply setter is available only during the bootstrap
+    ///      window (`!_bootstrapped`). After `completeBootstrap()` all trust
+    ///      changes must route through the propose/execute flow.
     function setTrustedRouter(address router, bool trusted) external override onlyAdmin {
         if (_bootstrapped) revert Hook_BootstrapComplete();
         if (router == address(0)) revert Hook_ZeroAddress();
@@ -461,12 +454,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (binding.marketId != 0) revert Hook_PoolAlreadyRegistered();
         if (PoolId.unwrap(_marketToPoolId[marketId]) != bytes32(0)) revert Hook_MarketAlreadyHasPool();
 
-        // NEW-M4: canonical PoolKey enforcement. Without this block, an attacker
-        // could front-run the legitimate registration by calling with a junk
-        // fee / tickSpacing / hook address; because `_marketToPoolId[marketId]`
-        // then points at the junk binding, the real deploy cannot overwrite it
-        // and the market is bricked. Enforce that every registered pool carries
-        // the canonical fee, canonical tick spacing, and this hook address.
+        // Canonical PoolKey enforcement. Without this block, an attacker could
+        // front-run the legitimate registration by calling with a junk fee /
+        // tickSpacing / hook address; because `_marketToPoolId[marketId]` then
+        // points at the junk binding, the real deploy cannot overwrite it and
+        // the market is bricked. Enforce that every registered pool carries the
+        // canonical fee, canonical tick spacing, and this hook address.
         if (key.fee != canonicalLpFee) revert Hook_NonCanonicalFee();
         if (key.tickSpacing != canonicalTickSpacing) revert Hook_NonCanonicalTickSpacing();
         if (address(key.hooks) != address(this)) revert Hook_WrongHookAddress();
@@ -524,12 +517,12 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     function commitSwapIdentityFor(address caller, address user, PoolId poolId) external override {
         if (!_trustedRouters[msg.sender]) revert Hook_OnlyTrustedRouter();
         if (!_trustedRouters[caller]) revert Hook_OnlyTrustedRouter();
-        // H-H03 / NEW-M6: only two legitimate cross-slot writers — self
-        // (msg.sender commits its own slot) and the canonical quoter (router
-        // pre-commits under quoter's slot for the simulate-and-revert path).
-        // Any other caller means one trusted router is writing under another
-        // trusted router's slot — the identity-poisoning latent attack if the
-        // trusted set ever expands beyond {router, quoter}.
+        // Only two legitimate cross-slot writers — self (msg.sender commits its
+        // own slot) and the canonical quoter (router pre-commits under quoter's
+        // slot for the simulate-and-revert path). Any other caller means one
+        // trusted router is writing under another trusted router's slot — an
+        // identity-poisoning vector if the trusted set ever expands beyond
+        // {router, quoter}.
         if (caller != msg.sender && caller != quoter) revert Hook_InvalidCommitTarget();
         if (user == address(0)) revert Hook_ZeroAddress();
         bytes32 slot = _commitSlot(caller, poolId);
@@ -693,19 +686,19 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     /// @dev C-02: pools must be registered by the diamond before PoolManager.initialize.
     ///      Pools must also be created with the v4 dynamic-fee flag, otherwise the
     ///      override fee returned from `_beforeSwap` would be silently ignored.
-    ///      FINAL-H11: the implied YES price must land inside `[_INIT_PRICE_MIN, _INIT_PRICE_MAX]`,
-    ///      the ±5% window around `PRICE_UNIT / 2`. This closes the permissionless-register
+    ///      The implied YES price must land inside `[_INIT_PRICE_MIN, _INIT_PRICE_MAX]`, the
+    ///      ±5% window around `PRICE_UNIT / 2`. This closes the permissionless-register
     ///      front-run that would otherwise let a hostile caller lock the pool at an unfair
     ///      starting price and arbitrage the first legitimate LPs.
     function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal view returns (bytes4) {
         if (!key.fee.isDynamicFee()) revert Hook_PoolFeeNotDynamic();
         PoolBinding storage binding = _poolBinding[key.toId()];
         if (binding.marketId == 0) revert Hook_PoolNotRegistered();
-        // L-03 (audit Pass 2.1): symmetric M-02 stale-binding guard. Without
-        // this, a pool registered against the old diamond and initialized
-        // after a diamond rotation would init successfully but be permanently
-        // unusable (every subsequent swap/add/donate reverts Hook_StaleBinding).
-        // One extra diamond view-call per init; init is one-shot per pool.
+        // Stale-binding guard at init time. Without this, a pool registered
+        // against the old diamond and initialized after a diamond rotation
+        // would init successfully but be permanently unusable (every subsequent
+        // swap/add/donate reverts Hook_StaleBinding). One extra diamond view-call
+        // per init; init is one-shot per pool.
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(binding.marketId);
         _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         uint256 yesPrice = _sqrtPriceToYesPrice(sqrtPriceX96, binding.yesIsCurrency0);
@@ -724,10 +717,10 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         uint256 marketId = binding.marketId;
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
-        // M-02 audit fix: defence-in-depth against stale binding (e.g. post
-        // diamond rotation where the new diamond's marketId resolves to a
-        // different yesToken). Reverts loudly instead of silently routing
-        // liquidity under a wrong-token assumption.
+        // Defence-in-depth against stale binding (e.g. post diamond rotation
+        // where the new diamond's marketId resolves to a different yesToken).
+        // Reverts loudly instead of silently routing liquidity under a
+        // wrong-token assumption.
         _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
@@ -754,7 +747,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         uint256 marketId = binding.marketId;
         if (marketId == 0) revert Hook_PoolNotRegistered();
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
-        // M-02 audit fix: see `_beforeAddLiquidity` for rationale.
+        // Stale-binding defence. See `_beforeAddLiquidity` for rationale.
         _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
@@ -771,7 +764,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (marketId == 0) revert Hook_PoolNotRegistered();
 
         IMarketFacet.MarketView memory mkt = IMarketFacet(_diamond).getMarket(marketId);
-        // M-02 audit fix: stale-binding defence. See `_beforeAddLiquidity`.
+        // Stale-binding defence. See `_beforeAddLiquidity`.
         _assertYesTokenMatchesBinding(key, binding.yesIsCurrency0, mkt.yesToken);
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
@@ -866,13 +859,13 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // Internal helpers
     // ---------------------------------------------------------------------
 
-    /// @dev M-02 audit fix: defence-in-depth against stale binding. After
-    ///      `executeDiamondRotation` (or any state-corrupting upgrade), the
-    ///      diamond's marketId map can resolve to a different yesToken than
-    ///      the binding recorded at `registerMarketPool`. Reading the wrong
-    ///      yesToken would let users swap into a token that no longer
-    ///      represents the market. This helper turns silent corruption into
-    ///      a loud `Hook_StaleBinding` revert in every lifecycle callback.
+    /// @dev Defence-in-depth against stale binding. After `executeDiamondRotation`
+    ///      (or any state-corrupting upgrade), the diamond's marketId map can
+    ///      resolve to a different yesToken than the binding recorded at
+    ///      `registerMarketPool`. Reading the wrong yesToken would let users swap
+    ///      into a token that no longer represents the market. This helper turns
+    ///      silent corruption into a loud `Hook_StaleBinding` revert in every
+    ///      lifecycle callback.
     function _assertYesTokenMatchesBinding(PoolKey calldata key, bool yesIsCurrency0, address marketYesToken)
         private
         pure
@@ -888,11 +881,11 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         return keccak256(abi.encode(_COMMIT_NAMESPACE, router, poolId));
     }
 
-    /// @dev INV-5 hard gate (FINAL-H06). Every swap MUST carry a router-committed identity.
-    ///      Untrusted callers are rejected outright; trusted callers without a same-tx commit
-    ///      are also rejected. The pre-FINAL-H06 silent fallback to `sender` made INV-5
-    ///      advisory — attackers with disposable contracts could bypass anti-sandwich by
-    ///      swapping directly through PoolManager.
+    /// @dev Every swap MUST carry a router-committed identity. Untrusted callers are
+    ///      rejected outright; trusted callers without a same-tx commit are also
+    ///      rejected. The silent fallback to `sender` was removed because it made the
+    ///      identity invariant advisory — attackers with disposable contracts could
+    ///      bypass anti-sandwich by swapping directly through PoolManager.
     function _resolveIdentity(address sender, PoolId poolId) private view returns (address) {
         if (!_trustedRouters[sender]) revert Hook_UntrustedCaller(sender);
         bytes32 slot = _commitSlot(sender, poolId);
@@ -907,7 +900,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     /// @dev Reverts if `identity` already swapped in the OPPOSITE direction this block on
     ///      the same market. Same-direction repeats inside a single block are explicitly
     ///      allowed (a trader splitting a large order should not be punished).
-    /// @dev MULTI-EOA LIMITATION (audit M-02): a sandwich attacker controlling two distinct
+    /// @dev MULTI-EOA LIMITATION: a sandwich attacker controlling two distinct
     ///      addresses can split the front-leg and back-leg across both, escaping this check
     ///      because `identity` will differ between calls. This is a known and accepted
     ///      limitation; the protocol-level mitigation is the Unichain sequencer's anti-MEV
@@ -983,7 +976,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     }
 
     /// @dev Slippage is checked AFTER the swap settles against the post-swap sqrtPrice
-    ///      (audit H-05). hookData length < 40 bytes opts out.
+    ///      hookData length < 40 bytes opts out.
     function _enforceSlippage(bytes calldata hookData, uint160 sqrtPriceX96, bool zeroForOne) private pure {
         if (hookData.length < FeeTiers.HOOKDATA_SLIPPAGE_END) return;
         uint160 maxSqrtPriceX96 =

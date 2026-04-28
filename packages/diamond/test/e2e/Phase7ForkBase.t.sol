@@ -27,8 +27,8 @@ abstract contract Phase7ForkBase is Test {
     address internal constant ROUTER = 0xf93B62CcdCcC62F29800Be38A182886dF9049933;
 
     // -----------------------------------------------------------------
-    // Governance principals (testnet deploy: collapsed onto a single EOA
-    // per CLAUDE.md note; mainnet must use a real Gnosis Safe).
+    // Governance principals (testnet deploy: collapsed onto a single EOA;
+    // mainnet must use a real Gnosis Safe).
     // -----------------------------------------------------------------
 
     address internal constant MULTISIG = 0x0eC2bFb36BB59C736d7b770eacaFAa43a184De34;

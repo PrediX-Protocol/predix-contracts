@@ -31,6 +31,10 @@ HOOK_RUNTIME_ADMIN=0x_SAME_AS_MULTISIG_OR_SEPARATE_MULTISIG
 # Set to MULTISIG_ADDRESS or a different multisig for blast-radius isolation.
 HOOK_PROXY_ADMIN=0x_SAME_AS_MULTISIG_OR_SEPARATE_MULTISIG
 
+# Exchange proxy admin: controls Exchange impl upgrades. SEPARATE from hook
+# proxy admin on mainnet for blast-radius isolation.
+EXCHANGE_PROXY_ADMIN=0x_SAME_AS_MULTISIG_OR_SEPARATE_MULTISIG
+
 # Fee recipient: receives redemption fees, creation fees, sweep.
 # Set to MULTISIG_ADDRESS initially, change to FeeController later.
 FEE_RECIPIENT=0x_SAME_AS_MULTISIG_OR_TREASURY_ADDRESS

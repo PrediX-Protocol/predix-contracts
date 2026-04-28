@@ -28,7 +28,7 @@ Slither 0.11.5 (latest stable as of 2026-04-27) cannot parse the PrediX monorepo
 | Slither capability | PrediX equivalent |
 |---|---|
 | Reentrancy detection | Manual audit (3 passes) + `nonReentrant` on all state-changing entries + CEI pattern enforced |
-| Unused state variables | Manual scan per CLAUDE.md §5.3 — 0 found |
+| Unused state variables | Manual scan (clean-code checklist) — 0 found |
 | Unprotected functions | Manual audit — all external functions access-gated (verified) |
 | Integer overflow | Solidity 0.8 default checks + 0 `unchecked` blocks |
 | Missing events | All 45 events verified present at critical state transitions |

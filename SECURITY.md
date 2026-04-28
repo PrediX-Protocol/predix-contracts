@@ -34,10 +34,10 @@ We plan to launch a bug bounty program on Immunefi before mainnet deployment. Bo
 
 | Severity | Bounty range |
 |---|---|
-| Critical (direct fund loss) | $25,000 — $100,000 |
-| High (significant vulnerability) | $5,000 — $25,000 |
-| Medium (limited impact) | $1,000 — $5,000 |
-| Low (minor / theoretical) | $250 — $1,000 |
+| Critical (direct fund loss) | $5,000 — $20,000 |
+| High (significant vulnerability) | $1,000 — $5,000 |
+| Medium (limited impact) | $200 — $1,000 |
+| Low (minor / theoretical) | $50 — $200 |
 
 Bounties are paid in USDC. Final amounts determined by impact, quality of report, and whether the vulnerability was previously known.
 

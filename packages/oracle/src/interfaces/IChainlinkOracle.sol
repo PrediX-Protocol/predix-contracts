@@ -51,12 +51,12 @@ interface IChainlinkOracle is IOracle {
     /// @notice Reverts when constructing the oracle with a zero admin address.
     error ChainlinkOracle_ZeroAdmin();
 
-    /// @notice Reverts when constructing the oracle with a zero diamond address. (NEW-02)
+    /// @notice Reverts when constructing the oracle with a zero diamond address.
     error ChainlinkOracle_ZeroDiamond();
 
     /// @notice Reverts when `register` is called with a marketId the bound
     ///         diamond does not recognize. Prevents cross-diamond marketId
-    ///         collisions when an adapter is reused across deployments. (NEW-02)
+    ///         collisions when an adapter is reused across deployments.
     error ChainlinkOracle_MarketNotFound();
 
     /// @notice Reverts when `register` is called with `snapshotAt > market.endTime`.
@@ -64,7 +64,7 @@ interface IChainlinkOracle is IOracle {
     ///         will satisfy the `updatedAt >= snapshotAt` predicate once the
     ///         market has passed its endTime without resolution, leaving the
     ///         market stuck. Catch the config mistake at registration rather
-    ///         than let admin silently brick a market. (NEW-02 defense-in-depth)
+    ///         than let admin silently brick a market.
     error ChainlinkOracle_SnapshotAfterMarketEnd();
 
     /// @notice Reverts when `register` is called with a zero feed address.
@@ -117,22 +117,22 @@ interface IChainlinkOracle is IOracle {
     /// @notice Reverts when the sequencer uptime feed returns `startedAt == 0`
     ///         (feed has never emitted a status round). Prevents the
     ///         `block.timestamp - startedAt` comparison from trivially passing
-    ///         on a freshly-deployed L2. (NEW-M8)
+    ///         on a freshly-deployed L2.
     error ChainlinkOracle_SequencerRoundInvalid();
 
-    /// @notice F-D-02: reverts when `prevRoundIdHint >= roundIdHint`. The
+    /// @notice Reverts when `prevRoundIdHint >= roundIdHint`. The
     ///         predecessor-round hint must be strictly less than the round
     ///         being snapshotted.
     error ChainlinkOracle_InvalidPrevRound();
 
-    /// @notice F-D-02: reverts when `roundIdHint` and `prevRoundIdHint` are
+    /// @notice Reverts when `roundIdHint` and `prevRoundIdHint` are
     ///         in different Chainlink aggregator phases (top 16 bits differ).
     ///         Forces the predecessor to be a real prior round in the same
     ///         phase, closing the edge where `roundIdHint - 1` would cross a
     ///         phase boundary or hit round 0 on the proxy.
     error ChainlinkOracle_PhaseMismatch();
 
-    /// @notice FIN-02: reverts when `prevRoundIdHint + 1 != roundIdHint`.
+    /// @notice Reverts when `prevRoundIdHint + 1 != roundIdHint`.
     ///         The preceding round must be the literal immediate predecessor
     ///         of `roundIdHint` within the same phase, not just any earlier
     ///         round. Without this, a caller could skip intermediate rounds
@@ -146,7 +146,7 @@ interface IChainlinkOracle is IOracle {
     function sequencerUptimeFeed() external view returns (address);
 
     /// @notice The diamond this oracle is bound to. `register` enforces that
-    ///         marketId must exist on this diamond. (NEW-02)
+    ///         marketId must exist on this diamond.
     function diamond() external view returns (address);
 
     /// @notice Bind `marketId` to a Chainlink feed config.

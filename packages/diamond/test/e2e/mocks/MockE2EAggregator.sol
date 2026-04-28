@@ -6,7 +6,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interf
 /// @notice Minimal Chainlink aggregator double used by the Phase 7 e2e
 ///         regression-guard suite. Matches the shape oracle-package mocks
 ///         follow but is defined locally so the diamond package does not
-///         reach into another package's `test/mocks/` (per SC/CLAUDE.md §7.3).
+///         reach into another package's `test/mocks/` (monorepo boundary rule).
 contract MockE2EAggregator is AggregatorV3Interface {
     uint8 private immutable _decimals;
     int256 public latestAnswer;

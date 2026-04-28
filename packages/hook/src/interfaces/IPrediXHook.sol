@@ -27,16 +27,15 @@ interface IPrediXHook {
     event Hook_DiamondUpdated(address indexed previous, address indexed current);
 
     /// @notice Emitted when the runtime admin (pause / router / diamond setter) changes.
-    ///         Post-FINAL-H09 this fires from `acceptAdmin`, not `setAdmin`.
+    ///         This fires from `acceptAdmin`, not `setAdmin`.
     event Hook_AdminUpdated(address indexed previous, address indexed current);
 
-    /// @notice Emitted by `setAdmin` — FINAL-H09's propose leg of the 2-step rotation.
+    /// @notice Emitted by `setAdmin` — the propose leg of the 2-step admin rotation.
     ///         Pairs with `Hook_AdminUpdated` once the pending admin calls `acceptAdmin`.
     event Hook_AdminChangeProposed(address indexed current, address indexed pending);
 
-    /// @notice M-03 (audit Pass 2.1): emitted by `cancelAdminRotation` when
-    ///         a pending admin nomination is discarded before the nominee
-    ///         accepts.
+    /// @notice Emitted by `cancelAdminRotation` when a pending admin nomination
+    ///         is discarded before the nominee accepts.
     event Hook_AdminChangeCancelled(address indexed cancelled);
 
     /// @notice Emitted by `setPaused`. When `paused` is true `_beforeSwap`,
@@ -52,38 +51,37 @@ interface IPrediXHook {
 
     /// @notice Emitted by `proposeTrustedRouter` (post-bootstrap). The eventual
     ///         state change fires a `Hook_TrustedRouterUpdated` when
-    ///         `executeTrustedRouter` is called after the delay. (H-H02)
+    ///         `executeTrustedRouter` is called after the delay.
     event Hook_TrustedRouterProposed(address indexed router, bool trusted, uint256 readyAt);
 
     /// @notice Emitted when a pending trusted-router proposal is cancelled
-    ///         before execution. (H-H02)
+    ///         before execution.
     event Hook_TrustedRouterCancelled(address indexed router);
 
     /// @notice Emitted exactly once when `completeBootstrap` is called. After
     ///         this point, immediate-apply `setTrustedRouter` is permanently
-    ///         disabled; trust changes must use the propose/execute flow. (H-H02)
+    ///         disabled; trust changes must use the propose/execute flow.
     event Hook_BootstrapCompleted();
 
-    /// @notice Emitted by `proposeDiamond` (F-X-02). `Hook_DiamondUpdated`
+    /// @notice Emitted by `proposeDiamond`. `Hook_DiamondUpdated`
     ///         fires later when `executeDiamondRotation` runs after
     ///         `DIAMOND_ROTATION_DELAY`.
     event Hook_DiamondRotationProposed(address indexed diamond, uint256 readyAt);
 
     /// @notice Emitted when a pending diamond rotation is cancelled before
-    ///         execution. (F-X-02)
+    ///         execution.
     event Hook_DiamondRotationCancelled(address indexed diamond);
 
-    /// @notice H-01 audit fix: emitted by `proposeUnregisterMarketPool`. The
+    /// @notice Emitted by `proposeUnregisterMarketPool`. The
     ///         binding stays in place until `executeUnregisterMarketPool` is
     ///         called at or after `readyAt`.
     event Hook_MarketUnregisterProposed(uint256 indexed marketId, uint256 readyAt);
 
-    /// @notice H-01 audit fix: emitted by `executeUnregisterMarketPool` when
-    ///         the per-market binding is removed.
+    /// @notice Emitted by `executeUnregisterMarketPool` when the per-market
+    ///         binding is removed.
     event Hook_MarketUnregistered(uint256 indexed marketId, PoolId indexed poolId);
 
-    /// @notice H-01 audit fix: emitted when a pending unregister is cancelled
-    ///         before execution.
+    /// @notice Emitted when a pending unregister is cancelled before execution.
     event Hook_MarketUnregisterCancelled(uint256 indexed marketId);
 
     /// @notice Emitted when the diamond registers a new outcome-token / quote-token pool
@@ -93,7 +91,7 @@ interface IPrediXHook {
     );
 
     /// @notice Emitted for every swap settled by the hook. `usdcVolume` is measured on the
-    ///         quote leg — this is the audit fix for H-02. Off-chain indexers reconstruct
+    ///         quote leg. Off-chain indexers reconstruct
     ///         per-market totals from this stream.
     event Hook_MarketTraded(
         uint256 indexed marketId,
@@ -171,7 +169,7 @@ interface IPrediXHook {
     /// @notice Thrown when a swap, add-liquidity or donate hits a market in refund mode.
     ///         Trading must stop once the diamond enables refund mode so LPs are not
     ///         adverse-selected against users who already know no resolution is coming.
-    ///         `beforeRemoveLiquidity` remains open so LPs can exit. (H-H01 fix)
+    ///         `beforeRemoveLiquidity` remains open so LPs can exit.
     error Hook_MarketInRefundMode();
 
     /// @notice Thrown when a swap or add-liquidity hits a market whose `endTime` has passed.
@@ -187,9 +185,9 @@ interface IPrediXHook {
     error Hook_MaxSlippageExceeded();
 
     /// @notice Thrown in `_beforeSwap` when the caller is not in the trusted-router set.
-    ///         Hard-gate replaces the pre-FINAL-H06 silent fallback to `sender`, which
-    ///         made INV-5 advisory and allowed attacker-deployed contracts to bypass the
-    ///         anti-sandwich identity commit by swapping directly through PoolManager.
+    ///         Hard-gate replaces the former silent fallback to `sender`, which made
+    ///         the identity invariant advisory and allowed attacker-deployed contracts
+    ///         to bypass anti-sandwich by swapping directly through PoolManager.
     error Hook_UntrustedCaller(address caller);
 
     /// @notice Thrown in `_beforeSwap` when a trusted router swapped without first calling
@@ -201,86 +199,81 @@ interface IPrediXHook {
     error Hook_OnlyPendingAdmin();
 
     /// @notice Thrown in `_beforeInitialize` when the implied YES price derived from
-    ///         `sqrtPriceX96` sits outside the ±5% window around `PRICE_UNIT / 2`. Per
-    ///         FINAL-H11 this closes the permissionless-register-then-initialize front-run
+    ///         `sqrtPriceX96` sits outside the ±5% window around `PRICE_UNIT / 2`. This
+    ///         closes the permissionless-register-then-initialize front-run
     ///         that would otherwise let a hostile caller lock the pool at an unfair price.
     error Hook_InitPriceOutOfWindow();
 
-    /// @notice H-H02: reverts when the immediate-apply `setTrustedRouter` is
-    ///         called after `completeBootstrap`. Use the propose/execute flow.
+    /// @notice Reverts when the immediate-apply `setTrustedRouter` is called
+    ///         after `completeBootstrap`. Use the propose/execute flow.
     error Hook_BootstrapComplete();
 
-    /// @notice H-H02: reverts when the propose/execute flow is called before
+    /// @notice Reverts when the propose/execute flow is called before
     ///         `completeBootstrap` — the deploy window requires the immediate
     ///         setter and the propose/execute path would otherwise race.
     error Hook_BootstrapNotComplete();
 
-    /// @notice H-H02: reverts when `executeTrustedRouter` / `cancelTrustedRouter`
-    ///         find no pending change for `router`.
+    /// @notice Reverts when `executeTrustedRouter` / `cancelTrustedRouter` find
+    ///         no pending change for `router`.
     error Hook_NoPendingRouterChange();
 
-    /// @notice H-H02: reverts when `executeTrustedRouter` is called before
+    /// @notice Reverts when `executeTrustedRouter` is called before
     ///         `TRUSTED_ROUTER_DELAY` has elapsed since the proposal.
     error Hook_TrustedRouterDelayNotElapsed();
 
-    /// @notice FIN-03: reverts when `proposeTrustedRouter` is called while a
-    ///         proposal for the same router is still pending. Admin must
-    ///         cancel the outstanding proposal first; a silent overwrite
-    ///         would let admin reset the 48h timer indefinitely.
+    /// @notice Reverts when `proposeTrustedRouter` is called while a proposal
+    ///         for the same router is still pending. Admin must cancel the
+    ///         outstanding proposal first; a silent overwrite would let admin
+    ///         reset the 48h timer indefinitely.
     error Hook_AlreadyPendingRouter();
 
-    /// @notice F-X-02: reverts when `executeDiamondRotation` or
-    ///         `cancelDiamondRotation` is called with no pending proposal.
+    /// @notice Reverts when `executeDiamondRotation` or `cancelDiamondRotation`
+    ///         is called with no pending proposal.
     error Hook_NoPendingDiamondChange();
 
-    /// @notice F-X-02: reverts when `executeDiamondRotation` is called
-    ///         before `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
+    /// @notice Reverts when `executeDiamondRotation` is called before
+    ///         `DIAMOND_ROTATION_DELAY` has elapsed since the proposal.
     error Hook_DiamondDelayNotElapsed();
 
-    /// @notice M-01 audit fix: reverts when `proposeDiamond` is called while
-    ///         a proposal is still pending. Admin must `cancelDiamondRotation`
-    ///         first; mirrors H4's no-silent-reset pattern.
+    /// @notice Reverts when `proposeDiamond` is called while a proposal is
+    ///         still pending. Admin must `cancelDiamondRotation` first.
     error Hook_AlreadyPendingDiamondChange();
 
-    /// @notice L-04 audit fix: reverts when `proposeDiamond` /
-    ///         `executeDiamondRotation` is called with a target whose
-    ///         `code.length == 0`. Mirrors the proxy's
-    ///         `HookProxy_NotAContract` defence.
+    /// @notice Reverts when `proposeDiamond` / `executeDiamondRotation` is
+    ///         called with a target whose `code.length == 0`. Mirrors the
+    ///         proxy's `HookProxy_NotAContract` defence.
     error Hook_DiamondNotAContract();
 
-    /// @notice H-01 audit fix: reverts when `executeUnregisterMarketPool` /
+    /// @notice Reverts when `executeUnregisterMarketPool` /
     ///         `cancelUnregisterMarketPool` is called with no pending
     ///         unregister for the marketId.
     error Hook_NoPendingUnregister();
 
-    /// @notice H-01 audit fix: reverts when `executeUnregisterMarketPool`
-    ///         is called before `MARKET_UNREGISTER_DELAY` has elapsed.
+    /// @notice Reverts when `executeUnregisterMarketPool` is called before
+    ///         `MARKET_UNREGISTER_DELAY` has elapsed.
     error Hook_UnregisterDelayNotElapsed();
 
-    /// @notice M-01 universal guard: reverts when `proposeUnregisterMarketPool`
-    ///         is called for a marketId whose unregister proposal is still
-    ///         pending. Mirrors `Hook_AlreadyPendingDiamondChange` /
-    ///         `Hook_AlreadyPendingRouter` so all five propose flows share
-    ///         the same no-silent-reset contract.
+    /// @notice Reverts when `proposeUnregisterMarketPool` is called for a
+    ///         marketId whose unregister proposal is still pending. All propose
+    ///         flows share the same no-silent-reset pattern.
     error Hook_AlreadyPendingUnregister();
 
-    /// @notice M-03 (audit Pass 2.1): reverts when `acceptAdmin` is called
-    ///         before the 48h `ADMIN_ROTATION_DELAY` has elapsed since
-    ///         `setAdmin` proposed the new admin. Brings hook admin rotation
-    ///         in line with the diamond / trusted-router / unregister /
-    ///         upgrade / timelock-duration governance cadence.
+    /// @notice Reverts when `acceptAdmin` is called before the 48h
+    ///         `ADMIN_ROTATION_DELAY` has elapsed since `setAdmin` proposed
+    ///         the new admin. Brings hook admin rotation in line with the
+    ///         diamond / trusted-router / unregister / upgrade governance
+    ///         cadence.
     error Hook_AdminDelayNotElapsed();
 
-    /// @notice M-03 (audit Pass 2.1): reverts when `setAdmin` is called
-    ///         while a previous admin nomination is still pending. Mirrors
-    ///         the universal AlreadyPending pattern (M-01).
+    /// @notice Reverts when `setAdmin` is called while a previous admin
+    ///         nomination is still pending.
     error Hook_AlreadyPendingAdmin();
 
-    /// @notice M-03 (audit Pass 2.1): reverts when `cancelAdminRotation`
-    ///         is called with no pending admin nomination.
+    /// @notice Reverts when `cancelAdminRotation` is called with no pending
+    ///         admin nomination.
     error Hook_NoPendingAdminChange();
 
-    /// @notice M-02 audit fix: reverts in `_beforeSwap` /
+    /// @notice Reverts in `_beforeSwap` /
     ///         `_beforeAddLiquidity` / `_beforeDonate` when the registered
     ///         binding's yesToken position no longer matches the diamond's
     ///         current marketView for the bound marketId. Catches stale
@@ -288,34 +281,33 @@ interface IPrediXHook {
     ///         cleared via `proposeUnregisterMarketPool`.
     error Hook_StaleBinding();
 
-    /// @notice NEW-M4: reverts when the impl constructor is called with
+    /// @notice Reverts when the impl constructor is called with
     ///         `canonicalLpFee_ == 0`. Zero would disable the canonical-key
     ///         check at registration time.
     error Hook_InvalidCanonicalFee();
 
-    /// @notice NEW-M4: reverts when the impl constructor is called with
+    /// @notice Reverts when the impl constructor is called with
     ///         `canonicalTickSpacing_ == 0`. Same rationale as
     ///         `Hook_InvalidCanonicalFee`.
     error Hook_InvalidCanonicalTickSpacing();
 
-    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
-    ///         `PoolKey` whose `fee` does not match `canonicalLpFee`.
-    ///         Front-run-brick defence.
+    /// @notice Reverts when `registerMarketPool` is called with a `PoolKey`
+    ///         whose `fee` does not match `canonicalLpFee`. Front-run-brick
+    ///         defence.
     error Hook_NonCanonicalFee();
 
-    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
-    ///         `PoolKey` whose `tickSpacing` does not match
-    ///         `canonicalTickSpacing`. Front-run-brick defence.
+    /// @notice Reverts when `registerMarketPool` is called with a `PoolKey`
+    ///         whose `tickSpacing` does not match `canonicalTickSpacing`.
+    ///         Front-run-brick defence.
     error Hook_NonCanonicalTickSpacing();
 
-    /// @notice NEW-M4: reverts when `registerMarketPool` is called with a
-    ///         `PoolKey` whose `hooks` field does not equal this hook's
-    ///         own address. Prevents registering a pool that routes callbacks
+    /// @notice Reverts when `registerMarketPool` is called with a `PoolKey`
+    ///         whose `hooks` field does not equal this hook's own address. Prevents registering a pool that routes callbacks
     ///         to an unrelated contract while holding the canonical marketId
     ///         binding on this hook.
     error Hook_WrongHookAddress();
 
-    /// @notice H-H03 / NEW-M6: reverts from `commitSwapIdentityFor` when
+    /// @notice Reverts from `commitSwapIdentityFor` when
     ///         `caller != msg.sender` AND `caller != quoter`. Only two
     ///         cross-slot writes are legitimate — self-commit or the
     ///         canonical quoter pre-commit path.
@@ -336,7 +328,7 @@ interface IPrediXHook {
     ///         after `executeDiamondRotation` is called post
     ///         `DIAMOND_ROTATION_DELAY`. Replaces the single-step `setDiamond`
     ///         so a compromised admin cannot instant-redirect market queries
-    ///         to a malicious diamond (F-X-02).
+    ///         to a malicious diamond.
     /// @dev    Pending storage slots are overwritten by a later propose; there
     ///         is no pending-exists guard because diamond rotation is a
     ///         rarely-used ops path and an admin re-evaluating the target
@@ -361,7 +353,7 @@ interface IPrediXHook {
     ///                  may succeed, zero if no pending change.
     function pendingDiamond() external view returns (address pending, uint256 readyAt);
 
-    /// @notice H-01 audit fix: schedule removal of a market's pool binding.
+    /// @notice Schedule removal of a market's pool binding.
     ///         48h timelock matches the diamond rotation cadence — every
     ///         binding-affecting operation carries the same governance
     ///         notice as the rotation that motivated it. Admin-gated.
@@ -386,7 +378,7 @@ interface IPrediXHook {
     function pendingUnregisterMarketPool(uint256 marketId) external view returns (uint256 readyAt);
 
     /// @notice Propose a new admin. Admin-gated, emits `Hook_AdminChangeProposed`.
-    ///         Per FINAL-H09 + M-03 (audit Pass 2.1) this only stores the
+    ///         This only stores the
     ///         pending address with a 48h timelock; the rotation is completed
     ///         by `acceptAdmin` AT OR AFTER `_pendingAdminReadyAt`. The
     ///         AlreadyPending guard prevents silent overwrite of an in-flight
@@ -398,17 +390,16 @@ interface IPrediXHook {
     ///         `setAdmin`. Clears the pending slot and emits `Hook_AdminUpdated`.
     function acceptAdmin() external;
 
-    /// @notice M-03 (audit Pass 2.1): cancel a pending admin nomination
-    ///         before the nominee accepts. Admin-only — gives legitimate
-    ///         admin a recovery window if a compromised admin proposed an
-    ///         attacker key.
+    /// @notice Cancel a pending admin nomination before the nominee accepts.
+    ///         Admin-only — gives legitimate admin a recovery window if a
+    ///         compromised admin proposed an attacker key.
     function cancelAdminRotation() external;
 
     /// @notice Toggle the emergency pause. Admin-gated, emits `Hook_PauseStatusChanged`.
     function setPaused(bool paused_) external;
 
     /// @notice Add or remove a router from the trusted set. Admin-gated.
-    /// @dev H-H02: available ONLY during the bootstrap window
+    /// @dev Available ONLY during the bootstrap window
     ///      (`bootstrapped() == false`). After `completeBootstrap`, all trust
     ///      changes must route through `proposeTrustedRouter` / `executeTrustedRouter`
     ///      with a 48h delay between the two.
@@ -485,8 +476,7 @@ interface IPrediXHook {
     /// @return readyAt Timestamp at which `executeTrustedRouter` becomes callable. Zero if none pending.
     function pendingTrustedRouter(address router) external view returns (bool trusted, uint256 readyAt);
 
-    /// @notice M-03 (audit Pass 2.1): pending admin rotation, or (zero, 0)
-    ///         if none.
+    /// @notice Pending admin rotation, or (zero, 0) if none.
     /// @return pending The proposed new admin address, or zero if no pending.
     /// @return readyAt Timestamp at which `acceptAdmin` becomes callable.
     function pendingAdminRotation() external view returns (address pending, uint256 readyAt);

@@ -77,12 +77,12 @@ interface IPrediXRouter {
 
     /// @notice Thrown when `permitSingle.details.amount < amount` for the current call.
     /// @dev Retained as a type for external tooling; the router now enforces
-    ///      equality (`InvalidPermitAmount`) post-NEW-M5, so callers should
-    ///      catch `InvalidPermitAmount` instead.
+    ///      equality (`InvalidPermitAmount`), so callers should catch
+    ///      `InvalidPermitAmount` instead.
     error InsufficientPermitAllowance();
 
-    /// @notice Thrown when `permitSingle.details.amount != amount`. Post-NEW-M5
-    ///         the router requires exact-amount permits to avoid residual
+    /// @notice Thrown when `permitSingle.details.amount != amount`. The router
+    ///         requires exact-amount permits to avoid residual
     ///         Permit2 allowances. Frontends must sign a per-trade permit
     ///         matching the exact `amountIn`.
     error InvalidPermitAmount();
@@ -119,8 +119,8 @@ interface IPrediXRouter {
     /// @notice Emitted when the router returns unused input to `msg.sender` at the end of a trade.
     event DustRefunded(address indexed recipient, address indexed token, uint256 amount);
 
-    /// @notice H-R1: emitted when the CLOB leg reverted and the router fell back
-    ///         to the AMM route. `reason` is the 4-byte selector of the revert
+    /// @notice Emitted when the CLOB leg reverted and the router fell back to
+    ///         the AMM route. `reason` is the 4-byte selector of the revert
     ///         error (or `bytes4(0)` if the revert carried no data). Expected
     ///         non-bug selectors include the exchange's `ExchangePaused` /
     ///         `MarketPaused` when that module is temporarily off; any other

@@ -77,7 +77,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         the quote and the actual swap. See spec §6.8.
     uint256 internal constant VIRTUAL_SAFETY_MARGIN_BPS = 9700;
 
-    /// @notice NEW-M7: safety buffer applied to the post-impact mint target
+    /// @notice Safety buffer applied to the post-impact mint target
     ///         computed by the two-pass virtual-NO quote. The first pass
     ///         extrapolates linearly from spot; the second pass re-quotes at
     ///         the estimated size and observes the real price-impact. Because
@@ -109,7 +109,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice PrediX on-chain CLOB.
     address public immutable exchange;
 
-    /// @notice Uniswap v4 Quoter — used for AMM quotes (fixes legacy audit H-03).
+    /// @notice Uniswap v4 Quoter — used for AMM quotes.
     IV4Quoter public immutable quoter;
 
     /// @notice Canonical Permit2 deployment on the target chain.
@@ -556,8 +556,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             filled = _filled;
             amountInRemaining = amountIn - _cost;
         } catch (bytes memory err) {
-            // H-R1: log-and-fallback. Keep the AMM resilience by not re-throwing,
-            // but surface the selector so silent CLOB reverts become observable.
+            // Log-and-fallback. Keep the AMM resilience by not re-throwing, but
+            // surface the selector so silent CLOB reverts become observable.
             // `msg.sender` here is the end user — internal calls preserve it
             // through the router entry (`buyYes` / `buyNo`).
             filled = 0;
@@ -641,7 +641,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             filled = _filled;
             amountInRemaining = amountIn - _cost;
         } catch (bytes memory err) {
-            // H-R1: mirrors `_tryClobBuy` — see the comment there for rationale.
+            // Mirrors `_tryClobBuy` — see the comment there for rationale.
             filled = 0;
             amountInRemaining = amountIn;
             bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
@@ -822,12 +822,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     // =========================================================================
-    // Quoter identity pre-commit (Phase 5 — commitSwapIdentityFor)
+    // Quoter identity pre-commit
     // =========================================================================
 
     /// @dev Pre-commit `msg.sender` identity under the quoter's transient slot so
     ///      `V4Quoter.quoteExactInputSingle` / `quoteExactOutputSingle` can pass
-    ///      the hook's FINAL-H06 commit gate during simulate-and-revert. Must be
+    ///      the hook's identity-commit gate during simulate-and-revert. Must be
     ///      called before every quoter invocation in the same transaction. Both the
     ///      router and the quoter must be in the hook's trusted-router set.
     function _preCommitForQuoter(address yesToken) internal {
@@ -836,12 +836,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     // =========================================================================
-    // CLOB price caps — fee-adjusted AMM spot (restored in Phase 5)
+    // CLOB price caps — fee-adjusted AMM spot
     // =========================================================================
 
     /// @notice Fee-adjusted AMM spot price for buying YES, in USDC/YES with 1e6 precision.
     /// @dev Quotes `1 USDC ($1) → YES` and inverts. The Quoter simulates the real swap through
-    ///      the hook, so the dynamic fee is baked in (audit H-03 fix). Returns 0 on an empty
+    ///      the hook, so the dynamic fee is baked in. Returns 0 on an empty
     ///      pool so callers can fall back to a permissive cap rather than reverting.
     function _ammSpotPriceForBuy(address yesToken) internal returns (uint256 usdcPerYes) {
         _preCommitForQuoter(yesToken);
@@ -920,7 +920,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 effectiveNoPrice = PRICE_PRECISION - usdcPerYesSell;
         uint256 estimatedTarget = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
 
-        // NEW-M7: Pass 2 re-quotes the sell at the estimated target size so
+        // Pass 2: re-quote the sell at the estimated target size so
         // the actual price impact is baked in before committing to the mint.
         // Without this, a thin pool's linear extrapolation would size the
         // flash-sell beyond what the pool can absorb; the callback then
@@ -967,11 +967,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Enforce the diamond's effective per-market cap against a prospective `splitPosition`.
     /// @dev `getMarket` is the heavy read — we only pay for it inside the virtual-NO path
     ///      where `splitPosition` is actually invoked. See spec §7 E18.
-    /// @dev L-01 (audit Pass 2.1): mirrors diamond's effective-cap formula
-    ///      `cap = perMarketCap > 0 ? perMarketCap : defaultPerMarketCap`. Pre-fix
-    ///      the router only checked `perMarketCap`, so default-capped markets
-    ///      silently passed pre-flight then reverted deep inside the unlock
-    ///      callback after gas was spent on the flash-sell + swap.
+    /// @dev Mirrors the diamond's effective-cap formula
+    ///      `cap = perMarketCap > 0 ? perMarketCap : defaultPerMarketCap`.
+    ///      Both the per-market override and the global default are checked so
+    ///      default-capped markets do not silently pass pre-flight then revert
+    ///      deep inside the unlock callback after gas was spent.
     function _enforcePerMarketCap(uint256 marketId, uint256 mintAmount) internal view {
         IMarketFacet.MarketView memory m = IMarketFacet(diamond).getMarket(marketId);
         uint256 cap = m.perMarketCap > 0 ? m.perMarketCap : IMarketFacet(diamond).defaultPerMarketCap();
@@ -1002,7 +1002,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     /// @notice Pull `amount` of `token` from `msg.sender` via Permit2.
-    /// @dev Enforces `permitSingle.details.amount == amount` (NEW-M5). A permit
+    /// @dev Enforces `permitSingle.details.amount == amount`. A permit
     ///      signed for MORE than the trade would leave residual Permit2
     ///      allowance to the router — latent attack surface if any future
     ///      router bug introduces a user-controllable transferFrom destination.

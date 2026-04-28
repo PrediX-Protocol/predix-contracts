@@ -103,7 +103,7 @@ Prediction markets live or die on resolution. PrediX ships **two production adap
 
 ### 5. Production-grade security architecture
 
-- **EIP-2535 Diamond core** — six facets (market, event, access, pausable, cut, loupe) behind a single proxy; upgrades flow through an OpenZeppelin `TimelockController` holding `CUT_EXECUTOR_ROLE`, self-administered so `DEFAULT_ADMIN_ROLE` cannot self-grant the upgrade role (NEW-01 fix).
+- **EIP-2535 Diamond core** — six facets (market, event, access, pausable, cut, loupe) behind a single proxy; upgrades flow through an OpenZeppelin `TimelockController` holding `CUT_EXECUTOR_ROLE`, self-administered so `DEFAULT_ADMIN_ROLE` cannot self-grant the upgrade role.
 - **Independent hook timelock** — 48-hour delay on `PrediXHookV2` implementation rotation, two-step admin handover, separate key domain from diamond governance.
 - **EIP-1153 transient reentrancy guard** — a single cross-facet lock instead of per-contract storage slots. No cross-call state leakage.
 - **Module-keyed pause** — the diamond can pause a single module (market, exchange, diamond-cut) without taking down the whole protocol. Cancel-only paths (order cancellation, refund mode) stay open even while paused so user funds are never trapped.
@@ -148,24 +148,24 @@ Six independent packages, one-way dependency graph. Contracts communicate by add
 | [`oracle`](packages/oracle/) | `ManualOracle` and `ChainlinkOracle` adapters behind `IOracle` |
 | [`diamond`](packages/diamond/) | EIP-2535 proxy + market lifecycle facet + event coordinator facet + access/pause/cut facets |
 | [`hook`](packages/hook/) | Uniswap v4 hook + ERC1967 proxy with 48h timelock + 2-step admin rotation |
-| [`exchange`](packages/exchange/) | On-chain CLOB with 4-way match waterfall + strict solvency invariants + ERC1967 upgradeable proxy |
+| [`exchange`](packages/exchange/) | On-chain CLOB + ERC-1967 upgradeable proxy with 48h timelocked upgrades, 4-way match waterfall, strict solvency invariants |
 | [`router`](packages/router/) | Stateless CLOB + AMM aggregator with Permit2 and revert-and-decode quoting |
 
 ---
 
 ## Live on Unichain Sepolia
 
-Staging deployment of 2026-04-20, block `49799033`. Full E2E flows validated across ~195 live transactions.
+Staging deployment of 2026-04-28, block `50514842`. All contracts verified on Uniscan + Blockscout. Full E2E validated on-chain.
 
 | Component | Address |
 |---|---|
-| Diamond (core) | [`0x7689E9bf4b2107E2Fd0f1DDA940E2f1143434E39`](https://sepolia.uniscan.xyz/address/0x7689E9bf4b2107E2Fd0f1DDA940E2f1143434E39) |
-| Exchange (CLOB) | [`0xE425698e1835DA0A6086eEB85137A36275993F41`](https://sepolia.uniscan.xyz/address/0xE425698e1835DA0A6086eEB85137A36275993F41) |
-| Hook proxy | [`0x89830AC92Ff936f39C2D11D1fd821c6f977fAAE0`](https://sepolia.uniscan.xyz/address/0x89830AC92Ff936f39C2D11D1fd821c6f977fAAE0) |
-| Router (user-facing) | [`0x6698253F38F4A4bbBC4A223309B4E560d83D7ee0`](https://sepolia.uniscan.xyz/address/0x6698253F38F4A4bbBC4A223309B4E560d83D7ee0) |
-| Timelock (upgrade governance) | `0x578D2a308BB0aa5d30E6BC08A7975ccA7e88af61` (48h delay) |
-| ManualOracle | `0x7887f07AF62CE0a4Cf836136135a61b59c36A9d2` |
-| TestUSDC (6-decimals) | `0x2D56777Af1B52034068Af6864741a161dEE613Ac` |
+| Diamond (core) | [`0x91fA446F376e713636A29b95a02d63aE5f057dDC`](https://sepolia.uniscan.xyz/address/0x91fA446F376e713636A29b95a02d63aE5f057dDC) |
+| Exchange proxy (CLOB) | [`0x9Ecef729f80739C2451Dc56354c986041dD8070D`](https://sepolia.uniscan.xyz/address/0x9Ecef729f80739C2451Dc56354c986041dD8070D) |
+| Hook proxy | [`0x82fe732c651B9cc5c98Cee165B12FEb8a3006Ae0`](https://sepolia.uniscan.xyz/address/0x82fe732c651B9cc5c98Cee165B12FEb8a3006Ae0) |
+| Router (user-facing) | [`0xdB13bD901950F1CBa9478B9900A3B2B77C57412A`](https://sepolia.uniscan.xyz/address/0xdB13bD901950F1CBa9478B9900A3B2B77C57412A) |
+| Timelock (upgrade governance) | [`0x759143eC46131631259e8Ecc5DedeE0Fb66818A1`](https://sepolia.uniscan.xyz/address/0x759143eC46131631259e8Ecc5DedeE0Fb66818A1) (48h delay) |
+| ManualOracle | [`0x733502f3524D6610d93965d3E5D6C675DEE0b9c4`](https://sepolia.uniscan.xyz/address/0x733502f3524D6610d93965d3E5D6C675DEE0b9c4) |
+| TestUSDC (6-decimals) | [`0x2D56777Af1B52034068Af6864741a161dEE613Ac`](https://sepolia.uniscan.xyz/address/0x2D56777Af1B52034068Af6864741a161dEE613Ac) |
 
 Diamond facet breakdown and external pins (Uniswap v4 `PoolManager`, `V4Quoter`, canonical `Permit2`) are in the environment template and in the on-chain `DiamondLoupeFacet.facets()` view.
 
@@ -200,7 +200,7 @@ PrediX is designed to be integrated, not wrapped. The router exposes four exact-
 // One-signature buy: spend 100 USDC, get at least 230 YES on market 42.
 // Router splits the fill across CLOB and AMM in a single transaction.
 
-IPrediXRouter router = IPrediXRouter(0x6698253F38F4A4bbBC4A223309B4E560d83D7ee0);
+IPrediXRouter router = IPrediXRouter(0xdB13bD901950F1CBa9478B9900A3B2B77C57412A);
 
 (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) = router.buyYesWithPermit({
     marketId:     42,
@@ -243,7 +243,7 @@ Prediction markets hold user collateral until resolution, sometimes for months. 
 **What we've done:**
 
 - **Multiple internal security review passes** across all seven packages, with per-finding **regression locks** under `packages/*/test/repro/` (~40 files). Every finding has a dedicated test that fails on the pre-fix code and passes post-fix.
-- **815 tests** covering unit, fuzz, invariant, integration, attack scenario, and fork suites. 16 solvency invariants run at 128,000+ ops per invariant per run.
+- **815+ tests** covering unit, fuzz, invariant, integration, attack scenario, and fork suites. 16 solvency invariants run at 128,000+ ops per invariant per run.
 - **~195 live broadcasts** on Unichain Sepolia exercising every happy path, every revert path, reentrancy surface, storage slot invariants (`cast storage`), gas benchmarks, ERC-20 allowance edge cases, and multi-market isolation.
 - **Findings status**: **0 Critical · 0 High · 0 Medium · 0 Low open**. All findings from internal review have been fixed and regression-locked.
 - **Vulnerability disclosure policy** published at [`SECURITY.md`](SECURITY.md).
@@ -251,7 +251,7 @@ Prediction markets hold user collateral until resolution, sometimes for months. 
 
 **External audit engagement in progress.** Mainnet deploy is gated on a clean external sign-off.
 
-Full engagement brief for the external auditor is [specs/AUDIT_SPEC.md](specs/AUDIT_SPEC.md).
+Full engagement brief for the external auditor is available upon request. See [`docs/AUDIT_RFP_PACKAGE.md`](docs/AUDIT_RFP_PACKAGE.md).
 
 ---
 
@@ -272,9 +272,8 @@ Full engagement brief for the external auditor is [specs/AUDIT_SPEC.md](specs/AU
 ├── Makefile              # monorepo build/test aggregator
 ├── foundry.toml          # shared Solidity 0.8.30 / cancun / via_ir defaults
 ├── .env.example          # environment template
-├── scripts/testnet/      # shell wrappers around Phase 7 bootstrap forge scripts
-├── specs/                # protocol & audit specifications
-│   └── AUDIT_SPEC.md     # engagement brief for external auditor
+├── scripts/testnet/      # shell wrappers for testnet bootstrap and validation
+├── docs/                 # production docs (IR plan, key policy, deployment checklist)
 └── packages/
     ├── shared/           # interfaces, OutcomeToken, TransientReentrancyGuard, Roles
     ├── oracle/           # ManualOracle, ChainlinkOracle
@@ -297,9 +296,9 @@ PrediX V2 is in pre-mainnet hardening. Issues and pull requests are welcome — 
 ## Links
 
 - **Live deployment**: Unichain Sepolia (chainId 1301) — addresses above
-- **Audit snapshot**: tag [`audit-v3-20260421`](releases/tag/audit-v3-20260421) (GitHub releases)
-- **Spec**: [`specs/AUDIT_SPEC.md`](specs/AUDIT_SPEC.md)
-- **Fork testing guide**: [`FORK_TESTS.md`](FORK_TESTS.md)
+- **Security policy**: [`SECURITY.md`](SECURITY.md)
+- **Incident response**: [`docs/INCIDENT_RESPONSE_PLAN.md`](docs/INCIDENT_RESPONSE_PLAN.md)
+- **Audit RFP**: [`docs/AUDIT_RFP_PACKAGE.md`](docs/AUDIT_RFP_PACKAGE.md)
 
 ---
 

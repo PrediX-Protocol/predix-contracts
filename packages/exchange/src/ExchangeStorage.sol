@@ -94,8 +94,8 @@ abstract contract ExchangeStorage {
     }
 
     /// @notice Decrement `userOrderCount` for `user` in `marketId`, saturating at zero.
-    /// @dev Audit H-01: must be called whenever a maker order becomes fully filled
-    ///      (in either path) and on cancel.
+    /// @dev Must be called whenever a maker order becomes fully filled (in either
+    ///      path) and on cancel.
     function _decrementOrderCount(uint256 marketId, address user) internal {
         uint256 count = userOrderCount[marketId][user];
         if (count > 0) {
@@ -107,7 +107,7 @@ abstract contract ExchangeStorage {
     ///         becomes empty.
     /// @dev Swap-and-pop. Called whenever an order reaches a terminal state
     ///      (cancelled, fully filled) so that `_peekBest` returns on iteration 0
-    ///      in the well-behaved case (CLAUDE.md "Performance claims").
+    ///      in the well-behaved case.
     function _removeFromQueue(uint256 marketId, IPrediXExchange.Side side, uint8 priceIdx, bytes32 orderId) internal {
         bytes32[] storage queue = _orderQueue[marketId][side][priceIdx];
         uint256 len = queue.length;
@@ -126,9 +126,9 @@ abstract contract ExchangeStorage {
     }
 
     /// @notice Single cleanup hook for "this maker order just reached a terminal state".
-    /// @dev Audit H-01 + M5: release the per-user slot AND swap-pop the queue (clearing
-    ///      the bitmap bit if the queue empties). Called from both taker execution helpers
-    ///      and maker-vs-maker matching helpers, so the discipline lives in one place.
+    /// @dev Releases the per-user slot AND swap-pops the queue (clearing the bitmap bit
+    ///      if the queue empties). Called from both taker execution helpers and maker-vs-
+    ///      maker matching helpers, so the discipline lives in one place.
     ///
     ///      Also sweeps any residual `depositLocked` dust on BUY orders to
     ///      `feeRecipient`. BUY initial deposit is a single-floored `(amount * price)

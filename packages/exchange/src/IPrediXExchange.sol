@@ -137,8 +137,8 @@ interface IPrediXExchange {
 
     /// @notice Fill a market order with 4-way waterfall routing.
     /// @dev Permissionless — no role gate, no `onlyRouter`. Any caller is valid,
-    ///      but `taker` MUST equal `msg.sender` (E-02 fix). This prevents an
-    ///      attacker from spending a victim's Exchange allowance by passing
+    ///      but `taker` MUST equal `msg.sender`. This prevents an attacker from
+    ///      spending a victim's Exchange allowance by passing
     ///      `taker = victim, recipient = attacker`.
     ///      Upfront pull → loop → refund unused. Each iteration picks the cheapest of:
     ///        - COMPLEMENTARY (direct opposite-side match)
@@ -170,10 +170,9 @@ interface IPrediXExchange {
 
     /// @notice Simulate `fillMarketOrder` without execution.
     /// @dev Pure view. Uses virtual consumption tracking. Callers use `eth_call` (free) to preview.
-    /// @dev L-07 (audit Pass 2.1): `taker` parameter mirrors `fillMarketOrder`'s
-    ///      self-match skip so preview output matches the real call when the
-    ///      caller is the FIFO head of an opposite-side level. Pass `address(0)`
-    ///      to disable the filter (matches the pre-fix behaviour).
+    /// @dev `taker` parameter mirrors `fillMarketOrder`'s self-match skip so
+    ///      preview output matches the real call when the caller is the FIFO head
+    ///      of an opposite-side level. Pass `address(0)` to disable the filter.
     function previewFillMarketOrder(
         uint256 marketId,
         Side takerSide,

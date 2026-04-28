@@ -50,7 +50,7 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     bytes32 private constant _TIMELOCK_DURATION_SLOT =
         bytes32(uint256(keccak256("predix.hook.proxy.timelock.duration")) - 1);
 
-    /// @dev SPEC-04 self-gated propose/execute for `timelockDuration`. Pending
+    /// @dev Self-gated propose/execute for `timelockDuration`. Pending
     ///      slots are kept at fresh keccak-derived paths to avoid any chance of
     ///      colliding with the upgrade-flow slots above.
     bytes32 private constant _PENDING_TIMELOCK_DURATION_SLOT =
@@ -58,12 +58,11 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     bytes32 private constant _PENDING_TIMELOCK_READY_AT_SLOT =
         bytes32(uint256(keccak256("predix.hook.proxy.pending.timelock.ready_at")) - 1);
 
-    /// @dev M-03 (audit Pass 2.1): 48h timelock on proxy-admin rotation. The
-    ///      pending admin slot already exists at `_PENDING_ADMIN_SLOT`; we
-    ///      add a fresh ready-at slot. Append-only relative to existing
-    ///      proxy slots (all proxy state lives in distinct keccak-derived
-    ///      preimages, so adding a new slot cannot collide with the impl's
-    ///      regular storage slots 0..N).
+    /// @dev 48h timelock on proxy-admin rotation. The pending admin slot already
+    ///      exists at `_PENDING_ADMIN_SLOT`; we add a fresh ready-at slot.
+    ///      Append-only relative to existing proxy slots (all proxy state lives
+    ///      in distinct keccak-derived preimages, so adding a new slot cannot
+    ///      collide with the impl's regular storage slots 0..N).
     bytes32 private constant _PENDING_ADMIN_READY_AT_SLOT =
         bytes32(uint256(keccak256("predix.hook.proxy.pending.admin.ready_at")) - 1);
 
@@ -76,13 +75,13 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     uint256 private constant _DEFAULT_TIMELOCK = 48 hours;
 
     /// @notice Floor for `proposeTimelockDuration`. Raised from 24h → 48h per
-    ///         FINAL-M06 so the proxy can never drop below the governance
+    ///         so the proxy can never drop below the governance
     ///         cadence admin is committed to elsewhere.
     uint256 private constant _MIN_TIMELOCK = 48 hours;
 
-    /// @notice Ceiling for `proposeTimelockDuration` (H-02 audit fix). Bounds
-    ///         the timelock to a value that, combined with the SPEC-05
-    ///         monotonic guard, cannot brick the upgrade governance via an
+    /// @notice Ceiling for `proposeTimelockDuration`. Bounds the timelock to a
+    ///         value that, combined with the monotonic guard, cannot brick the
+    ///         upgrade governance via an
     ///         arithmetic overflow on `block.timestamp + current`. 30 days is
     ///         the industry standard upper bound (Aave / OZ TimelockController
     ///         conventions) — enough headroom for any legitimate cooldown
@@ -90,10 +89,9 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     ///         uint256.
     uint256 private constant _MAX_TIMELOCK = 30 days;
 
-    /// @notice M-03 (audit Pass 2.1): fixed 48h delay for proxy-admin
-    ///         rotation. Mirrors the diamond rotation cadence so admin
-    ///         compromise cannot be exploited by instant-rotation to a
-    ///         fresh attacker key.
+    /// @notice Fixed 48h delay for proxy-admin rotation. Mirrors the diamond
+    ///         rotation cadence so admin compromise cannot be exploited by
+    ///         instant-rotation to a fresh attacker key.
     uint256 public constant ADMIN_ROTATION_DELAY = 48 hours;
 
     // ---------------------------------------------------------------------
@@ -162,9 +160,8 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function proposeUpgrade(address newImpl) external override onlyProxyAdmin {
-        // M-01 audit fix: reject re-propose-while-pending. Admin must call
-        // `cancelUpgrade` first, making any timer extension a two-step
-        // observable action.
+        // Reject re-propose-while-pending. Admin must call `cancelUpgrade`
+        // first, making any timer extension a two-step observable action.
         if (_readAddress(_PENDING_IMPL_SLOT) != address(0)) revert HookProxy_AlreadyPendingUpgrade();
         if (newImpl == address(0)) revert HookProxy_ZeroAddress();
         if (newImpl.code.length == 0) revert HookProxy_NotAContract();
@@ -199,13 +196,13 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function proposeTimelockDuration(uint256 duration) external override onlyProxyAdmin {
-        // M-01 audit fix: reject re-propose-while-pending. Mirrors the
-        // generalisation across all four propose flows.
+        // Reject re-propose-while-pending so the timer cannot be silently
+        // extended.
         if (_readUint(_PENDING_TIMELOCK_DURATION_SLOT) != 0) revert HookProxy_AlreadyPendingTimelockChange();
         if (duration < _MIN_TIMELOCK) revert HookProxy_TimelockTooShort();
         if (duration > _MAX_TIMELOCK) revert HookProxy_TimelockTooLong();
         uint256 current = _readUint(_TIMELOCK_DURATION_SLOT);
-        // SPEC-05: monotonic increase only. `duration < current` would let a
+        // Monotonic increase only. `duration < current` would let a
         // compromised admin shorten the next delay; `duration == current` is
         // a no-op that should be rejected so proposals always represent an
         // explicit intent change (noise reduction + audit-trail clarity).
@@ -248,9 +245,8 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
 
     /// @inheritdoc IPrediXHookProxy
     function changeProxyAdmin(address newAdmin) external override onlyProxyAdmin {
-        // M-03 (audit Pass 2.1): apply the universal AlreadyPending guard so a
-        // compromised admin cannot silently overwrite a legitimate-admin
-        // recovery nomination.
+        // Reject re-propose-while-pending so a compromised admin cannot
+        // silently overwrite a legitimate-admin recovery nomination.
         if (_readAddress(_PENDING_ADMIN_SLOT) != address(0)) revert HookProxy_AlreadyPendingAdmin();
         if (newAdmin == address(0)) revert HookProxy_ZeroAddress();
         uint256 readyAt = block.timestamp + ADMIN_ROTATION_DELAY;
@@ -263,7 +259,7 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     function acceptProxyAdmin() external override {
         address pending = _readAddress(_PENDING_ADMIN_SLOT);
         if (msg.sender != pending) revert HookProxy_OnlyPendingAdmin();
-        // M-03: enforce 48h delay so legitimate admin has a recovery window.
+        // Enforce 48h delay so legitimate admin has a recovery window.
         if (block.timestamp < _readUint(_PENDING_ADMIN_READY_AT_SLOT)) revert HookProxy_AdminDelayNotElapsed();
         address previous = _readAddress(_ADMIN_SLOT);
         _writeAddress(_ADMIN_SLOT, pending);

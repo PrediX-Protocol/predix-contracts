@@ -52,10 +52,9 @@ abstract contract Views is ExchangeStorage {
 
             if (source == FillSource.NONE || fillAmount == 0) break;
 
-            // GAP-C: preview and execute share `MatchMath.computeFillDeltas`
-            // so their rounding cannot drift. Dust-filter short-circuit:
-            // a zero return collapses the fill into the "break" path that
-            // stops the waterfall, matching the pre-helper behaviour.
+            // Preview and execute share `MatchMath.computeFillDeltas` so their
+            // rounding cannot drift. Dust-filter short-circuit: a zero return
+            // collapses the fill into the "break" path that stops the waterfall.
             (uint256 inDelta, uint256 outDelta) =
                 MatchMath.computeFillDeltas(makerPrice, fillAmount, takerIsBuy, source == FillSource.SYNTHETIC);
 
@@ -116,7 +115,7 @@ abstract contract Views is ExchangeStorage {
     ///      fully-filled / zero-deposit entries and subtracting any virtually
     ///      consumed amount from each live order's capacity. Returns the first
     ///      live order with positive remaining capacity. Walking multiple levels
-    ///      mirrors the way `_fillMarketOrder` advances after M5 cleanup clears a
+    ///      mirrors the way `_fillMarketOrder` advances after cleanup clears a
     ///      level's bitmap bit between iterations — without this loop, preview would
     ///      under-report fills whenever a single iteration exhausts the best level.
     function _peekBestVirtual(
@@ -142,9 +141,9 @@ abstract contract Views is ExchangeStorage {
                     if (order.cancelled) continue;
                     if (order.filled >= order.amount) continue;
                     if (order.depositLocked == 0) continue;
-                    // L-07 (audit Pass 2.1): mirror taker-path self-match skip
-                    // so preview matches execute when the caller has resting
-                    // orders on the opposite side.
+                    // Mirror taker-path self-match skip so preview matches
+                    // execute when the caller has resting orders on the
+                    // opposite side.
                     if (taker != address(0) && order.owner == taker) continue;
 
                     uint256 rawCapacity = order.amount - order.filled;

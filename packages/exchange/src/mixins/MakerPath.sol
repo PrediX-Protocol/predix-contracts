@@ -14,23 +14,20 @@ import {MatchMath} from "../libraries/MatchMath.sol";
 /// @title MakerPath
 /// @notice Maker-side logic: `_placeOrder` (with phase-A complementary + phase-B
 ///         synthetic auto-matching against resting orders) and `_cancelOrder`.
-/// @dev Ported from the legacy monolith with the V2 interface migration and the
-///      audit fixes mandated by the package review:
-///        - H-01 (M1)  : `userOrderCount` decremented when a maker order is fully
-///                       filled (in matching) or cancelled. Wired through
-///                       `_onMakerFullyFilled` so M5 cleanup happens in lock-step.
-///        - H-02 (M2)  : `_cancelOrder` is permissionless on terminal markets
-///                       (expired / resolved / refund-mode), keeper pattern.
-///        - M4         : `_placeOrder` enforces the `uint128` bound on `amount` and
-///                       on the computed `depositLocked` so the packed-struct cast
-///                       never silently truncates.
-///        - M5         : every fully-filled order goes through `_onMakerFullyFilled`,
-///                       which calls `_removeFromQueue` and clears the bitmap bit
-///                       when the queue empties.
+/// @dev Key design decisions:
+///        - `userOrderCount` is decremented when a maker order is fully filled (in
+///          matching) or cancelled, wired through `_onMakerFullyFilled` so queue
+///          cleanup happens in lock-step.
+///        - `_cancelOrder` is permissionless on terminal markets (expired / resolved /
+///          refund-mode) — keeper pattern.
+///        - `_placeOrder` enforces the `uint128` bound on `amount` and on the computed
+///          `depositLocked` so the packed-struct cast never silently truncates.
+///        - Every fully-filled order goes through `_onMakerFullyFilled`, which calls
+///          `_removeFromQueue` and clears the bitmap bit when the queue empties.
 ///
 ///      `FullMath.mulDiv` from the legacy is replaced with `(a * b) / c`. Each call
-///      site is bounded by `amount ≤ uint128.max` (M4) and `price ≤ MAX_PRICE`, so
-///      the product stays well within `uint256`.
+///      site is bounded by `amount ≤ uint128.max` and `price ≤ MAX_PRICE`, so the
+///      product stays well within `uint256`.
 abstract contract MakerPath is ExchangeStorage {
     using SafeERC20 for IERC20;
     using PriceBitmap for uint256;
@@ -55,7 +52,7 @@ abstract contract MakerPath is ExchangeStorage {
         // 1. Validate
         _validatePrice(price);
         if (amount == 0 || amount < MIN_ORDER_AMOUNT) revert IPrediXExchange.InvalidAmount();
-        if (amount > type(uint128).max) revert IPrediXExchange.InvalidAmount(); // M4
+        if (amount > type(uint128).max) revert IPrediXExchange.InvalidAmount();
 
         IMarketFacet.MarketView memory mkt = _loadMarket(marketId);
         _validateMarketActive(mkt);
@@ -136,7 +133,7 @@ abstract contract MakerPath is ExchangeStorage {
 
     // ============ cancelOrder ============
 
-    /// @dev Owner can always cancel. Anyone can cancel on terminal markets — H-02
+    /// @dev Owner can always cancel. Anyone can cancel on terminal markets —
     ///      keeper pattern, extended to include refund mode (V2 has 3 terminal states).
     function _cancelOrder(bytes32 orderId) internal virtual {
         IPrediXExchange.Order storage order = orders[orderId];
@@ -144,13 +141,13 @@ abstract contract MakerPath is ExchangeStorage {
         if (order.cancelled) revert IPrediXExchange.OrderAlreadyCancelled();
         if (order.filled >= order.amount) revert IPrediXExchange.OrderFullyFilled();
 
-        // M3: load `MarketView` once and reuse for both the keeper guard and the
+        // Load `MarketView` once and reuse for both the keeper guard and the
         // refund-token resolution at the end.
         IMarketFacet.MarketView memory mkt = _loadMarket(order.marketId);
 
         if (order.owner != msg.sender) {
-            // H-02 (M2): keepers may cancel after a market reaches a terminal state.
-            // V2 has 3 terminal states; refundModeActive added per package review.
+            // Keepers may cancel after a market reaches a terminal state.
+            // V2 has 3 terminal states; refundModeActive added in V2.
             bool marketClosed = mkt.isResolved || mkt.refundModeActive || block.timestamp >= mkt.endTime;
             if (!marketClosed) revert IPrediXExchange.NotOrderOwner();
         }
@@ -164,8 +161,8 @@ abstract contract MakerPath is ExchangeStorage {
         uint128 lockedRefund = order.depositLocked;
         order.depositLocked = 0;
 
-        // M5 + H-01: drop the queue entry (clearing the bitmap bit if empty) and
-        // release the per-user slot.
+        // Drop the queue entry (clearing the bitmap bit if empty) and release
+        // the per-user slot.
         _decrementOrderCount(marketId, orderOwner);
         _removeFromQueue(marketId, side, _priceToIndex(price), orderId);
 
@@ -256,11 +253,11 @@ abstract contract MakerPath is ExchangeStorage {
             uint256 makerRemaining = maker.amount - maker.filled;
             uint256 fillAmt = newRemaining < makerRemaining ? newRemaining : makerRemaining;
 
-            // E-01 dust filter: if `fillAmt * makerPrice` floors to 0, executing
-            // this fill would transfer tokens on one leg for 0 USDC consideration
-            // — a silent wealth transfer. Mirrors TakerPath L200 guard. Skip the
-            // maker atomically without ANY state mutation so `cost` / `filled`
-            // stay accurate and the phase-A loop advances cleanly.
+            // Dust filter: if `fillAmt * makerPrice` floors to 0, executing this
+            // fill would transfer tokens on one leg for 0 USDC consideration — a
+            // silent wealth transfer. Skip the maker atomically without ANY state
+            // mutation so `cost` / `filled` stay accurate and the phase-A loop
+            // advances cleanly.
             uint256 usdcAmt = (fillAmt * makerPrice) / PRICE_PRECISION;
             if (usdcAmt == 0) {
                 i++;
@@ -547,7 +544,7 @@ abstract contract MakerPath is ExchangeStorage {
     }
 
     /// @dev Both orders are SELL. Diamond burns YES+NO and returns `fillAmt` USDC.
-    ///      BACKLOG 2026-04-21 fix: taker receives the price improvement
+    ///      Taker receives the price improvement
     ///      (`fillAmt - makerPayout`) rather than its own limit; maker always
     ///      gets its limit. Surplus = 0 by construction — no `FeeCollected`
     ///      emit in the MERGE path. Aligns with the taker-path synthetic fill
@@ -568,8 +565,8 @@ abstract contract MakerPath is ExchangeStorage {
     ) internal {
         IMarketFacet(diamond).mergePositions(taker.marketId, fillAmt);
 
-        // GAP-C: shared rounding with preview + taker path. `outDelta` is the
-        // taker's USDC share (= `fillAmt - makerShare`) by construction.
+        // Shared rounding with preview + taker path. `outDelta` is the taker's
+        // USDC share (= `fillAmt - makerShare`) by construction.
         (, uint256 takerPayout) = MatchMath.computeFillDeltas(makerPrice, fillAmt, false, true);
         uint256 makerPayout = fillAmt - takerPayout;
 
@@ -591,7 +588,7 @@ abstract contract MakerPath is ExchangeStorage {
         }
     }
 
-    /// @dev M4 bound check enforced here on the computed `depositLocked`.
+    /// @dev uint128 bound check enforced here on the computed `depositLocked`.
     function _collectDeposit(
         IPrediXExchange.Side side,
         uint256 price,
@@ -610,7 +607,7 @@ abstract contract MakerPath is ExchangeStorage {
             depositRequired = amount;
             IERC20(noToken).safeTransferFrom(msg.sender, address(this), amount);
         }
-        if (depositRequired > type(uint128).max) revert IPrediXExchange.InvalidAmount(); // M4
+        if (depositRequired > type(uint128).max) revert IPrediXExchange.InvalidAmount();
     }
 
     /// @dev Phase-A complementary BUY fills at a maker price below the taker's limit

@@ -18,6 +18,7 @@ import {IPrediXHook} from "@predix/hook/interfaces/IPrediXHook.sol";
 import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
 import {PrediXHookProxyV2} from "@predix/hook/proxy/PrediXHookProxyV2.sol";
 import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
+import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 
 import {DiamondDeployLib} from "./lib/DiamondDeployLib.sol";
@@ -63,6 +64,7 @@ contract DeployAll is Script {
         address feeRecipient;
         address hookProxyAdmin;
         address hookRuntimeAdmin;
+        address exchangeProxyAdmin;
         uint256 timelockDelay;
         address usdc;
         IPoolManager poolManager;
@@ -90,7 +92,8 @@ contract DeployAll is Script {
         address hookImpl;
         address hookProxy;
         bytes32 hookSalt;
-        address exchange;
+        address exchangeImpl;
+        address exchangeProxy;
         address router;
         DiamondDeployLib.FacetAddresses facets;
     }
@@ -121,9 +124,10 @@ contract DeployAll is Script {
 
         (out.hookImpl, out.hookProxy, out.hookSalt) = _deployHook(env, out.diamond);
 
-        PrediXExchange exchangeImpl = new PrediXExchange();
-        exchangeImpl.initialize(out.diamond, env.usdc, env.feeRecipient);
-        out.exchange = address(exchangeImpl);
+        out.exchangeImpl = address(new PrediXExchange());
+        out.exchangeProxy = address(
+            new PrediXExchangeProxy(out.exchangeImpl, env.exchangeProxyAdmin, out.diamond, env.usdc, env.feeRecipient)
+        );
 
         out.router = address(
             new PrediXRouter(
@@ -131,7 +135,7 @@ contract DeployAll is Script {
                 out.diamond,
                 env.usdc,
                 out.hookProxy,
-                out.exchange,
+                out.exchangeProxy,
                 IV4Quoter(env.v4Quoter),
                 IAllowanceTransfer(env.permit2),
                 env.lpFeeFlag,
@@ -189,6 +193,7 @@ contract DeployAll is Script {
         e.feeRecipient = vm.envAddress("FEE_RECIPIENT");
         e.hookProxyAdmin = vm.envAddress("HOOK_PROXY_ADMIN");
         e.hookRuntimeAdmin = vm.envAddress("HOOK_RUNTIME_ADMIN");
+        e.exchangeProxyAdmin = vm.envAddress("EXCHANGE_PROXY_ADMIN");
         e.timelockDelay = vm.envUint("TIMELOCK_DELAY_SECONDS");
         _requireTimelockFloor(e.timelockDelay);
         e.usdc = vm.envAddress("USDC_ADDRESS");
@@ -302,7 +307,8 @@ contract DeployAll is Script {
         console2.log("Hook impl:       ", out.hookImpl);
         console2.log("Hook proxy:      ", out.hookProxy);
         console2.log("  salt:          ", vm.toString(out.hookSalt));
-        console2.log("Exchange:        ", out.exchange);
+        console2.log("Exchange impl:   ", out.exchangeImpl);
+        console2.log("Exchange proxy:  ", out.exchangeProxy);
         console2.log("Router:          ", out.router);
         console2.log("============================================================");
     }

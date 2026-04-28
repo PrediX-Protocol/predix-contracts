@@ -90,12 +90,11 @@ library MatchMath {
         fillAmount = makerCapacity < takerCapacity ? makerCapacity : takerCapacity;
     }
 
-    /// @notice Canonical (inDelta, outDelta) for a single fill. GAP-C fix:
-    ///         both preview (`Views._previewFillMarketOrder`) and execute
+    /// @notice Canonical (inDelta, outDelta) for a single fill. Both preview
+    ///         (`Views._previewFillMarketOrder`) and execute
     ///         (`TakerPath._execute{Complementary,Synthetic}TakerFill`,
     ///         `MakerPath._executeMergeFill`) MUST call this so the rounding
-    ///         is byte-identical and a "preview says X, execute delivers X+1"
-    ///         drift cannot re-emerge.
+    ///         is byte-identical and preview/execute cannot drift.
     /// @dev    A `(0, 0)` return is the canonical dust signal: the waterfall
     ///         caller breaks out of its fill loop, matching the pre-helper
     ///         "`usdcAmount == 0 break;`" short-circuit. Do NOT revert — the

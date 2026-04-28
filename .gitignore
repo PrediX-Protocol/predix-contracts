@@ -92,3 +92,6 @@ packages/*/.gas-snapshot
 **/TestFaucet*.sol
 **/DeployFaucetRelayed*.sol
 **/DeployTestFaucet*.sol
+
+# ---------- Internal specs (agent prompts, not published) ----------
+specs/

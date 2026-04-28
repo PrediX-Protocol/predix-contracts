@@ -35,10 +35,10 @@ contract DiamondInit {
         LibAccessControl.setRoleAdmin(Roles.OPERATOR_ROLE, Roles.DEFAULT_ADMIN_ROLE);
         LibAccessControl.setRoleAdmin(Roles.PAUSER_ROLE, Roles.DEFAULT_ADMIN_ROLE);
         LibAccessControl.setRoleAdmin(Roles.CREATOR_ROLE, Roles.DEFAULT_ADMIN_ROLE);
-        // F-D-01 / NEW-01: CUT_EXECUTOR self-administers. Only an existing
-        // CUT_EXECUTOR (post-deploy: the Timelock) can grant additional
-        // executors, which inherits the 48h delay. Prevents DEFAULT_ADMIN
-        // from self-granting CUT_EXECUTOR and bypassing the timelock.
+        // CUT_EXECUTOR self-administers. Only an existing CUT_EXECUTOR
+        // (post-deploy: the Timelock) can grant additional executors, which
+        // inherits the 48h delay. Prevents DEFAULT_ADMIN from self-granting
+        // CUT_EXECUTOR and bypassing the timelock.
         LibAccessControl.setRoleAdmin(Roles.CUT_EXECUTOR_ROLE, Roles.CUT_EXECUTOR_ROLE);
 
         LibAccessControl.grantRole(Roles.ADMIN_ROLE, admin);

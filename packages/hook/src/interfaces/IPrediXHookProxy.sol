@@ -26,15 +26,15 @@ interface IPrediXHookProxy {
     ///         retain their original `readyAt`.
     event HookProxy_TimelockDurationUpdated(uint256 previous, uint256 current);
 
-    /// @notice SPEC-04 / FINAL-M06: emitted by `proposeTimelockDuration`. The
+    /// @notice Emitted by `proposeTimelockDuration`. The
     ///         duration becomes effective only after `executeTimelockDuration`
     ///         is called at or after `readyAt`. `readyAt` is anchored to the
     ///         CURRENT timelock duration, not the minimum — the timelock
     ///         self-gates its own change.
     event HookProxy_TimelockDurationProposed(uint256 duration, uint256 readyAt);
 
-    /// @notice SPEC-04: emitted by `cancelTimelockDuration` when admin discards
-    ///         a pending duration change before `executeTimelockDuration` is
+    /// @notice Emitted by `cancelTimelockDuration` when admin discards a
+    ///         pending duration change before `executeTimelockDuration` is
     ///         called.
     event HookProxy_TimelockDurationCancelled(uint256 duration);
 
@@ -46,8 +46,8 @@ interface IPrediXHookProxy {
     ///         the constructor binds the initial admin.
     event HookProxy_AdminChanged(address indexed previous, address indexed current);
 
-    /// @notice M-03 (audit Pass 2.1): emitted when `cancelProxyAdminChange`
-    ///         discards a pending admin nomination before the nominee accepts.
+    /// @notice Emitted when `cancelProxyAdminChange` discards a pending admin
+    ///         nomination before the nominee accepts.
     event HookProxy_AdminChangeCancelled(address indexed cancelled);
 
     // ---------------------------------------------------------------------
@@ -76,55 +76,52 @@ interface IPrediXHookProxy {
     error HookProxy_UpgradeNotReady();
 
     /// @notice Thrown when `proposeTimelockDuration` is called with a duration
-    ///         below the 48-hour floor (FINAL-M06).
+    ///         below the 48-hour floor.
     error HookProxy_TimelockTooShort();
 
-    /// @notice H-02 audit fix: thrown when `proposeTimelockDuration` is called
-    ///         with a duration above the 30-day ceiling. Combined with the
-    ///         SPEC-05 monotonic guard this prevents an admin from bricking
+    /// @notice Thrown when `proposeTimelockDuration` is called with a duration
+    ///         above the 30-day ceiling. Combined with the monotonic guard
+    ///         this prevents an admin from bricking
     ///         the upgrade governance by raising the timelock to a value that
     ///         overflows `block.timestamp + duration`.
     error HookProxy_TimelockTooLong();
 
-    /// @notice M-01 audit fix: thrown when `proposeUpgrade` is called while
-    ///         a previous proposal is still pending. Admin must `cancelUpgrade`
-    ///         first; mirrors H4's no-silent-reset pattern.
+    /// @notice Thrown when `proposeUpgrade` is called while a previous proposal
+    ///         is still pending. Admin must `cancelUpgrade` first.
     error HookProxy_AlreadyPendingUpgrade();
 
-    /// @notice M-01 audit fix: thrown when `proposeTimelockDuration` is called
-    ///         while a previous duration change is still pending. Admin must
+    /// @notice Thrown when `proposeTimelockDuration` is called while a previous
+    ///         duration change is still pending. Admin must
     ///         `cancelTimelockDuration` first.
     error HookProxy_AlreadyPendingTimelockChange();
 
-    /// @notice SPEC-05: thrown when `proposeTimelockDuration` is called with a
+    /// @notice Thrown when `proposeTimelockDuration` is called with a
     ///         value less than or equal to the current timelock. The timelock
     ///         is monotonic increasing — admin may only raise the delay. An
     ///         equal-value proposal is also rejected so every proposal
     ///         represents an explicit intent change.
     error HookProxy_TimelockCannotDecrease();
 
-    /// @notice SPEC-04: thrown when `executeTimelockDuration` or
+    /// @notice Thrown when `executeTimelockDuration` or
     ///         `cancelTimelockDuration` is called with no pending proposal.
     error HookProxy_NoPendingTimelockChange();
 
-    /// @notice SPEC-04: thrown when `executeTimelockDuration` is called before
-    ///         the delay derived from the current timelock has elapsed.
+    /// @notice Thrown when `executeTimelockDuration` is called before the delay
+    ///         derived from the current timelock has elapsed.
     error HookProxy_TimelockDelayNotElapsed();
 
-    /// @notice M-03 (audit Pass 2.1): thrown when `acceptProxyAdmin` is called
-    ///         before the 48h `ADMIN_ROTATION_DELAY` has elapsed since
-    ///         `changeProxyAdmin`. Mirrors the timelock pattern across the
-    ///         other governance-critical flows so a compromised admin cannot
-    ///         instant-rotate to a fresh attacker key.
+    /// @notice Thrown when `acceptProxyAdmin` is called before the 48h
+    ///         `ADMIN_ROTATION_DELAY` has elapsed since `changeProxyAdmin`.
+    ///         Mirrors the timelock pattern across governance flows so a
+    ///         compromised admin cannot instant-rotate to a fresh attacker key.
     error HookProxy_AdminDelayNotElapsed();
 
-    /// @notice M-03 (audit Pass 2.1): thrown when `changeProxyAdmin` is
-    ///         called while a previous admin nomination is still pending.
-    ///         Mirrors the universal AlreadyPending pattern (M-01).
+    /// @notice Thrown when `changeProxyAdmin` is called while a previous admin
+    ///         nomination is still pending.
     error HookProxy_AlreadyPendingAdmin();
 
-    /// @notice M-03 (audit Pass 2.1): thrown when `cancelProxyAdminChange` is
-    ///         called with no pending admin nomination.
+    /// @notice Thrown when `cancelProxyAdminChange` is called with no pending
+    ///         admin nomination.
     error HookProxy_NoPendingAdminChange();
 
     /// @notice Thrown when the atomic `initialize` delegatecall in the constructor reverts.
@@ -147,19 +144,19 @@ interface IPrediXHookProxy {
     /// @notice Discard the pending upgrade without applying it. Admin-only.
     function cancelUpgrade() external;
 
-    /// @notice SPEC-04 / FINAL-M06: propose a new timelock duration. Applies
+    /// @notice Propose a new timelock duration. Applies
     ///         after `executeTimelockDuration` is called, which is itself
     ///         gated by the CURRENT timelock. Floored at 48 hours. Monotonic
-    ///         increasing (SPEC-05): `duration` must be strictly greater than
+    ///         increasing: `duration` must be strictly greater than
     ///         the current value. Admin-only.
     function proposeTimelockDuration(uint256 duration) external;
 
-    /// @notice SPEC-04: finalize a pending timelock duration change after the
-    ///         self-gated delay has elapsed. Admin-only.
+    /// @notice Finalize a pending timelock duration change after the self-gated
+    ///         delay has elapsed. Admin-only.
     function executeTimelockDuration() external;
 
-    /// @notice SPEC-04: discard the pending timelock duration change without
-    ///         applying it. Admin-only.
+    /// @notice Discard the pending timelock duration change without applying
+    ///         it. Admin-only.
     function cancelTimelockDuration() external;
 
     // ---------------------------------------------------------------------
@@ -168,17 +165,17 @@ interface IPrediXHookProxy {
 
     /// @notice Nominate a new proxy admin. The nominee must call
     ///         `acceptProxyAdmin()` AT OR AFTER `pendingProxyAdminReadyAt()` —
-    ///         the M-03 (audit Pass 2.1) 48h timelock prevents a compromised
-    ///         admin from instant-rotating to a fresh attacker key.
+    ///         the 48h timelock prevents a compromised admin from
+    ///         instant-rotating to a fresh attacker key.
     function changeProxyAdmin(address newAdmin) external;
 
     /// @notice Accept a pending proxy-admin nomination after the 48h
     ///         timelock has elapsed. Caller-restricted to the nominee.
     function acceptProxyAdmin() external;
 
-    /// @notice M-03 (audit Pass 2.1): cancel a pending admin nomination
-    ///         before the nominee accepts. Admin-only — gives legitimate
-    ///         admin a recovery window if the nominee is suspect.
+    /// @notice Cancel a pending admin nomination before the nominee accepts.
+    ///         Admin-only — gives legitimate admin a recovery window if the
+    ///         nominee is suspect.
     function cancelProxyAdminChange() external;
 
     // ---------------------------------------------------------------------
@@ -189,12 +186,12 @@ interface IPrediXHookProxy {
     function pendingImplementation() external view returns (address);
     function upgradeReadyAt() external view returns (uint256);
     function timelockDuration() external view returns (uint256);
-    /// @notice SPEC-04: pending timelock duration change, or (0, 0) if none.
+    /// @notice Pending timelock duration change, or (0, 0) if none.
     function pendingTimelockDuration() external view returns (uint256 duration, uint256 readyAt);
     function proxyAdmin() external view returns (address);
     function pendingProxyAdmin() external view returns (address);
 
-    /// @notice M-03 (audit Pass 2.1): timestamp at which `acceptProxyAdmin`
-    ///         becomes callable. Returns 0 when no admin change is pending.
+    /// @notice Timestamp at which `acceptProxyAdmin` becomes callable. Returns
+    ///         0 when no admin change is pending.
     function pendingProxyAdminReadyAt() external view returns (uint256);
 }

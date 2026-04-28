@@ -38,7 +38,7 @@ contract AccessControlFacet is IAccessControlFacet {
 
         if (role == Roles.DEFAULT_ADMIN_ROLE) revert AccessControl_LastDefaultAdmin();
 
-        // L-05: protect any self-administered role (e.g. CUT_EXECUTOR_ROLE).
+        // Protect any self-administered role (e.g. CUT_EXECUTOR_ROLE).
         // Emptying a self-administered role's holder set is irrecoverable —
         // no other role can grant it back, so the role becomes dead forever.
         if (LibAccessControl.getRoleAdmin(role) == role) {

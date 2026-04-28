@@ -52,8 +52,8 @@ interface IEventFacet {
     error Event_InvalidWinningIndex();
     error Event_EmptyName();
     error Event_InvalidEndTime();
-    /// @notice SPEC-03 Phase 1-2: reverts when a non-CREATOR_ROLE caller invokes
-    ///         `createEvent`. Mirrors `Market_NotCreator` for the event path.
+    /// @notice Reverts when a non-CREATOR_ROLE caller invokes `createEvent`.
+    ///         Mirrors `Market_NotCreator` for the event path.
     error Event_NotCreator();
 
     // ---------------------------------------------------------------------
