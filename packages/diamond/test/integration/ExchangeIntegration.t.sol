@@ -84,13 +84,14 @@ contract ExchangeIntegrationTest is MarketFixture {
         // Alice places SELL_YES @ $0.50 × 100 (locks 100 YES via real diamond split).
         _giveYesNo(alice, marketId, 100 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
 
         // Taker buys 100 YES with 100 USDC budget (will use only 50).
         _giveUsdc(taker, 100 * ONE_SHARE);
         vm.prank(taker);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60,
+                bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled 100 YES");
@@ -110,12 +111,13 @@ contract ExchangeIntegrationTest is MarketFixture {
 
         _giveUsdc(alice, 40 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100 * ONE_SHARE, bytes32(0));
 
         _giveUsdc(taker, 100 * ONE_SHARE);
         vm.prank(taker);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60
+            marketId, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60,
+                bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled");
@@ -143,12 +145,13 @@ contract ExchangeIntegrationTest is MarketFixture {
 
         _giveYesNo(alice, marketId, 100 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_NO, 400_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_NO, 400_000, 100 * ONE_SHARE, bytes32(0));
 
         _giveYesNo(taker, marketId, 100 * ONE_SHARE);
         vm.prank(taker);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60
+            marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, taker, recipient, 0, block.timestamp + 60,
+                bytes32(0)
         );
 
         assertEq(filled, 60 * ONE_SHARE, "recipient gets 60 USDC");
@@ -172,11 +175,11 @@ contract ExchangeIntegrationTest is MarketFixture {
 
         _giveYesNo(alice, marketId, 100 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
 
         _giveUsdc(bob, 60 * ONE_SHARE);
         vm.prank(bob);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bytes32(0));
 
         // Bob locked 60, used 50, refunded 10 via _refundPriceImprovement.
         assertEq(usdc.balanceOf(bob), 10 * ONE_SHARE);
@@ -194,7 +197,7 @@ contract ExchangeIntegrationTest is MarketFixture {
 
         _giveYesNo(alice, marketId, 10 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10 * ONE_SHARE, bytes32(0));
 
         // Diamond admin pauses the MARKET module via the real PausableFacet.
         vm.prank(admin);
@@ -206,7 +209,8 @@ contract ExchangeIntegrationTest is MarketFixture {
         vm.prank(taker);
         vm.expectRevert(IPrediXExchange.MarketPaused.selector);
         exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, taker, taker, 0, block.timestamp + 60
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, taker, taker, 0, block.timestamp + 60,
+                bytes32(0)
         );
     }
 
@@ -230,7 +234,7 @@ contract ExchangeIntegrationTest is MarketFixture {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.prank(alice);
         vm.expectRevert(PrediXExchange.ExchangePaused.selector);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     // ============ 7. Multi-step session solvency invariant ============
@@ -245,25 +249,26 @@ contract ExchangeIntegrationTest is MarketFixture {
         // Alice rests SELL_YES @ $0.50 × 100.
         _giveYesNo(alice, marketId, 100 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
 
         // Carol rests BUY_NO @ $0.40 × 100 (the partial-fill victim of the
         // taker's synthetic tail).
         _giveUsdc(carol, 40 * ONE_SHARE);
         vm.prank(carol);
-        (bytes32 carolId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100 * ONE_SHARE);
+        (bytes32 carolId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100 * ONE_SHARE, bytes32(0));
 
         // Bob places BUY_YES @ $0.55 × 60 — phase A consumes 60 of alice at $0.50.
         _giveUsdc(bob, 33 * ONE_SHARE);
         vm.prank(bob);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 550_000, 60 * ONE_SHARE);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 550_000, 60 * ONE_SHARE, bytes32(0));
 
         // Taker fillMarketOrder picks up the rest of alice (40 shares @ $0.50)
         // then synthetic-MINTs part of carol with the residual budget.
         _giveUsdc(taker, 25 * ONE_SHARE);
         vm.prank(taker);
         exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 25 * ONE_SHARE, taker, taker, 0, block.timestamp + 60
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 25 * ONE_SHARE, taker, taker, 0, block.timestamp + 60,
+                bytes32(0)
         );
 
         // Carol is the only active BUY left. Read her stored `depositLocked`

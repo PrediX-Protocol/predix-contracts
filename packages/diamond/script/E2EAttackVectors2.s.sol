@@ -60,12 +60,12 @@ contract ReentrancyTester {
 
         // Place an order - the Exchange has nonReentrant on placeOrder
         // If we could re-enter during the execution, the guard would catch it
-        exchange.placeOrder(_marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6);
+        exchange.placeOrder(_marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0));
         // If we get here, first call succeeded normally
 
         // Now try to call placeOrder again in same context (not true reentrancy
         // but verifies the guard resets properly between calls)
-        exchange.placeOrder(_marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6);
+        exchange.placeOrder(_marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0));
         // If both succeed, the guard correctly resets between calls
 
         reentrancyBlocked = true; // Guard works (both calls succeeded independently)
@@ -76,7 +76,7 @@ contract ReentrancyTester {
         if (callCount == 0) {
             callCount++;
             // Try to re-enter during a callback
-            try exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6) {
+            try exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0)) {
                 reentrancyBlocked = false; // BAD
             } catch {
                 reentrancyBlocked = true; // Guard caught it
@@ -361,7 +361,8 @@ contract E2EAttackVectors2 is Script {
             // Place 15 small SELL orders at same price
             for (uint256 i; i < 15; i++) {
                 IPrediXExchange(EXCHANGE).placeOrder(
-                    mid, IPrediXExchange.Side.SELL_YES, 500_000, 2e6
+                    mid, IPrediXExchange.Side.SELL_YES, 500_000, 2e6,
+                        bytes32(0)
                 );
             }
 
@@ -369,7 +370,8 @@ contract E2EAttackVectors2 is Script {
             uint256 gasBefore = gasleft();
             IPrediXExchange(EXCHANGE).fillMarketOrder(
                 mid, IPrediXExchange.Side.BUY_YES, 500_000, 15e6,
-                deployer, deployer, 15, block.timestamp + 300
+                deployer, deployer, 15, block.timestamp + 300,
+                    bytes32(0)
             );
             uint256 gasUsed = gasBefore - gasleft();
 

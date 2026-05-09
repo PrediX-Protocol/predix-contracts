@@ -58,7 +58,7 @@ contract CrossMarketAttacker {
 
         // Try to place SELL_YES order on Market B using Market A's YES token
         // Exchange should reject because it validates the token matches the market
-        try exchange.placeOrder(marketIdB, IPrediXExchange.Side.SELL_YES, 500_000, amount) {
+        try exchange.placeOrder(marketIdB, IPrediXExchange.Side.SELL_YES, 500_000, amount, bytes32(0)) {
             crossMarketBlocked = false; // BAD - should have reverted
         } catch {
             crossMarketBlocked = true; // GOOD - exchange rejected wrong token
@@ -127,7 +127,7 @@ contract E2EAdversarial is Script {
         console2.log("--- 5. placeOrder extreme amounts ---");
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         // uint128.max + 1 should revert
-        try IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 500_000, uint256(type(uint128).max) + 1) {
+        try IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 500_000, uint256(type(uint128).max) + 1, bytes32(0)) {
             _fail("uint128 overflow not caught!");
         } catch {
             _ok("placeOrder uint128+1 overflow -> revert");
@@ -137,7 +137,7 @@ contract E2EAdversarial is Script {
         console2.log("");
         console2.log("--- 6. MatchMath overflow protection ---");
         // Place order at max price with large amount
-        try IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 990_000, type(uint128).max) {
+        try IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 990_000, type(uint128).max, bytes32(0)) {
             _ok("Max price * max amount: Solidity 0.8 overflow check passed (or filled)");
         } catch {
             _ok("Max price * max amount: reverted (overflow or balance)");
@@ -147,9 +147,9 @@ contract E2EAdversarial is Script {
         console2.log("");
         console2.log("--- 7. Self-match on CLOB ---");
         IERC20(mktA.yesToken).approve(EXCHANGE, type(uint256).max);
-        IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 600_000, 50e6);
+        IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.BUY_YES, 600_000, 50e6, bytes32(0));
         // Same user SELL at same price - should skip self-match
-        (, uint256 selfFilled) = IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.SELL_YES, 600_000, 50e6);
+        (, uint256 selfFilled) = IPrediXExchange(EXCHANGE).placeOrder(midA, IPrediXExchange.Side.SELL_YES, 600_000, 50e6, bytes32(0));
         if (selfFilled == 0) {
             _ok("Self-match: skipped (filled=0, order rests)");
         } else {

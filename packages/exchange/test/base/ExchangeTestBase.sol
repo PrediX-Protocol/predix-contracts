@@ -66,25 +66,25 @@ abstract contract ExchangeTestBase is Test {
     function _placeBuyYes(address owner_, uint256 price, uint256 amount) internal returns (bytes32 orderId) {
         _giveUsdc(owner_, (amount * price) / 1e6);
         vm.prank(owner_);
-        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, amount);
+        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, amount, bytes32(0));
     }
 
     function _placeBuyNo(address owner_, uint256 price, uint256 amount) internal returns (bytes32 orderId) {
         _giveUsdc(owner_, (amount * price) / 1e6);
         vm.prank(owner_);
-        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_NO, price, amount);
+        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_NO, price, amount, bytes32(0));
     }
 
     function _placeSellYes(address owner_, uint256 price, uint256 amount) internal returns (bytes32 orderId) {
         _giveYesNo(owner_, amount);
         vm.prank(owner_);
-        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, price, amount);
+        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, price, amount, bytes32(0));
     }
 
     function _placeSellNo(address owner_, uint256 price, uint256 amount) internal returns (bytes32 orderId) {
         _giveYesNo(owner_, amount);
         vm.prank(owner_);
-        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, price, amount);
+        (orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, price, amount, bytes32(0));
     }
 
     // ============ Convenience accessors ============

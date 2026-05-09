@@ -35,10 +35,10 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.expectEmit(false, true, true, true);
         emit IPrediXExchange.OrderPlaced(
-            bytes32(0), MARKET_ID, alice, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE
+            bytes32(0), MARKET_ID, alice, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0)
         );
         vm.prank(alice);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     // ============ placeOrder revert paths ============
@@ -46,38 +46,38 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
     function test_Revert_PlaceOrder_InvalidPrice_Zero() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXExchange.InvalidPrice.selector, 0));
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 0, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 0, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_InvalidPrice_AtPrecision() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXExchange.InvalidPrice.selector, 1e6));
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 1e6, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 1e6, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_InvalidPrice_NotTickAligned() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXExchange.InvalidPrice.selector, 500_001));
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_001, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_001, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_InvalidAmount_Zero() public {
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.InvalidAmount.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 0);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 0, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_InvalidAmount_BelowMin() public {
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.InvalidAmount.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, ONE_SHARE - 1);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, ONE_SHARE - 1, bytes32(0));
     }
 
     /// @notice M4: `amount > type(uint128).max` reverts.
     function test_Revert_PlaceOrder_AmountExceedsUint128() public {
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.InvalidAmount.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, uint256(type(uint128).max) + 1);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, uint256(type(uint128).max) + 1, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_MarketExpired() public {
@@ -85,7 +85,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.MarketExpired.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_MarketResolved() public {
@@ -93,7 +93,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.MarketResolved.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_MarketRefundMode() public {
@@ -101,24 +101,24 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.MarketInRefundMode.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_MarketNotFound() public {
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.MarketNotFound.selector);
-        exchange.placeOrder(999, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(999, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_Revert_PlaceOrder_MaxOrdersExceeded() public {
         _giveUsdc(alice, 1000 * ONE_SHARE);
         for (uint256 i; i < 50; ++i) {
             vm.prank(alice);
-            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 100_000 + (i % 9) * 10_000, ONE_SHARE);
+            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 100_000 + (i % 9) * 10_000, ONE_SHARE, bytes32(0));
         }
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.MaxOrdersExceeded.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, ONE_SHARE, bytes32(0));
     }
 
     // ============ Phase A complementary auto-match (with price improvement) ============
@@ -128,7 +128,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(bob, 60 * ONE_SHARE);
 
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bytes32(0));
 
         // Bob locked 60, used 50, refunded 10.
         assertEq(_usdcBalance(bob), 10 * ONE_SHARE);
@@ -144,7 +144,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(alice, 60 * ONE_SHARE);
         vm.prank(alice);
         (bytes32 buyId, uint256 filled) =
-            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE);
+            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bytes32(0));
         assertEq(filled, 0, "no fill (self-match)");
         // Both orders alive.
         assertEq(exchange.getOrder(sellId).filled, 0);
@@ -161,7 +161,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(bob, 65 * ONE_SHARE);
 
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE, bytes32(0));
 
         assertEq(_yesBalance(bob), 100 * ONE_SHARE);
         assertEq(_noBalance(alice), 100 * ONE_SHARE);
@@ -183,7 +183,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveYesNo(bob, 100 * ONE_SHARE);
 
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 550_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 550_000, 100 * ONE_SHARE, bytes32(0));
 
         assertEq(_usdcBalance(bob), 60 * ONE_SHARE, "taker gets complement $60, not limit $55");
         assertEq(_usdcBalance(alice), 40 * ONE_SHARE, "maker gets its limit $40");
@@ -262,7 +262,8 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveUsdc(bob, 100 * ONE_SHARE);
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
         vm.prank(alice);
         vm.expectRevert(IPrediXExchange.OrderFullyFilled.selector);
@@ -288,7 +289,7 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
             usdc.mint(alice, px);
             vm.startPrank(alice);
             usdc.approve(address(exchange), type(uint256).max);
-            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, px, ONE_SHARE);
+            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, px, ONE_SHARE, bytes32(0));
             vm.stopPrank();
         }
         assertEq(exchange.userOrderCount(MARKET_ID, alice), 50);
@@ -297,14 +298,15 @@ contract PrediXExchangeMakerTest is ExchangeTestBase {
         _giveYesNo(bob, 50 * ONE_SHARE);
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_YES, 100_000, 50 * ONE_SHARE, bob, bob, 50, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 100_000, 50 * ONE_SHARE, bob, bob, 50, _deadline(),
+            bytes32(0)
         );
 
         // After M1: alice is back to 0 and can place again.
         assertEq(exchange.userOrderCount(MARKET_ID, alice), 0, "decremented");
         usdc.mint(alice, 50 * ONE_SHARE);
         vm.prank(alice);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
         // No revert → cap respected after decrement.
     }
 

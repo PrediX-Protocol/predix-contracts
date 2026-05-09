@@ -27,7 +27,7 @@ contract GapC_PreviewExecuteParity is ExchangeTestBase {
 
         vm.prank(taker);
         (actualFilled, actualCost) =
-            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, _deadline(), bytes32(0));
     }
 
     function test_GapC_PreviewMatchesExecute_ComplementaryFill() public {

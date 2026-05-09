@@ -21,7 +21,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
         uint256 before = _usdcBalance(bob);
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline(), bytes32(0)
         );
 
         assertLe(cost, amountIn, "cost <= amountIn");
@@ -44,7 +44,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline(), bytes32(0)
         );
 
         assertEq(pf, af, "filled");
@@ -64,7 +64,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, amountIn, bob, bob, 0, _deadline(), bytes32(0)
         );
 
         assertEq(pf, af);
@@ -81,7 +81,7 @@ contract PrediXExchangeFuzzTest is ExchangeTestBase {
         usdc.mint(alice, deposit);
         vm.startPrank(alice);
         usdc.approve(address(exchange), type(uint256).max);
-        (bytes32 id,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, amount);
+        (bytes32 id,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, amount, bytes32(0));
         vm.stopPrank();
 
         IPrediXExchange.Order memory ord = exchange.getOrder(id);

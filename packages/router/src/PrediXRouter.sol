@@ -554,7 +554,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
             ) returns (
             uint256 _filled, uint256 _cost
         ) {
@@ -639,7 +639,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
             ) returns (
             uint256 _filled, uint256 _cost
         ) {

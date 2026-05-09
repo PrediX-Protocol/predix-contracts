@@ -20,7 +20,7 @@ contract Audit_MintPriceImprovement is ExchangeTestBase {
         uint256 feeBefore = usdc.balanceOf(feeRecipient);
 
         vm.prank(alice);
-        (, uint256 filled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE);
+        (, uint256 filled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE, bytes32(0));
 
         assertEq(filled, 100 * ONE_SHARE, "fully filled via MINT");
 
@@ -42,7 +42,7 @@ contract Audit_MintPriceImprovement is ExchangeTestBase {
         _giveUsdc(alice, (50 * ONE_SHARE * 650_000) / 1e6);
 
         vm.prank(alice);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 50 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 50 * ONE_SHARE, bytes32(0));
 
         // $0.65 + $0.35 = $1.00 exact. No improvement.
         assertEq(usdc.balanceOf(alice), 0, "no improvement on exact match");
@@ -58,7 +58,7 @@ contract Audit_MintPriceImprovement is ExchangeTestBase {
         uint256 feeBefore = usdc.balanceOf(feeRecipient);
 
         vm.prank(alice);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 200 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 200 * ONE_SHARE, bytes32(0));
 
         uint256 makerUsdc = (200 * ONE_SHARE * 100_000) / 1e6; // 20 USDC
         uint256 takerDeposit = (200 * ONE_SHARE * 990_000) / 1e6; // 198 USDC
@@ -77,7 +77,7 @@ contract Audit_MintPriceImprovement is ExchangeTestBase {
         _placeSellYes(carol, 600_000, 10 * ONE_SHARE);
         _giveUsdc(dave, (10 * ONE_SHARE * 650_000) / 1e6);
         vm.prank(dave);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 10 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 10 * ONE_SHARE, bytes32(0));
         uint256 compImprovement = usdc.balanceOf(dave);
 
         // Scenario B: MINT at equivalent effective price.
@@ -86,7 +86,7 @@ contract Audit_MintPriceImprovement is ExchangeTestBase {
         _placeBuyNo(bob, 400_000, 10 * ONE_SHARE);
         _giveUsdc(alice, (10 * ONE_SHARE * 650_000) / 1e6);
         vm.prank(alice);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 10 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 10 * ONE_SHARE, bytes32(0));
         uint256 mintImprovement = usdc.balanceOf(alice);
 
         assertEq(mintImprovement, compImprovement, "MINT and COMPLEMENTARY give same improvement");

@@ -32,6 +32,16 @@ abstract contract TakerPath is ExchangeStorage {
         address yesToken;
         address noToken;
         bool takerIsBuy;
+        bytes32 takerBuilder;
+    }
+
+    /// @dev Accumulated taker-side output across the fill loop. Settled once
+    ///      at the end of `_fillMarketOrder` instead of per-fill, saving one
+    ///      `safeTransfer` per additional fill (~25K gas each).
+    ///      Maker settlements remain per-fill (each maker is a different address).
+    struct TakerDeltas {
+        uint256 usdcOut;
+        uint256 tokenOut;
     }
 
     // ======== Entry ========
@@ -45,7 +55,8 @@ abstract contract TakerPath is ExchangeStorage {
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 takerBuilder
     ) internal returns (uint256 filled, uint256 cost) {
         if (block.timestamp > deadline) {
             revert IPrediXExchange.DeadlineExpired(deadline, block.timestamp);
@@ -69,7 +80,8 @@ abstract contract TakerPath is ExchangeStorage {
             recipient: recipient,
             yesToken: mkt.yesToken,
             noToken: mkt.noToken,
-            takerIsBuy: MatchMath.isBuy(takerSide)
+            takerIsBuy: MatchMath.isBuy(takerSide),
+            takerBuilder: takerBuilder
         });
 
         address inputToken = _inputTokenFor(ctx);
@@ -78,6 +90,7 @@ abstract contract TakerPath is ExchangeStorage {
         uint256 effectiveMaxFills = maxFills == 0 ? DEFAULT_MAX_FILLS : maxFills;
         uint256 remaining = amountIn;
         uint256 matchCount;
+        TakerDeltas memory deltas;
 
         for (uint256 i; i < effectiveMaxFills; ++i) {
             if (remaining == 0) break;
@@ -88,20 +101,10 @@ abstract contract TakerPath is ExchangeStorage {
             if (source == FillSource.NONE || fillAmount == 0) break;
 
             (uint256 outDelta, uint256 inDelta) = source == FillSource.COMPLEMENTARY
-                ? _executeComplementaryTakerFill(ctx, makerPrice, makerOrderId, fillAmount)
-                : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount);
+                ? _executeComplementaryTakerFill(ctx, makerPrice, makerOrderId, fillAmount, deltas)
+                : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount, deltas);
 
             if (outDelta == 0) {
-                // Zero-fill differentiation:
-                // Type A — maker is structurally dust: `makerRemaining * price / 1e6 == 0`.
-                //          Even a full-take of the maker's residual yields no USDC.
-                //          Force-clean (sweep residual to feeRecipient, drop from queue)
-                //          and continue the waterfall to deeper liquidity. Without this,
-                //          the dust order at the FIFO head blocks every taker on the side
-                //          until the maker self-cancels.
-                // Type B — taker has sub-tick budget remaining; nothing more to extract
-                //          this call. Maker is NOT dust at its own scale, so leave it
-                //          intact and break the waterfall.
                 IPrediXExchange.Order storage outerMaker = orders[makerOrderId];
                 uint256 makerRemaining = outerMaker.amount - outerMaker.filled;
                 if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
@@ -116,6 +119,8 @@ abstract contract TakerPath is ExchangeStorage {
             remaining = amountIn > cost ? amountIn - cost : 0;
             matchCount++;
         }
+
+        _settleTakerDeltas(ctx, deltas);
 
         uint256 unused = amountIn - cost;
         if (unused > 0) {
@@ -220,15 +225,12 @@ abstract contract TakerPath is ExchangeStorage {
         TakerCtx memory ctx,
         uint256 price,
         bytes32 makerOrderId,
-        uint256 matchAmount
+        uint256 matchAmount,
+        TakerDeltas memory deltas
     ) internal returns (uint256 outDelta, uint256 inDelta) {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
-        // Rounding shared with preview via `MatchMath.computeFillDeltas`.
-        // The helper returns `(0, 0)` on dust → self-skip before any state
-        // mutation so `cost` / `filled` stay accurate and the waterfall loop
-        // breaks cleanly on `outDelta == 0`.
         (inDelta, outDelta) = MatchMath.computeFillDeltas(price, matchAmount, ctx.takerIsBuy, false);
         if (outDelta == 0) return (0, 0);
         uint256 usdcAmount = ctx.takerIsBuy ? inDelta : outDelta;
@@ -236,7 +238,6 @@ abstract contract TakerPath is ExchangeStorage {
         address makerOwner = makerOrder.owner;
         IPrediXExchange.Side makerSide = makerOrder.side;
 
-        // Effects: settle maker order state before any external transfer (CEI).
         makerOrder.filled += uint128(matchAmount);
         if (ctx.takerIsBuy) {
             makerOrder.depositLocked -= uint128(matchAmount);
@@ -245,20 +246,25 @@ abstract contract TakerPath is ExchangeStorage {
         }
         bool fullyFilled = makerOrder.filled >= makerOrder.amount;
 
-        // Interactions: token transfers. `inDelta` / `outDelta` are already
-        // set by the helper above; only the tokens move here.
         if (ctx.takerIsBuy) {
-            address outToken = ctx.takerSide == IPrediXExchange.Side.BUY_YES ? ctx.yesToken : ctx.noToken;
-            IERC20(outToken).safeTransfer(ctx.recipient, matchAmount);
+            deltas.tokenOut += matchAmount;
             IERC20(usdc).safeTransfer(makerOwner, usdcAmount);
         } else {
-            address inToken = ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken;
-            IERC20(inToken).safeTransfer(makerOwner, matchAmount);
-            IERC20(usdc).safeTransfer(ctx.recipient, usdcAmount);
+            deltas.usdcOut += usdcAmount;
+            IERC20(ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken).safeTransfer(
+                makerOwner, matchAmount
+            );
         }
 
         emit IPrediXExchange.OrderMatched(
-            makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, matchAmount, price
+            makerOrderId,
+            bytes32(0),
+            ctx.marketId,
+            IPrediXExchange.MatchType.COMPLEMENTARY,
+            matchAmount,
+            price,
+            makerOrder.builder,
+            ctx.takerBuilder
         );
 
         if (fullyFilled) {
@@ -279,7 +285,8 @@ abstract contract TakerPath is ExchangeStorage {
         TakerCtx memory ctx,
         uint256 makerPrice,
         bytes32 makerOrderId,
-        uint256 matchAmount
+        uint256 matchAmount,
+        TakerDeltas memory deltas
     ) internal returns (uint256 outDelta, uint256 inDelta) {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
@@ -289,62 +296,69 @@ abstract contract TakerPath is ExchangeStorage {
         uint8 priceIdx = _priceToIndex(makerOrder.price);
         bool fullyFilled;
 
-        // Rounding shared with preview via `MatchMath.computeFillDeltas`.
-        // Same `(inDelta, outDelta)` tuple whether the match is MINT or MERGE;
-        // the only difference is how the proceeds move through the diamond.
         (inDelta, outDelta) = MatchMath.computeFillDeltas(makerPrice, matchAmount, ctx.takerIsBuy, true);
         if (outDelta == 0) return (0, 0);
 
         if (ctx.takerIsBuy) {
-            // MINT — combined USDC funds `splitPosition`, distribute YES/NO.
-            // `inDelta` = taker's USDC contribution; maker fronts the complement.
             uint256 makerUsdc = matchAmount - inDelta;
-
             if (makerOrder.depositLocked < makerUsdc) revert IPrediXExchange.InsufficientLiquidity();
 
-            // Effects.
             makerOrder.filled += uint128(matchAmount);
             makerOrder.depositLocked -= uint128(makerUsdc);
             fullyFilled = makerOrder.filled >= makerOrder.amount;
 
-            // Interactions.
             IMarketFacet(diamond).splitPosition(ctx.marketId, matchAmount);
 
-            (address takerOut, address makerOut) = ctx.takerSide == IPrediXExchange.Side.BUY_YES
+            (, address makerOut) = ctx.takerSide == IPrediXExchange.Side.BUY_YES
                 ? (ctx.yesToken, ctx.noToken)
                 : (ctx.noToken, ctx.yesToken);
 
-            IERC20(takerOut).safeTransfer(ctx.recipient, matchAmount);
+            deltas.tokenOut += matchAmount;
             IERC20(makerOut).safeTransfer(makerOwner, matchAmount);
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MINT, matchAmount, makerPrice
+                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MINT, matchAmount, makerPrice,
+                makerOrder.builder, ctx.takerBuilder
             );
         } else {
-            // MERGE — combined YES+NO funds `mergePositions`, distribute USDC.
-            // `outDelta` = taker's USDC share; maker gets the complement.
             uint256 makerUsdcShare = matchAmount - outDelta;
-
             if (makerOrder.depositLocked < matchAmount) revert IPrediXExchange.InsufficientLiquidity();
 
-            // Effects.
             makerOrder.filled += uint128(matchAmount);
             makerOrder.depositLocked -= uint128(matchAmount);
             fullyFilled = makerOrder.filled >= makerOrder.amount;
 
-            // Interactions.
             IMarketFacet(diamond).mergePositions(ctx.marketId, matchAmount);
 
-            IERC20(usdc).safeTransfer(ctx.recipient, outDelta);
+            deltas.usdcOut += outDelta;
             IERC20(usdc).safeTransfer(makerOwner, makerUsdcShare);
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MERGE, matchAmount, makerPrice
+                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MERGE, matchAmount, makerPrice,
+                makerOrder.builder, ctx.takerBuilder
             );
         }
 
         if (fullyFilled) {
             _onMakerFullyFilled(ctx.marketId, makerSide, priceIdx, makerOrderId, makerOwner);
+        }
+    }
+
+    // ======== Deferred taker settlement ========
+
+    /// @dev Batch-transfer accumulated taker output in one shot. Called once at
+    ///      the end of `_fillMarketOrder`. Skips zero-valued legs.
+    function _settleTakerDeltas(TakerCtx memory ctx, TakerDeltas memory d) internal {
+        if (d.usdcOut > 0) {
+            IERC20(usdc).safeTransfer(ctx.recipient, d.usdcOut);
+        }
+        if (d.tokenOut > 0) {
+            address outToken = ctx.takerIsBuy
+                ? (ctx.takerSide == IPrediXExchange.Side.BUY_YES ? ctx.yesToken : ctx.noToken)
+                : usdc;
+            if (outToken != usdc) {
+                IERC20(outToken).safeTransfer(ctx.recipient, d.tokenOut);
+            }
         }
     }
 

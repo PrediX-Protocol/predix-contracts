@@ -253,4 +253,45 @@ cast send $DIAMOND "enableRefundMode(uint256)" $MARKET_ID \
 
 ---
 
-*Last updated: 2026-04-28. Review before every deployment.*
+---
+
+## Launch Readiness Checklist
+
+### Security
+
+- [ ] All audit findings (Critical, High, Medium) closed
+- [ ] Slither in CI with zero unaddressed High/Medium (blocked by upstream — tracked in STATIC_ANALYSIS_STATUS.md)
+- [ ] Bug bounty program published (BUG_BOUNTY.md)
+- [ ] L-05 CUT_EXECUTOR self-revoke guard implemented and tested
+
+### Governance
+
+- [ ] Timelock deployed and verified (48h delay)
+- [ ] CUT_EXECUTOR_ROLE transferred to Timelock
+- [ ] Admin keys in multisig (3-of-5 minimum)
+- [ ] Hook proxy admin separate from runtime admin
+- [ ] Exchange proxy admin set (not zero address)
+
+### Operations
+
+- [ ] Emergency response team documented (SECURITY_TEAM.md)
+- [ ] Incident response plan tested (INCIDENT_RESPONSE_PLAN.md)
+- [ ] Oracle reporter key in KMS (not local)
+- [ ] Monitoring agents deployed (Forta or equivalent)
+
+### Technical
+
+- [ ] Gas snapshots baselined and committed
+- [ ] Contract verification on block explorer (Etherscan/Uniscan)
+- [ ] All tests pass (unit + fuzz + invariant)
+- [ ] Flash accounting for CLOB enabled (gas optimization)
+- [ ] Batch cancel support deployed
+- [ ] Builder/affiliate tracking active
+
+### Documentation
+
+- [ ] DEVELOPER_GUIDE.md current with deployed addresses
+- [ ] KEY_MANAGEMENT_POLICY.md reviewed by ops team
+- [ ] BUG_BOUNTY.md published publicly
+
+*Last updated: 2026-05-09. Review before every deployment.*

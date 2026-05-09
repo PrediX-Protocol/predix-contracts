@@ -44,7 +44,7 @@ abstract contract MakerPath is ExchangeStorage {
 
     // ============ placeOrder ============
 
-    function _placeOrder(uint256 marketId, IPrediXExchange.Side side, uint256 price, uint256 amount)
+    function _placeOrder(uint256 marketId, IPrediXExchange.Side side, uint256 price, uint256 amount, bytes32 builder)
         internal
         virtual
         returns (bytes32 orderId, uint256 filledAmount)
@@ -75,7 +75,8 @@ abstract contract MakerPath is ExchangeStorage {
             price: price,
             amount: amount,
             filled: 0,
-            depositLocked: uint128(depositRequired)
+            depositLocked: uint128(depositRequired),
+            builder: builder
         });
 
         // 4. Try matching against resting makers
@@ -128,7 +129,7 @@ abstract contract MakerPath is ExchangeStorage {
             }
         }
 
-        emit IPrediXExchange.OrderPlaced(orderId, marketId, msg.sender, side, price, amount);
+        emit IPrediXExchange.OrderPlaced(orderId, marketId, msg.sender, side, price, amount, builder);
     }
 
     // ============ cancelOrder ============
@@ -294,7 +295,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -413,7 +415,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MINT, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MINT, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -532,7 +535,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MERGE, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MERGE, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {

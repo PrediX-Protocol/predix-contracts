@@ -58,7 +58,8 @@ contract MockExchange {
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 /* takerBuilder */
     ) external returns (uint256 filled, uint256 cost) {
         require(!revertOnFill, "MockExchange: revertOnFill");
         require(block.timestamp <= deadline, "MockExchange: deadline");

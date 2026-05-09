@@ -34,7 +34,7 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
 
         vm.recordLogs();
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, amount);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, amount, bytes32(0));
 
         // Maker keeps its limit; taker gets the complement (0.23 USDC per share).
         assertEq(_usdcBalance(alice), 770_000 * amount / 1e6, "maker keeps 0.77 limit");
@@ -61,7 +61,7 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
         _giveYesNo(bob, amount);
 
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 400_000, amount);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 400_000, amount, bytes32(0));
 
         assertEq(_usdcBalance(alice), 6 * ONE_SHARE, "maker gets 0.60 * 10 = 6");
         assertEq(_usdcBalance(bob), 4 * ONE_SHARE, "taker gets 0.40 * 10 = 4 (no improvement)");
@@ -90,7 +90,7 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
         uint256 feeBefore = _usdcBalance(feeRecipient);
 
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, takerPrice, amount);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, takerPrice, amount, bytes32(0));
 
         uint256 aliceGain = _usdcBalance(alice) - aliceBefore;
         uint256 bobGain = _usdcBalance(bob) - bobBefore;
@@ -110,7 +110,7 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
 
         vm.recordLogs();
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 400_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 400_000, 100 * ONE_SHARE, bytes32(0));
 
         bytes32 feeTopic = keccak256("FeeCollected(uint256,uint256)");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -139,7 +139,7 @@ contract Backlog_MergeImprovement is ExchangeTestBase {
         uint256 bobBefore = _usdcBalance(bob);
         vm.prank(bob);
         (uint256 actualFilled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_NO, 10_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(), bytes32(0)
         );
         uint256 bobGain = _usdcBalance(bob) - bobBefore;
 

@@ -69,7 +69,7 @@ contract Phase7Invariants is Phase7ForkBase {
 
         vm.startPrank(maker);
         IERC20(USDC).approve(EXCHANGE, budget);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, price, amount);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, price, amount, bytes32(0));
         vm.stopPrank();
 
         uint256 exAfter = IERC20(USDC).balanceOf(EXCHANGE);

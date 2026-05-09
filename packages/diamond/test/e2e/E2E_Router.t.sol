@@ -33,12 +33,12 @@ contract E2E_Router is E2EForkBase {
         // Place CLOB orders so router can fill via CLOB
         vm.startPrank(bob);
         IERC20(yesB).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketB, IPrediXExchange.Side.SELL_YES, 500_000, 5_000e6);
+        exchange.placeOrder(marketB, IPrediXExchange.Side.SELL_YES, 500_000, 5_000e6, bytes32(0));
         IERC20(noB).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketB, IPrediXExchange.Side.SELL_NO, 500_000, 5_000e6);
+        exchange.placeOrder(marketB, IPrediXExchange.Side.SELL_NO, 500_000, 5_000e6, bytes32(0));
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketB, IPrediXExchange.Side.BUY_YES, 400_000, 2_000e6);
-        exchange.placeOrder(marketB, IPrediXExchange.Side.BUY_NO, 400_000, 2_000e6);
+        exchange.placeOrder(marketB, IPrediXExchange.Side.BUY_YES, 400_000, 2_000e6, bytes32(0));
+        exchange.placeOrder(marketB, IPrediXExchange.Side.BUY_NO, 400_000, 2_000e6, bytes32(0));
         vm.stopPrank();
     }
 

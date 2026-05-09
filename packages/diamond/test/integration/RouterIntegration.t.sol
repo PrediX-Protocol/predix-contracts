@@ -245,7 +245,7 @@ contract RouterIntegrationTest is MarketFixture {
         vm.prank(maker);
         IERC20(yesToken).approve(address(exchange), type(uint256).max);
         vm.prank(maker);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 200e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 200e6, bytes32(0));
 
         // Trader takes via router. Budget 120 USDC → expects ~200 YES at 0.60 spot.
         _approveUsdc(trader, 120e6, address(router));
@@ -270,7 +270,7 @@ contract RouterIntegrationTest is MarketFixture {
         vm.prank(maker);
         IERC20(address(usdc)).approve(address(exchange), type(uint256).max);
         vm.prank(maker);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 400_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 400_000, 100e6, bytes32(0));
 
         // Trader sells 100 YES. Needs YES via splitPosition first.
         _fundAndApprove(trader, 100e6);

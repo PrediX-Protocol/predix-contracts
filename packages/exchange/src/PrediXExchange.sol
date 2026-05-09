@@ -98,14 +98,14 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     // ======== Maker path (gated by Exchange pause) ========
 
     /// @inheritdoc IPrediXExchange
-    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount)
+    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount, bytes32 builder)
         external
         override
         nonReentrant
         whenNotPaused
         returns (bytes32 orderId, uint256 filledAmount)
     {
-        return _placeOrder(marketId, side, price, amount);
+        return _placeOrder(marketId, side, price, amount, builder);
     }
 
     /// @inheritdoc IPrediXExchange
@@ -113,6 +113,35 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     ///      withdraw locked deposits, even when the maker path is paused.
     function cancelOrder(bytes32 orderId) external override nonReentrant {
         _cancelOrder(orderId);
+    }
+
+    /// @inheritdoc IPrediXExchange
+    /// @dev Bypass pause (user exit guarantee). Partial success — skips orders that
+    ///      don't belong to caller, are already cancelled, or fully filled.
+    function cancelOrders(bytes32[] calldata orderIds) external override nonReentrant returns (uint256 cancelledCount) {
+        uint256 len = orderIds.length;
+        if (len == 0) revert Exchange_EmptyArray();
+        if (len > 50) revert Exchange_BatchTooLarge();
+
+        for (uint256 i; i < len;) {
+            if (_tryCancel(orderIds[i])) {
+                unchecked { ++cancelledCount; }
+            }
+            unchecked { ++i; }
+        }
+    }
+
+    /// @dev Attempt to cancel a single order owned by msg.sender. Returns false
+    ///      (no revert) if the order is invalid, not owned, or already terminal.
+    function _tryCancel(bytes32 orderId) internal returns (bool) {
+        Order storage order = orders[orderId];
+        if (order.owner == address(0)) return false;
+        if (order.owner != msg.sender) return false;
+        if (order.cancelled) return false;
+        if (order.filled >= order.amount) return false;
+
+        _cancelOrder(orderId);
+        return true;
     }
 
     // ======== Taker path (permissionless) ========
@@ -128,9 +157,12 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 takerBuilder
     ) external override nonReentrant returns (uint256 filled, uint256 cost) {
-        return _fillMarketOrder(marketId, takerSide, limitPrice, amountIn, taker, recipient, maxFills, deadline);
+        return _fillMarketOrder(
+            marketId, takerSide, limitPrice, amountIn, taker, recipient, maxFills, deadline, takerBuilder
+        );
     }
 
     // ======== Views (E2c stubs delegate to mixin) ========

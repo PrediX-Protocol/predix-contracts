@@ -20,7 +20,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled");
@@ -37,7 +38,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled");
@@ -55,7 +57,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 60 * ONE_SHARE, "USDC out");
@@ -77,7 +80,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         // Then comp exhausted → syn fills iter 2.
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled both");
@@ -96,7 +100,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.recordLogs();
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 50 * ONE_SHARE, bob, bob, 1, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 50 * ONE_SHARE, bob, bob, 1, _deadline(),
+            bytes32(0)
         );
 
         // Single iteration with maxFills=1 — must pick COMPLEMENTARY (no diamond call).
@@ -113,7 +118,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 0, "no fill above cap");
@@ -130,7 +136,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         uint256 yesBefore = _yesBalance(bob);
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 0, "no fill below floor");
@@ -151,7 +158,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         _giveUsdc(bob, 100 * ONE_SHARE);
         vm.prank(bob);
         (uint256 filled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 2, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 2, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 20 * ONE_SHARE, "exactly 2 fills");
@@ -169,7 +177,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         _giveUsdc(bob, 100 * ONE_SHARE);
         vm.prank(bob);
         (uint256 filled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 800_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 800_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 10 * ONE_SHARE, "default cap = 10");
@@ -184,7 +193,7 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         uint256 stale = block.timestamp - 1;
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IPrediXExchange.DeadlineExpired.selector, stale, block.timestamp));
-        exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, stale);
+        exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, stale, bytes32(0));
     }
 
     // ============ 11. refunds unused exact ============
@@ -196,7 +205,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         uint256 before = _usdcBalance(bob);
         vm.prank(bob);
         (, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         // Spent exactly cost, refund = 100 - cost.
@@ -211,7 +221,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 0, "no filled");
@@ -231,7 +242,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         uint256 before = _usdcBalance(bob);
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
         assertEq(filled, 0, "no fill - own order skipped");
         assertEq(cost, 0, "no cost");
@@ -247,7 +259,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
         assertEq(filled, 0);
         assertEq(cost, 0);
@@ -264,7 +277,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.prank(bob);
         vm.expectRevert();
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -278,7 +292,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.prank(bob);
         vm.expectRevert(IPrediXExchange.MarketExpired.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -292,7 +307,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.prank(bob);
         vm.expectRevert(IPrediXExchange.MarketResolved.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -308,7 +324,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.prank(bob);
         vm.expectRevert(IPrediXExchange.MarketPaused.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -322,7 +339,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         vm.prank(bob);
         vm.expectRevert(IPrediXExchange.MarketInRefundMode.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -338,7 +356,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         );
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -350,11 +369,12 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.expectEmit(true, true, true, true);
         emit IPrediXExchange.OrderMatched(
-            makerId, bytes32(0), MARKET_ID, IPrediXExchange.MatchType.COMPLEMENTARY, 10 * ONE_SHARE, 500_000
+            makerId, bytes32(0), MARKET_ID, IPrediXExchange.MatchType.COMPLEMENTARY, 10 * ONE_SHARE, 500_000, bytes32(0), bytes32(0)
         );
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -366,7 +386,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, carol, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 10 * ONE_SHARE, bob, carol, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(_yesBalance(carol), 10 * ONE_SHARE, "recipient got YES");
@@ -383,7 +404,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         _giveUsdc(bob, 100 * ONE_SHARE);
         vm.prank(bob);
         (uint256 filled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 90 * ONE_SHARE, "all 3 levels filled");
@@ -397,7 +419,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 25 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 25 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 50 * ONE_SHARE, "filled exactly budget");
@@ -412,7 +435,8 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(IERC20(yesToken).totalSupply(), IERC20(noToken).totalSupply(), "YES.supply == NO.supply");
@@ -423,14 +447,16 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
     function test_Revert_fillMarketOrder_zeroTaker() public {
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, address(0), bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, address(0), bob, 0, _deadline(),
+            bytes32(0)
         );
     }
 
     function test_Revert_fillMarketOrder_zeroRecipient() public {
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, bob, address(0), 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, bob, address(0), 0, _deadline(),
+            bytes32(0)
         );
     }
 
@@ -438,7 +464,7 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
 
     function test_fillMarketOrder_zeroAmountInReturnsZero() public {
         (uint256 f, uint256 c) =
-            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 0, bob, bob, 0, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 0, bob, bob, 0, _deadline(), bytes32(0));
         assertEq(f, 0);
         assertEq(c, 0);
     }
@@ -449,6 +475,6 @@ contract PrediXExchangeTakerTest is ExchangeTestBase {
         _giveUsdc(bob, 1 * ONE_SHARE);
         vm.prank(bob);
         vm.expectRevert(IPrediXExchange.MarketNotFound.selector);
-        exchange.fillMarketOrder(999, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, bob, bob, 0, _deadline());
+        exchange.fillMarketOrder(999, IPrediXExchange.Side.BUY_YES, 600_000, 1 * ONE_SHARE, bob, bob, 0, _deadline(), bytes32(0));
     }
 }

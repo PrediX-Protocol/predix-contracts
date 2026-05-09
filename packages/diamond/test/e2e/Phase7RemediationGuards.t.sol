@@ -54,7 +54,8 @@ contract Phase7RemediationGuards is Phase7ForkBase {
             taker: victim,
             recipient: attacker,
             maxFills: 0,
-            deadline: block.timestamp + 1
+            deadline: block.timestamp + 1,
+            takerBuilder: bytes32(0)
         });
     }
 

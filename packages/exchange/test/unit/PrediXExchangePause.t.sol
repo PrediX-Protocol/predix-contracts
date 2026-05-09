@@ -77,7 +77,7 @@ contract PrediXExchangePauseTest is ExchangeTestBase {
         _giveUsdc(alice, 50 * ONE_SHARE);
         vm.prank(alice);
         vm.expectRevert(PrediXExchange.ExchangePaused.selector);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 100 * ONE_SHARE, bytes32(0));
     }
 
     function test_CancelOrder_WhilePaused_Allowed() public {
@@ -103,7 +103,8 @@ contract PrediXExchangePauseTest is ExchangeTestBase {
         // Permissionless taker path stays open even while paused.
         vm.prank(bob);
         (uint256 filled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
         assertEq(filled, 100 * ONE_SHARE);
     }

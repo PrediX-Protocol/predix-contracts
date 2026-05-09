@@ -27,7 +27,7 @@ contract E_01_MakerPathDustFilter is ExchangeTestBase {
         _placeSellYes(alice, price, aliceSize);
         _giveUsdc(bob, (bobFillSize * price) / 1e6);
         vm.prank(bob);
-        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, bobFillSize);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, bobFillSize, bytes32(0));
 
         // Alice has exactly 1 share of residual YES locked in the exchange.
         uint256 exchangeYesBefore = _yesBalance(address(exchange));
@@ -36,7 +36,7 @@ contract E_01_MakerPathDustFilter is ExchangeTestBase {
         _giveUsdc(carol, (carolSize * price) / 1e6);
         vm.prank(carol);
         (bytes32 carolId, uint256 filled) =
-            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, carolSize);
+            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, carolSize, bytes32(0));
 
         // Carol's order filled 0 shares (dust match skipped).
         assertEq(filled, 0, "dust match must be skipped");
@@ -57,7 +57,7 @@ contract E_01_MakerPathDustFilter is ExchangeTestBase {
         _giveUsdc(bob, 50 * ONE_SHARE);
 
         vm.prank(bob);
-        (, uint256 filled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, 100 * ONE_SHARE);
+        (, uint256 filled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, price, 100 * ONE_SHARE, bytes32(0));
 
         assertEq(filled, 100 * ONE_SHARE, "normal match must fill fully");
         assertEq(_yesBalance(bob), 100 * ONE_SHARE, "bob receives YES");

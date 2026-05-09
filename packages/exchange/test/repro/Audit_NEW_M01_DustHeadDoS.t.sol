@@ -31,7 +31,7 @@ contract Audit_NEW_M01_DustHeadDoS is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60, bytes32(0)
         );
 
         // M-01 fix: dust auto-cleaned, Bob reached Carol's $0.02 liquidity.
@@ -52,7 +52,7 @@ contract Audit_NEW_M01_DustHeadDoS is ExchangeTestBase {
         _giveUsdc(bob, 100e6);
         vm.prank(bob);
         (uint256 filled,) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60, bytes32(0)
         );
         assertGt(filled, 0, "M-01 fix at $0.50");
     }
@@ -72,7 +72,7 @@ contract Audit_NEW_M01_DustHeadDoS is ExchangeTestBase {
         _giveUsdc(bob, 100e6);
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 100e6, bob, bob, 10, block.timestamp + 60, bytes32(0)
         );
 
         // 1 share of YES (Alice's dust) swept to feeRecipient.
@@ -89,7 +89,7 @@ contract Audit_NEW_M01_DustHeadDoS is ExchangeTestBase {
 
         _giveUsdc(bob, 100e6);
         vm.prank(bob);
-        (, uint256 placerFilled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 50_000, 1e6);
+        (, uint256 placerFilled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 50_000, 1e6, bytes32(0));
         assertGt(placerFilled, 0, "MakerPath progresses past dust");
     }
 }

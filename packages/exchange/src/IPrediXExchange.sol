@@ -42,6 +42,7 @@ interface IPrediXExchange {
         uint256 amount;
         uint128 filled;
         uint128 depositLocked;
+        bytes32 builder;
     }
 
     /// @notice Aggregated depth at a single price level.
@@ -74,9 +75,9 @@ interface IPrediXExchange {
     error Exchange_InsufficientBalanceForMint();
     error Exchange_QueueFull();
     /// @notice Thrown when `fillMarketOrder` is called with `taker != msg.sender`.
-    ///         Prevents an attacker from spending a victim's USDC allowance to
-    ///         the Exchange by passing `taker = victim, recipient = attacker`.
     error NotTaker();
+    error Exchange_EmptyArray();
+    error Exchange_BatchTooLarge();
 
     // ============ Events ============
 
@@ -86,7 +87,8 @@ interface IPrediXExchange {
         address indexed owner,
         Side side,
         uint256 price,
-        uint256 amount
+        uint256 amount,
+        bytes32 builder
     );
 
     /// @notice Emitted per individual match (maker ↔ taker or maker ↔ maker).
@@ -97,7 +99,9 @@ interface IPrediXExchange {
         uint256 indexed marketId,
         MatchType matchType,
         uint256 amount,
-        uint256 price
+        uint256 price,
+        bytes32 makerBuilder,
+        bytes32 takerBuilder
     );
 
     event OrderCancelled(bytes32 indexed orderId);
@@ -123,15 +127,22 @@ interface IPrediXExchange {
     /// @param side BUY_YES / SELL_YES / BUY_NO / SELL_NO.
     /// @param price Limit price in 6 decimals, multiple of $0.01 (range $0.01..$0.99).
     /// @param amount Number of outcome tokens (6 decimals).
+    /// @param builder Optional affiliate/builder tag (bytes32(0) = no attribution).
     /// @return orderId Unique identifier.
     /// @return filledAmount Amount immediately filled via matching.
-    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount)
+    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount, bytes32 builder)
         external
         returns (bytes32 orderId, uint256 filledAmount);
 
     /// @notice Cancel an unfilled / partially-filled order. Returns the locked portion to the owner.
     /// @dev Owner can always cancel. Anyone can cancel on expired/resolved markets (keeper pattern).
     function cancelOrder(bytes32 orderId) external;
+
+    /// @notice Cancel multiple orders in a single transaction. Partial success —
+    ///         skips invalid/non-owned/already-cancelled orders without reverting.
+    /// @param orderIds Array of order IDs to cancel. Max 50 per batch.
+    /// @return cancelledCount Number of orders successfully cancelled.
+    function cancelOrders(bytes32[] calldata orderIds) external returns (uint256 cancelledCount);
 
     // ============ Taker path (permissionless) ============
 
@@ -163,7 +174,8 @@ interface IPrediXExchange {
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 takerBuilder
     ) external returns (uint256 filled, uint256 cost);
 
     // ============ View functions ============

@@ -185,7 +185,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.startPrank(alice);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 650_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 650_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         // Bob is taker placing BUY NO @0.40. MINT eligible since 0.65 + 0.40 > 1.00.
@@ -196,7 +196,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        (, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100e6);
+        (, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_NO, 400_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         assertGt(filled, 0, "Should have MINT matched");
@@ -217,9 +217,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
         // Place SELL YES orders at 3 different prices: 0.50, 0.55, 0.60
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 50e6);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 550_000, 50e6);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 50e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 50e6, bytes32(0));
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 550_000, 50e6, bytes32(0));
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 50e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills via taker with limitPrice=0.60, budget enough for all 3 levels
@@ -228,7 +228,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6, bob, bob, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6, bob, bob, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -243,7 +244,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
         // Place minimum-sized order: 1e6 (1 USDC worth of tokens)
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 2e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 2e6, bytes32(0));
         vm.stopPrank();
 
         // Bob partially fills leaving ~dust
@@ -251,7 +252,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         // Fill with budget that consumes most but not all: 1 token at 0.50 = 0.50 USDC
         (uint256 filled1,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 500_000, bob, bob, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 500_000, bob, bob, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -259,7 +261,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(charlie);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled2,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -272,7 +275,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         // Place a large SELL YES order
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 1_000e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 1_000e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills with small budget that runs out mid-order
@@ -283,7 +286,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, smallBudget, bob, bob, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, smallBudget, bob, bob, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -304,13 +308,13 @@ contract E2E_Permit2Remaining is E2EForkBase {
         // Alice places BUY YES @0.60
         vm.startPrank(alice);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6);
+        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills it completely via SELL YES @0.60
         vm.startPrank(bob);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         // Verify alice's order is fully filled
@@ -470,7 +474,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
         for (uint256 i; i < 15; i++) {
-            exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 1e6);
+            exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 1e6, bytes32(0));
         }
         vm.stopPrank();
 
@@ -486,7 +490,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
             bob,
             bob,
             0, // maxFills = 0 → uses DEFAULT_MAX_FILLS = 10
-            block.timestamp + 300
+            block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -517,7 +522,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
             vm.startPrank(users[u]);
             IERC20(USDC).approve(EXCHANGE, type(uint256).max);
             for (uint256 i; i < 50; i++) {
-                exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6);
+                exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0));
             }
             vm.stopPrank();
         }
@@ -530,7 +535,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(user5);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         vm.expectRevert(IPrediXExchange.Exchange_QueueFull.selector);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0));
         vm.stopPrank();
     }
 }

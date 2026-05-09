@@ -1,7 +1,7 @@
 # Static Analysis Tool Status
 
-**Date**: 2026-04-27
-**Codebase**: `upgrade_v2` @ `b898fc6`
+**Date**: 2026-05-09 (updated)
+**Codebase**: `upgrade_v3` @ `develop`
 
 ## Slither — BLOCKED (upstream compatibility issue)
 
@@ -44,6 +44,15 @@ Slither 0.11.5 (latest stable as of 2026-04-27) cannot parse the PrediX monorepo
 3. **Alternative**: Use **Aderyn** (Cyfrin's Solidity analyzer, Rust-based) which supports via_ir. Install: `cargo install aderyn`. Run: `aderyn .` per package.
 
 4. **Complementary**: Add **Echidna** for property-based fuzzing (already have 16 invariant functions in Foundry format — portable to Echidna with minor adaptation).
+
+### Infrastructure ready (2026-05-09)
+
+Per-package `slither.config.json` files and `Makefile` targets created:
+- `packages/{diamond,exchange,router,hook,oracle}/slither.config.json` — remappings, foundry framework, detector exclusions
+- `make slither-diamond`, `make slither-exchange`, etc. + `make slither-all`
+- Configs use `compile_force_framework: foundry` to leverage forge's compilation output
+
+When Slither upstream fixes the IERC20Errors/via_ir issue, run `make slither-all` and triage findings.
 
 ### CI placeholder
 
