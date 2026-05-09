@@ -14,6 +14,7 @@ import {CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 
@@ -38,6 +39,7 @@ import {IPrediXHookCommit} from "./interfaces/IPrediXHookCommit.sol";
 contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuard {
     using SafeERC20 for IERC20;
     using CurrencyLibrary for Currency;
+    using StateLibrary for IPoolManager;
 
     // =========================================================================
     // Callback dispatch
@@ -328,7 +330,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, address(0));
 
         uint256 usdcLeft = usdcIn - clobCost;
-        if (usdcLeft > 0) {
+        if (usdcLeft > 0 && _hasPool(yesToken)) {
             _preCommitForQuoter(yesToken);
             PoolKey memory key = _buildPoolKey(yesToken);
             IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
@@ -351,14 +353,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         uint256 clobLimit = _clobSellYesLimit(yesToken);
         uint256 sharesFilled;
-        // previewFillMarketOrder returns (filled, cost) where filled = output
-        // denomination delivered to taker and cost = input denomination consumed
-        // from taker. For SELL_YES: filled = USDC out, cost = YES in.
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, address(0));
 
         uint256 yesLeft = yesIn - sharesFilled;
-        if (yesLeft > 0) {
+        if (yesLeft > 0 && _hasPool(yesToken)) {
             _preCommitForQuoter(yesToken);
             PoolKey memory key = _buildPoolKey(yesToken);
             IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
@@ -385,7 +384,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, address(0));
 
         uint256 usdcLeft = usdcIn - clobCost;
-        if (usdcLeft > 0) {
+        if (usdcLeft > 0 && _hasPool(yesToken)) {
             ammPortion = _computeBuyNoMintAmount(yesToken, usdcLeft);
         }
 
@@ -402,12 +401,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
         uint256 clobLimit = _clobSellNoLimit(yesToken);
         uint256 sharesFilled;
-        // SELL_NO: filled = USDC out, cost = NO in (side-dependent tuple).
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, address(0));
 
         uint256 noLeft = noIn - sharesFilled;
-        if (noLeft > 0) {
+        if (noLeft > 0 && _hasPool(yesToken)) {
             uint256 maxCost = _computeSellNoMaxCost(yesToken, noLeft);
             if (maxCost < noLeft) ammPortion = noLeft - maxCost;
         }
@@ -469,6 +467,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return recipient == address(0) || recipient == address(this) || recipient == diamond || recipient == exchange
             || recipient == hook || recipient == address(poolManager) || recipient == address(quoter)
             || recipient == address(permit2) || recipient == usdc;
+    }
+
+    /// @notice Returns true if the YES/USDC pool is initialized on the PoolManager.
+    function _hasPool(address yesToken) internal view returns (bool) {
+        PoolKey memory key = _buildPoolKey(yesToken);
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(key.toId());
+        return sqrtPriceX96 != 0;
     }
 
     /// @notice Construct the canonical `PoolKey` for a PrediX market from its YES token.
@@ -840,10 +845,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     // =========================================================================
 
     /// @notice Fee-adjusted AMM spot price for buying YES, in USDC/YES with 1e6 precision.
-    /// @dev Quotes `1 USDC ($1) → YES` and inverts. The Quoter simulates the real swap through
-    ///      the hook, so the dynamic fee is baked in. Returns 0 on an empty
-    ///      pool so callers can fall back to a permissive cap rather than reverting.
+    /// @dev Returns 0 when the pool is uninitialized or empty so callers fall back to a
+    ///      permissive CLOB cap rather than reverting.
     function _ammSpotPriceForBuy(address yesToken) internal returns (uint256 usdcPerYes) {
+        if (!_hasPool(yesToken)) return 0;
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
         IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
@@ -856,6 +861,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
     /// @notice Fee-adjusted AMM spot price when selling YES, in USDC/YES with 1e6 precision.
     function _ammSpotPriceForSell(address yesToken) internal returns (uint256 usdcPerYes) {
+        if (!_hasPool(yesToken)) return 0;
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
         IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
@@ -1037,7 +1043,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline);
 
-        if (usdcRemaining > 0) {
+        bool hasAmm = _hasPool(yesToken);
+        if (usdcRemaining > 0 && hasAmm) {
             ammFilled = _executeAmmBuyYes(marketId, yesToken, noToken, usdcRemaining, msg.sender);
         }
 
@@ -1072,7 +1079,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, deadline);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
-        if (yesRemaining > 0) {
+        if (yesRemaining > 0 && _hasPool(yesToken)) {
             ammFilled = _executeAmmSellYes(marketId, yesToken, noToken, yesRemaining, msg.sender);
         }
 
@@ -1102,7 +1109,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline);
 
-        if (usdcRemaining > 0) {
+        if (usdcRemaining > 0 && _hasPool(yesToken)) {
             ammFilled = _executeAmmBuyNo(marketId, yesToken, noToken, usdcRemaining, msg.sender);
         }
 
@@ -1135,7 +1142,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (, noRemaining) = _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
-        if (noRemaining > 0) {
+        if (noRemaining > 0 && _hasPool(yesToken)) {
             ammFilled = _executeAmmSellNo(marketId, yesToken, noToken, noRemaining, msg.sender);
         }
 

@@ -4,6 +4,9 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
@@ -90,9 +93,26 @@ abstract contract RouterFixture is Test {
         no1.mint(address(poolManager), 10_000_000e6);
         // Mock exchange also needs USDC to pay sellers.
         usdc.mint(address(exchange), 10_000_000e6);
+
+        // Mark YES1/USDC pool as initialized so _hasPool returns true.
+        _markPoolInitialized(address(yes1));
     }
 
     function _deadline() internal view returns (uint256) {
         return block.timestamp + DEFAULT_DEADLINE_OFFSET;
+    }
+
+    function _markPoolInitialized(address yesToken) internal {
+        address quote = address(usdc);
+        (Currency c0, Currency c1) = quote < yesToken
+            ? (Currency.wrap(quote), Currency.wrap(yesToken))
+            : (Currency.wrap(yesToken), Currency.wrap(quote));
+        PoolKey memory key = PoolKey({
+            currency0: c0, currency1: c1, fee: LP_FEE_FLAG, tickSpacing: TICK_SPACING, hooks: IHooks(address(hook))
+        });
+        bytes32 poolId = keccak256(abi.encode(key));
+        bytes32 stateSlot = keccak256(abi.encodePacked(poolId, bytes32(uint256(6))));
+        uint160 sqrtPrice = 79228162514264337593543950336;
+        poolManager.setPoolSlot0(stateSlot, sqrtPrice);
     }
 }

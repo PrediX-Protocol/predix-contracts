@@ -33,6 +33,20 @@ contract MockPoolManager {
     uint256 internal _syncedBalance;
     bool internal _hasSync;
 
+    mapping(bytes32 => bytes32) internal _slots;
+
+    /// @dev Configure extsload return for a pool's slot0. StateLibrary reads
+    ///      `pools[poolId]` at a computed slot; for the mock we just store the
+    ///      sqrtPriceX96 at the slot key so `_hasPool` sees a non-zero value.
+    function setPoolSlot0(bytes32 slotKey, uint160 sqrtPriceX96) external {
+        _slots[slotKey] = bytes32(uint256(sqrtPriceX96));
+    }
+
+    /// @dev StateLibrary.getSlot0 calls IPoolManager.extsload(slot).
+    function extsload(bytes32 slot) external view returns (bytes32) {
+        return _slots[slot];
+    }
+
     // Debt tracking for assertions
     uint256 public lastSettledAmount;
     address public lastTakeTo;
