@@ -121,7 +121,7 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     function cancelOrders(bytes32[] calldata orderIds) external override nonReentrant returns (uint256 cancelledCount) {
         uint256 len = orderIds.length;
         if (len == 0) revert Exchange_EmptyArray();
-        if (len > 50) revert Exchange_BatchTooLarge();
+        if (len > MAX_BATCH_CANCEL) revert Exchange_BatchTooLarge();
 
         for (uint256 i; i < len;) {
             if (_tryCancel(orderIds[i])) {

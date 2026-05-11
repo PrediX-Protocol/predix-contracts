@@ -51,7 +51,6 @@ contract PrediXMarketFactory {
     int24 internal constant MAX_TICK_ALIGNED = 887220;
 
     error ZeroAddress();
-    error RefundFailed();
     error NotCreator();
 
     modifier onlyCreator() {

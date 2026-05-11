@@ -64,9 +64,6 @@ interface IPrediXRouter {
     /// @notice Thrown when `unlockCallback` is invoked by anyone other than the PoolManager.
     error OnlyPoolManager();
 
-    /// @notice Thrown when the v4 pool for a market has no liquidity (Quoter returns zero).
-    error PoolNotInitialized();
-
     /// @notice Thrown when the combined CLOB + AMM depth cannot satisfy the trade within the
     ///         `buyNo` / `sellNo` virtual-NO 3% safety margin.
     error InsufficientLiquidity();
