@@ -105,6 +105,11 @@ abstract contract TakerPath is ExchangeStorage {
                 : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount, deltas);
 
             if (outDelta == 0) {
+                // Zero-fill differentiation:
+                // Type A — maker is structurally dust: `makerRemaining * price / 1e6 == 0`.
+                //          Force-clean and continue to deeper liquidity.
+                // Type B — taker has sub-tick budget remaining. Maker is NOT dust
+                //          at its own scale, so leave it intact and break.
                 IPrediXExchange.Order storage outerMaker = orders[makerOrderId];
                 uint256 makerRemaining = outerMaker.amount - outerMaker.filled;
                 if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
@@ -231,6 +236,8 @@ abstract contract TakerPath is ExchangeStorage {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
+        // Rounding shared with preview via MatchMath.computeFillDeltas.
+        // Returns (0, 0) on dust → skip before state mutation.
         (inDelta, outDelta) = MatchMath.computeFillDeltas(price, matchAmount, ctx.takerIsBuy, false);
         if (outDelta == 0) return (0, 0);
         uint256 usdcAmount = ctx.takerIsBuy ? inDelta : outDelta;
@@ -238,6 +245,7 @@ abstract contract TakerPath is ExchangeStorage {
         address makerOwner = makerOrder.owner;
         IPrediXExchange.Side makerSide = makerOrder.side;
 
+        // Effects: settle maker order state before external transfer (CEI).
         makerOrder.filled += uint128(matchAmount);
         if (ctx.takerIsBuy) {
             makerOrder.depositLocked -= uint128(matchAmount);
@@ -246,6 +254,7 @@ abstract contract TakerPath is ExchangeStorage {
         }
         bool fullyFilled = makerOrder.filled >= makerOrder.amount;
 
+        // Interactions: maker paid per-fill, taker output accumulated in deltas.
         if (ctx.takerIsBuy) {
             deltas.tokenOut += matchAmount;
             IERC20(usdc).safeTransfer(makerOwner, usdcAmount);
@@ -300,6 +309,8 @@ abstract contract TakerPath is ExchangeStorage {
         if (outDelta == 0) return (0, 0);
 
         if (ctx.takerIsBuy) {
+            // MINT — combined USDC funds splitPosition, distribute YES/NO.
+            // inDelta = taker USDC contribution; maker fronts the complement.
             uint256 makerUsdc = matchAmount - inDelta;
             if (makerOrder.depositLocked < makerUsdc) revert IPrediXExchange.InsufficientLiquidity();
 
@@ -321,6 +332,8 @@ abstract contract TakerPath is ExchangeStorage {
                 makerOrder.builder, ctx.takerBuilder
             );
         } else {
+            // MERGE — combined YES+NO funds mergePositions, distribute USDC.
+            // outDelta = taker USDC share; maker gets the complement.
             uint256 makerUsdcShare = matchAmount - outDelta;
             if (makerOrder.depositLocked < matchAmount) revert IPrediXExchange.InsufficientLiquidity();
 
