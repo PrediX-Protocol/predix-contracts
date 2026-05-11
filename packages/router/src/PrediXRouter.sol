@@ -71,9 +71,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         Below this, rounding dust dominates and the user would lose more than they gain.
     uint256 internal constant MIN_TRADE_AMOUNT = 1000;
 
-    /// @notice Default `maxFills` substituted when the caller supplies zero.
-    uint256 internal constant DEFAULT_MAX_FILLS = 10;
-
     /// @notice Virtual-NO path safety margin. The router under-sizes the `mintAmount` by 3%
     ///         relative to the Quoter's spot-price estimate, absorbing v4 price impact between
     ///         the quote and the actual swap. See spec §6.8.
