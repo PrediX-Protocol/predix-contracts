@@ -2,7 +2,8 @@
 out/
 cache/
 broadcast/
-.forge-snapshots/
+# .forge-snapshots/ — tracked for gas regression CI
+# Individual package snapshots at packages/*/.gas-snapshot are gitignored (foundry default)
 packages/*/out/
 packages/*/cache/
 packages/*/broadcast/
