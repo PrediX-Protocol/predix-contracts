@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title LibEventStorage
 /// @notice Diamond storage layout for `EventFacet`. An event is a named group of N

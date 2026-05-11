@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IDiamondLoupe
 /// @notice EIP-2535 diamond loupe interface for facet introspection.

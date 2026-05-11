@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IPrediXExchange} from "../../src/IPrediXExchange.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";

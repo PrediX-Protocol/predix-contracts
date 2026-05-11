@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IPrediXPaymaster — interface cho PrediXPaymaster (self-hosted verifying paymaster)
 /// @notice Errors + events + admin surface. Implementation inherits BasePaymaster.

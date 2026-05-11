@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title Roles
 /// @notice Canonical role identifiers used by AccessControlFacet across the PrediX diamond.

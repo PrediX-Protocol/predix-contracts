@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {ChainlinkOracle} from "@predix/oracle/adapters/ChainlinkOracle.sol";

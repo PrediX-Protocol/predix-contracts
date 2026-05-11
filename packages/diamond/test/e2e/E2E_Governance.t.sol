@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IPrediXHook} from "@predix/hook/interfaces/IPrediXHook.sol";
 import {IPrediXHookProxy} from "@predix/hook/interfaces/IPrediXHookProxy.sol";

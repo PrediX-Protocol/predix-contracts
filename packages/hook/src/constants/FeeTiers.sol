@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title FeeTiers
 /// @notice Dynamic-fee schedule and hookData layout constants for the PrediX hook.

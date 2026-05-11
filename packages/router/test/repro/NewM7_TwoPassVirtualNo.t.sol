@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IPrediXExchangeView} from "@predix/router/interfaces/IPrediXExchangeView.sol";
 import {IPrediXRouter} from "@predix/router/interfaces/IPrediXRouter.sol";

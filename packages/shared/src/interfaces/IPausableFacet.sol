@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IPausableFacet
 /// @notice Two-level pause: a global flag that freezes everything, and per-module flags
