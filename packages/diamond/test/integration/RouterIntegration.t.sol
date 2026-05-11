@@ -167,6 +167,11 @@ contract RouterIntegrationTest is MarketFixture {
 
         // Permissionless registration (hook patch verified).
         hook.registerMarketPool(marketId, key);
+
+        // Mark pool initialized in the stub so Router._hasPool returns true.
+        bytes32 poolId = keccak256(abi.encode(key));
+        bytes32 stateSlot = keccak256(abi.encodePacked(poolId, bytes32(uint256(6))));
+        pm.setPoolSlot0(stateSlot, 79228162514264337593543950336);
     }
 
     function _approveUsdc(address who, uint256 amount, address spender) internal {
@@ -448,6 +453,16 @@ contract IntegrationPoolManager {
 
     address public hook;
     address public lastCommitUser;
+
+    mapping(bytes32 => bytes32) internal _slots;
+
+    function setPoolSlot0(bytes32 slotKey, uint160 sqrtPriceX96) external {
+        _slots[slotKey] = bytes32(uint256(sqrtPriceX96));
+    }
+
+    function extsload(bytes32 slot) external view returns (bytes32) {
+        return _slots[slot];
+    }
 
     function setHook(address h) external {
         hook = h;
