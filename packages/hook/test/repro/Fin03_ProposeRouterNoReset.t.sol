@@ -77,6 +77,7 @@ contract Fin03_ProposeRouterNoReset is Test {
         hook.proposeTrustedRouter(routerA, true);
 
         vm.warp(block.timestamp + 48 hours + 1);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
         assertTrue(hook.isTrustedRouter(routerA), "execute applied first proposal");
 

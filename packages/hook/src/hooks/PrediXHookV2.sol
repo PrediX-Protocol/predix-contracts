@@ -425,7 +425,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     }
 
     /// @inheritdoc IPrediXHook
-    function executeTrustedRouter(address router) external override {
+    function executeTrustedRouter(address router) external override onlyAdmin {
         uint256 proposedAt = _pendingRouterProposedAt[router];
         if (proposedAt == 0) revert Hook_NoPendingRouterChange();
         if (block.timestamp < proposedAt + TRUSTED_ROUTER_DELAY) {

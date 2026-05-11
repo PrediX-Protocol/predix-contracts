@@ -416,8 +416,8 @@ interface IPrediXHook {
     ///         `executeTrustedRouter` after `TRUSTED_ROUTER_DELAY` to apply.
     function proposeTrustedRouter(address router, bool trusted) external;
 
-    /// @notice Execute a pending trusted-router change after the delay.
-    ///         Permissionless — anyone can cron the execution once ready.
+    /// @notice Execute a pending trusted-router change after the delay. Admin-gated
+    ///         to prevent front-running of admin cancel transactions.
     function executeTrustedRouter(address router) external;
 
     /// @notice Cancel a pending trusted-router proposal. Admin-gated.
