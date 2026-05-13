@@ -615,7 +615,7 @@ contract PrediXHookV2Test is Test {
         _mockSlot0(poolId0, 79228162514264337593543950336); // 1<<96 → price 1.0
         BalanceDelta delta = toBalanceDelta(int128(1_000_000), int128(-2_000_000));
         vm.expectEmit(true, true, false, true);
-        emit IPrediXHook.Hook_MarketTraded(MARKET_ID, trader, false, 2_000_000, 1_000_000, FeeTiers.PRICE_UNIT);
+        emit IPrediXHook.Hook_MarketTraded(MARKET_ID, trader, false, 2_000_000, 1_000_000, FeeTiers.PRICE_UNIT, 0);
         hook.exposed_afterSwap(trader, key0, swapZeroForOne, delta, "");
     }
 
@@ -625,7 +625,7 @@ contract PrediXHookV2Test is Test {
         BalanceDelta delta = toBalanceDelta(int128(-3_000_000), int128(1_500_000));
         vm.expectEmit(true, true, false, true);
         // YES = currency1 → yesVolume = |amt1| = 1_500_000, usdcVolume = |amt0| = 3_000_000
-        emit IPrediXHook.Hook_MarketTraded(MARKET_ID + 1, trader, true, 3_000_000, 1_500_000, FeeTiers.PRICE_UNIT);
+        emit IPrediXHook.Hook_MarketTraded(MARKET_ID + 1, trader, true, 3_000_000, 1_500_000, FeeTiers.PRICE_UNIT, 0);
         hook.exposed_afterSwap(trader, key1, swapZeroForOne, delta, "");
     }
 
@@ -741,7 +741,7 @@ contract PrediXHookV2Test is Test {
 
         vm.recordLogs();
         hook.exposed_afterSwap(trader, key0, swapZeroForOne, delta, "");
-        (, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
+        (, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice,) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
         // YES = currency0 → yesVolume must be |amt0|, usdcVolume must be |amt1|
         uint256 abs0 = amt0 >= 0 ? uint256(int256(amt0)) : uint256(-int256(amt0));
         uint256 abs1 = amt1 >= 0 ? uint256(int256(amt1)) : uint256(-int256(amt1));
@@ -757,17 +757,18 @@ contract PrediXHookV2Test is Test {
         BalanceDelta delta = toBalanceDelta(int128(1), int128(-1));
         vm.recordLogs();
         hook.exposed_afterSwap(trader, key0, swapZeroForOne, delta, "");
-        (,,, uint256 yesPrice) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
+        (,,, uint256 yesPrice, uint256 noPrice) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
         assertLe(yesPrice, FeeTiers.PRICE_UNIT);
+        assertEq(noPrice, yesPrice <= FeeTiers.PRICE_UNIT ? FeeTiers.PRICE_UNIT - yesPrice : 0);
     }
 
     /// @dev Decode the non-indexed fields of `Hook_MarketTraded`:
-    ///      `(bool isBuy, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice)`.
+    ///      `(bool isBuy, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice, uint256 noPrice)`.
     function _decodeMarketTraded(bytes memory data)
         private
         pure
-        returns (bool isBuy, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice)
+        returns (bool isBuy, uint256 usdcVolume, uint256 yesVolume, uint256 yesPrice, uint256 noPrice)
     {
-        return abi.decode(data, (bool, uint256, uint256, uint256));
+        return abi.decode(data, (bool, uint256, uint256, uint256, uint256));
     }
 }

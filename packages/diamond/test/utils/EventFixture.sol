@@ -7,15 +7,18 @@ import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {EventFacet} from "@predix/diamond/facets/event/EventFacet.sol";
 
 import {MarketFixture} from "./MarketFixture.sol";
+import {MockEventOracle} from "../mocks/MockEventOracle.sol";
 
 abstract contract EventFixture is MarketFixture {
     EventFacet internal eventFacetImpl;
     IEventFacet internal eventFacet;
+    MockEventOracle internal eventOracle;
 
     function setUp() public virtual override {
         super.setUp();
 
         eventFacetImpl = new EventFacet();
+        eventOracle = new MockEventOracle();
 
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
         cuts[0] = _add(address(eventFacetImpl), _eventSelectors());
@@ -24,16 +27,21 @@ abstract contract EventFixture is MarketFixture {
         diamondCut.diamondCut(cuts, address(0), "");
 
         eventFacet = IEventFacet(address(diamond));
+
+        vm.prank(admin);
+        market.approveOracle(address(eventOracle));
     }
 
     function _eventSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](6);
+        s = new bytes4[](8);
         s[0] = IEventFacet.createEvent.selector;
         s[1] = IEventFacet.resolveEvent.selector;
-        s[2] = IEventFacet.enableEventRefundMode.selector;
-        s[3] = IEventFacet.getEvent.selector;
-        s[4] = IEventFacet.eventOfMarket.selector;
-        s[5] = IEventFacet.eventCount.selector;
+        s[2] = IEventFacet.emergencyResolveEvent.selector;
+        s[3] = IEventFacet.enableEventRefundMode.selector;
+        s[4] = IEventFacet.getEvent.selector;
+        s[5] = IEventFacet.getEventStatus.selector;
+        s[6] = IEventFacet.eventOfMarket.selector;
+        s[7] = IEventFacet.eventCount.selector;
     }
 
     function _defaultQuestions(uint256 n) internal pure returns (string[] memory qs) {
@@ -49,7 +57,7 @@ abstract contract EventFixture is MarketFixture {
     {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
-        (eventId, marketIds) = eventFacet.createEvent("Who wins?", qs, endTime);
+        (eventId, marketIds) = eventFacet.createEvent("Who wins?", qs, endTime, address(eventOracle));
     }
 
     function _createNCandidateEvent(uint256 n, uint256 endTime)
@@ -58,7 +66,7 @@ abstract contract EventFixture is MarketFixture {
     {
         string[] memory qs = _defaultQuestions(n);
         vm.prank(alice);
-        (eventId, marketIds) = eventFacet.createEvent("Event", qs, endTime);
+        (eventId, marketIds) = eventFacet.createEvent("Event", qs, endTime, address(eventOracle));
     }
 
     function _toString(uint256 v) private pure returns (string memory) {

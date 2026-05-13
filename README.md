@@ -159,13 +159,13 @@ Staging deployment of 2026-04-28, block `50514842`. All contracts verified on Un
 
 | Component | Address |
 |---|---|
-| Diamond (core) | [`0x91fA446F376e713636A29b95a02d63aE5f057dDC`](https://sepolia.uniscan.xyz/address/0x91fA446F376e713636A29b95a02d63aE5f057dDC) |
-| Exchange proxy (CLOB) | [`0x9Ecef729f80739C2451Dc56354c986041dD8070D`](https://sepolia.uniscan.xyz/address/0x9Ecef729f80739C2451Dc56354c986041dD8070D) |
-| Hook proxy | [`0x82fe732c651B9cc5c98Cee165B12FEb8a3006Ae0`](https://sepolia.uniscan.xyz/address/0x82fe732c651B9cc5c98Cee165B12FEb8a3006Ae0) |
-| Router (user-facing) | [`0xdB13bD901950F1CBa9478B9900A3B2B77C57412A`](https://sepolia.uniscan.xyz/address/0xdB13bD901950F1CBa9478B9900A3B2B77C57412A) |
-| Timelock (upgrade governance) | [`0x759143eC46131631259e8Ecc5DedeE0Fb66818A1`](https://sepolia.uniscan.xyz/address/0x759143eC46131631259e8Ecc5DedeE0Fb66818A1) (48h delay) |
-| ManualOracle | [`0x733502f3524D6610d93965d3E5D6C675DEE0b9c4`](https://sepolia.uniscan.xyz/address/0x733502f3524D6610d93965d3E5D6C675DEE0b9c4) |
-| TestUSDC (6-decimals) | [`0x2D56777Af1B52034068Af6864741a161dEE613Ac`](https://sepolia.uniscan.xyz/address/0x2D56777Af1B52034068Af6864741a161dEE613Ac) |
+| Diamond (core) | [`0x2904bca87379ff3acf3203acea54955c1898b8a3`](https://sepolia.uniscan.xyz/address/0x2904bca87379ff3acf3203acea54955c1898b8a3) |
+| Exchange proxy (CLOB) | [`0x82159e6605621611ebfcfd81cb7bf22db7e5a0d3`](https://sepolia.uniscan.xyz/address/0x82159e6605621611ebfcfd81cb7bf22db7e5a0d3) |
+| Hook proxy | [`0x861e5140b6ce266f9f46a9ef90951b9d83452ae0`](https://sepolia.uniscan.xyz/address/0x861e5140b6ce266f9f46a9ef90951b9d83452ae0) |
+| Router (user-facing) | [`0xb88c45b0f76c7ddab49d1d0733807f2b847a7caa`](https://sepolia.uniscan.xyz/address/0xb88c45b0f76c7ddab49d1d0733807f2b847a7caa) |
+| Timelock (upgrade governance) | [`0x48ad90990a1ae213e3510376f13b8d2d65ae8a40`](https://sepolia.uniscan.xyz/address/0x48ad90990a1ae213e3510376f13b8d2d65ae8a40) (48h delay) |
+| ManualOracle | [`0xfcadc037237e66a38733ab0b71d057b7171f6a66`](https://sepolia.uniscan.xyz/address/0xfcadc037237e66a38733ab0b71d057b7171f6a66) |
+| TestUSDC (6-decimals) | [`0x5a9153c368946b5b252c32921ebb3c16c692d7d4`](https://sepolia.uniscan.xyz/address/0x5a9153c368946b5b252c32921ebb3c16c692d7d4) |
 
 Diamond facet breakdown and external pins (Uniswap v4 `PoolManager`, `V4Quoter`, canonical `Permit2`) are in the environment template and in the on-chain `DiamondLoupeFacet.facets()` view.
 
@@ -200,7 +200,7 @@ PrediX is designed to be integrated, not wrapped. The router exposes four exact-
 // One-signature buy: spend 100 USDC, get at least 230 YES on market 42.
 // Router splits the fill across CLOB and AMM in a single transaction.
 
-IPrediXRouter router = IPrediXRouter(0xdB13bD901950F1CBa9478B9900A3B2B77C57412A);
+IPrediXRouter router = IPrediXRouter(0xb88c45b0f76c7ddab49d1d0733807f2b847a7caa);
 
 (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) = router.buyYesWithPermit({
     marketId:     42,

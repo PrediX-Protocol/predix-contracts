@@ -28,7 +28,7 @@ contract EventFacetTest is EventFixture {
         qs[0] = "A wins";
         qs[1] = "B wins";
         vm.prank(alice);
-        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("AvB", qs, endTime);
+        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("AvB", qs, endTime, address(eventOracle));
 
         assertEq(eventId, 1);
         assertEq(marketIds.length, 2);
@@ -38,6 +38,7 @@ contract EventFacetTest is EventFixture {
         assertEq(e.creator, alice);
         assertFalse(e.isResolved);
         assertFalse(e.refundModeActive);
+        assertEq(e.oracle, address(eventOracle));
         assertEq(e.marketIds.length, 2);
         assertEq(e.marketIds[0], marketIds[0]);
         assertEq(e.marketIds[1], marketIds[1]);
@@ -75,7 +76,7 @@ contract EventFacetTest is EventFixture {
         }
 
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
         assertEq(eventFacet.eventCount(), 1);
     }
 
@@ -113,35 +114,35 @@ contract EventFacetTest is EventFixture {
         string[] memory qs = _defaultQuestions(2);
         vm.expectRevert(IEventFacet.Event_EmptyName.selector);
         vm.prank(alice);
-        eventFacet.createEvent("", qs, endTime);
+        eventFacet.createEvent("", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateEvent_PastEndTime() public {
         string[] memory qs = _defaultQuestions(2);
         vm.expectRevert(IEventFacet.Event_InvalidEndTime.selector);
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, block.timestamp);
+        eventFacet.createEvent("E", qs, block.timestamp, address(eventOracle));
     }
 
     function test_Revert_CreateEvent_TooFew_Zero() public {
         string[] memory qs = new string[](0);
         vm.expectRevert(IEventFacet.Event_TooFewCandidates.selector);
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateEvent_TooFew_One() public {
         string[] memory qs = _defaultQuestions(1);
         vm.expectRevert(IEventFacet.Event_TooFewCandidates.selector);
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateEvent_TooMany() public {
         string[] memory qs = _defaultQuestions(51);
         vm.expectRevert(IEventFacet.Event_TooManyCandidates.selector);
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateEvent_EmptyCandidateQuestion() public {
@@ -149,7 +150,7 @@ contract EventFacetTest is EventFixture {
         qs[2] = "";
         vm.expectRevert(IMarketFacet.Market_EmptyQuestion.selector);
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
 
         // No partial state should have been written.
         assertEq(eventFacet.eventCount(), 0);
@@ -163,7 +164,21 @@ contract EventFacetTest is EventFixture {
         string[] memory qs = _defaultQuestions(2);
         vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
         vm.prank(alice);
-        eventFacet.createEvent("E", qs, endTime);
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
+    }
+
+    function test_Revert_CreateEvent_ZeroOracle() public {
+        string[] memory qs = _defaultQuestions(2);
+        vm.expectRevert(IEventFacet.Event_ZeroOracle.selector);
+        vm.prank(alice);
+        eventFacet.createEvent("E", qs, endTime, address(0));
+    }
+
+    function test_Revert_CreateEvent_OracleNotApproved() public {
+        string[] memory qs = _defaultQuestions(2);
+        vm.expectRevert(IEventFacet.Event_OracleNotApproved.selector);
+        vm.prank(alice);
+        eventFacet.createEvent("E", qs, endTime, makeAddr("unapproved"));
     }
 
     // -----------------------------------------------------------------------
@@ -172,8 +187,8 @@ contract EventFacetTest is EventFixture {
 
     function _resolveAt(uint256 eventId, uint256 winningIndex) internal {
         vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.resolveEvent(eventId, winningIndex);
+        eventOracle.setEventResolution(eventId, winningIndex);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_ResolveEvent_WinnerFirst() public {
@@ -203,16 +218,16 @@ contract EventFacetTest is EventFixture {
     function test_ResolveEvent_EmitsEventResolved_AndOneMarketResolvedPerChild() public {
         (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         vm.warp(endTime + 1);
+        eventOracle.setEventResolution(eventId, 0);
 
         for (uint256 i; i < marketIds.length; ++i) {
             vm.expectEmit(true, true, true, true, address(diamond));
-            emit IMarketFacet.MarketResolved(marketIds[i], i == 0, admin);
+            emit IMarketFacet.MarketResolved(marketIds[i], i == 0, address(this));
         }
         vm.expectEmit(true, true, true, true, address(diamond));
-        emit IEventFacet.EventResolved(eventId, 0, admin);
+        emit IEventFacet.EventResolved(eventId, 0, address(this));
 
-        vm.prank(admin);
-        eventFacet.resolveEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_ResolveEvent_SetsAllChildrenOutcomes() public {
@@ -240,43 +255,48 @@ contract EventFacetTest is EventFixture {
     // resolveEvent — reverts
     // -----------------------------------------------------------------------
 
-    function test_Revert_ResolveEvent_NotOperator() public {
+    function test_Revert_ResolveEvent_OracleNotResolved() public {
         (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         vm.warp(endTime + 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControlFacet.AccessControl_MissingRole.selector, Roles.OPERATOR_ROLE, alice)
-        );
-        vm.prank(alice);
-        eventFacet.resolveEvent(eventId, 0);
+        vm.expectRevert(IEventFacet.Event_OracleNotResolved.selector);
+        eventFacet.resolveEvent(eventId);
+    }
+
+    function test_Revert_ResolveEvent_OracleNotApproved() public {
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
+        vm.warp(endTime + 1);
+        eventOracle.setEventResolution(eventId, 0);
+        vm.prank(admin);
+        market.revokeOracle(address(eventOracle));
+        vm.expectRevert(IEventFacet.Event_OracleNotApproved.selector);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_Revert_ResolveEvent_NotFound() public {
-        vm.prank(admin);
         vm.expectRevert(IEventFacet.Event_NotFound.selector);
-        eventFacet.resolveEvent(999, 0);
+        eventFacet.resolveEvent(999);
     }
 
     function test_Revert_ResolveEvent_AlreadyResolved() public {
         (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         _resolveAt(eventId, 0);
-        vm.prank(admin);
         vm.expectRevert(IEventFacet.Event_AlreadyResolved.selector);
-        eventFacet.resolveEvent(eventId, 1);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_Revert_ResolveEvent_NotEnded() public {
         (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        vm.prank(admin);
+        eventOracle.setEventResolution(eventId, 0);
         vm.expectRevert(IEventFacet.Event_NotEnded.selector);
-        eventFacet.resolveEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_Revert_ResolveEvent_InvalidWinningIndex() public {
         (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         vm.warp(endTime + 1);
-        vm.prank(admin);
+        eventOracle.setEventResolution(eventId, 3);
         vm.expectRevert(IEventFacet.Event_InvalidWinningIndex.selector);
-        eventFacet.resolveEvent(eventId, 3);
+        eventFacet.resolveEvent(eventId);
     }
 
     function test_Revert_ResolveEvent_RefundModeActive() public {
@@ -285,9 +305,9 @@ contract EventFacetTest is EventFixture {
         vm.prank(admin);
         eventFacet.enableEventRefundMode(eventId);
 
-        vm.prank(admin);
+        eventOracle.setEventResolution(eventId, 0);
         vm.expectRevert(IEventFacet.Event_RefundModeActive.selector);
-        eventFacet.resolveEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
     }
 
     // -----------------------------------------------------------------------
@@ -467,6 +487,7 @@ contract EventFacetTest is EventFixture {
         assertEq(e.marketIds.length, marketIds.length);
         assertEq(e.endTime, endTime);
         assertEq(e.creator, alice);
+        assertEq(e.oracle, address(eventOracle));
         assertFalse(e.isResolved);
     }
 
@@ -517,10 +538,10 @@ contract EventFacetTest is EventFixture {
     function test_Revert_ResolveEvent_WhenPaused() public {
         (uint256 eventId,) = _createNCandidateEvent(2, endTime);
         vm.warp(endTime + 1);
+        eventOracle.setEventResolution(eventId, 0);
         vm.prank(admin);
         pausable.pauseModule(Modules.MARKET);
         vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
-        vm.prank(admin);
-        eventFacet.resolveEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
     }
 }

@@ -101,9 +101,9 @@ contract SeedFirstMarket is Script {
     function _loadEnv() internal view returns (Env memory e) {
         e.pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
         e.deployer = vm.addr(e.pk);
-        e.diamond = vm.envAddress("NEW_DIAMOND");
-        e.hook = vm.envAddress("NEW_HOOK_PROXY");
-        e.manualOracle = vm.envAddress("NEW_MANUAL_ORACLE");
+        e.diamond = vm.envAddress("DIAMOND_ADDRESS");
+        e.hook = vm.envAddress("HOOK_PROXY_ADDRESS");
+        e.manualOracle = vm.envAddress("MANUAL_ORACLE_ADDRESS");
         e.usdc = vm.envAddress("USDC_ADDRESS");
         e.poolManager = vm.envAddress("POOL_MANAGER_ADDRESS");
         e.permit2 = vm.envAddress("PERMIT2_ADDRESS");

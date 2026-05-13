@@ -100,7 +100,7 @@ contract PrediXMarketFactoryTest is Test {
 
         vm.prank(nobody);
         vm.expectRevert(PrediXMarketFactory.NotCreator.selector);
-        factory.createEventWithPools("event", qs, block.timestamp + 1 days, 1e9, 1e12);
+        factory.createEventWithPools("event", qs, block.timestamp + 1 days, address(1), 1e9, 1e12);
     }
 
     function test_Revert_addLiquidity_NotCreator() public {

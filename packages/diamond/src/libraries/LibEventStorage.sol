@@ -19,6 +19,7 @@ library LibEventStorage {
         uint256 winningIndex;
         bool isResolved;
         bool refundModeActive;
+        address oracle; // v1.1 — append-only
     }
 
     struct Layout {

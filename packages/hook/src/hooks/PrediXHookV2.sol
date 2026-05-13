@@ -796,8 +796,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         address trader = _resolveIdentity(sender, poolId);
         bool isBuy = yesIsCurrency0 ? !params.zeroForOne : params.zeroForOne;
         uint256 yesPrice = _sqrtPriceToYesPrice(sqrtPriceX96, yesIsCurrency0);
+        uint256 noPrice = yesPrice <= FeeTiers.PRICE_UNIT ? FeeTiers.PRICE_UNIT - yesPrice : 0;
 
-        emit Hook_MarketTraded(marketId, trader, isBuy, usdcVolume, yesVolume, yesPrice);
+        emit Hook_MarketTraded(marketId, trader, isBuy, usdcVolume, yesVolume, yesPrice, noPrice);
 
         if (hookData.length >= FeeTiers.HOOKDATA_REFERRER_END) {
             address referrer = address(bytes20(hookData[0:FeeTiers.HOOKDATA_REFERRER_END]));

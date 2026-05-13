@@ -339,7 +339,8 @@ contract E2E_Permit2Remaining is E2EForkBase {
         }
 
         vm.prank(alice);
-        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("Max50", questions, block.timestamp + 7 days);
+        (uint256 eventId, uint256[] memory marketIds) =
+            eventFacet.createEvent("Max50", questions, block.timestamp + 7 days, MANUAL_ORACLE);
 
         assertGt(eventId, 0);
         assertEq(marketIds.length, 50);
@@ -354,7 +355,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_TooManyCandidates.selector);
-        eventFacet.createEvent("Over51", questions, block.timestamp + 7 days);
+        eventFacet.createEvent("Over51", questions, block.timestamp + 7 days, MANUAL_ORACLE);
     }
 
     // ================================================================

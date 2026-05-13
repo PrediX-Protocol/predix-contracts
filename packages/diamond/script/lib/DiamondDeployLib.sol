@@ -230,12 +230,15 @@ library DiamondDeployLib {
     }
 
     function _eventSelectors() private pure returns (bytes4[] memory s) {
-        s = new bytes4[](6);
+        s = new bytes4[](9);
         s[0] = IEventFacet.createEvent.selector;
         s[1] = IEventFacet.resolveEvent.selector;
         s[2] = IEventFacet.enableEventRefundMode.selector;
         s[3] = IEventFacet.getEvent.selector;
         s[4] = IEventFacet.eventOfMarket.selector;
         s[5] = IEventFacet.eventCount.selector;
+        s[6] = IEventFacet.emergencyResolveEvent.selector;
+        s[7] = IEventFacet.getEventStatus.selector;
+        s[8] = IEventFacet.sweepUnclaimedEvent.selector;
     }
 }

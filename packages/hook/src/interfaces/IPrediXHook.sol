@@ -91,15 +91,17 @@ interface IPrediXHook {
     );
 
     /// @notice Emitted for every swap settled by the hook. `usdcVolume` is measured on the
-    ///         quote leg. Off-chain indexers reconstruct
-    ///         per-market totals from this stream.
+    ///         quote leg, `yesPrice` is the post-swap YES/USDC rate in 1e6 pips, and
+    ///         `noPrice` is the complementary NO price (`PRICE_UNIT - yesPrice`).
+    ///         Off-chain indexers reconstruct per-market totals from this stream.
     event Hook_MarketTraded(
         uint256 indexed marketId,
         address indexed trader,
         bool isBuy,
         uint256 usdcVolume,
         uint256 yesVolume,
-        uint256 yesPrice
+        uint256 yesPrice,
+        uint256 noPrice
     );
 
     /// @notice Emitted when a swap carries a non-zero referrer in its hookData prefix.

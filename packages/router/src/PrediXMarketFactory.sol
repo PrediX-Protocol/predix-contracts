@@ -59,7 +59,9 @@ contract PrediXMarketFactory {
     }
 
     event MarketCreatedWithPool(uint256 indexed marketId, uint256 liquidityDelta, address indexed creator);
-    event EventCreatedWithPools(uint256 indexed eventId, uint256[] marketIds, uint256 liquidityDelta, address indexed creator);
+    event EventCreatedWithPools(
+        uint256 indexed eventId, uint256[] marketIds, uint256 liquidityDelta, address indexed creator
+    );
     event LiquidityAdded(uint256 indexed marketId, uint256 liquidityDelta, address indexed provider);
 
     constructor(
@@ -112,6 +114,7 @@ contract PrediXMarketFactory {
     /// @param name             Event name.
     /// @param candidateQuestions  Question strings for each child market.
     /// @param endTime          Shared deadline for all children.
+    /// @param oracle           Oracle contract (must be approved on Diamond).
     /// @param liquidityDelta   Liquidity units per child pool.
     /// @param usdcBudget       Max USDC the caller allows (for all children combined).
     /// @return eventId   The on-chain event ID.
@@ -120,12 +123,13 @@ contract PrediXMarketFactory {
         string calldata name,
         string[] calldata candidateQuestions,
         uint256 endTime,
+        address oracle,
         uint256 liquidityDelta,
         uint256 usdcBudget
     ) external onlyCreator returns (uint256 eventId, uint256[] memory marketIds) {
         usdc.safeTransferFrom(msg.sender, address(this), usdcBudget);
 
-        (eventId, marketIds) = IEventFacet(diamond).createEvent(name, candidateQuestions, endTime);
+        (eventId, marketIds) = IEventFacet(diamond).createEvent(name, candidateQuestions, endTime, oracle);
 
         uint256 perChild = usdc.balanceOf(address(this)) / marketIds.length;
         for (uint256 i; i < marketIds.length; ++i) {
@@ -174,7 +178,9 @@ contract PrediXMarketFactory {
         poolManager.initialize(key, sqrtPrice);
     }
 
-    function _splitAndAddLiquidity(uint256 marketId, address yesToken, uint256 liquidityDelta, uint256 budget) internal {
+    function _splitAndAddLiquidity(uint256 marketId, address yesToken, uint256 liquidityDelta, uint256 budget)
+        internal
+    {
         // Full-range LP at midpoint needs ~2/3 YES and ~1/3 USDC.
         // Split 75% of budget to YES+NO, keep 25% as USDC for LP.
         uint256 splitAmount = (budget * 3) / 4;
@@ -199,13 +205,7 @@ contract PrediXMarketFactory {
         (Currency c0, Currency c1) = quote < yesToken
             ? (Currency.wrap(quote), Currency.wrap(yesToken))
             : (Currency.wrap(yesToken), Currency.wrap(quote));
-        key = PoolKey({
-            currency0: c0,
-            currency1: c1,
-            fee: lpFeeFlag,
-            tickSpacing: tickSpacing,
-            hooks: IHooks(hook)
-        });
+        key = PoolKey({currency0: c0, currency1: c1, fee: lpFeeFlag, tickSpacing: tickSpacing, hooks: IHooks(hook)});
     }
 
     function _refundAll(address yesToken, address noToken) internal {

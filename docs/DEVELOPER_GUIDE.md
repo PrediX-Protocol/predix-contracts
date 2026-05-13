@@ -433,12 +433,12 @@ contract OutcomeToken is ERC20, ERC20Permit {
 
 | Contract | Address | Type |
 |---|---|---|
-| Diamond | `0x91fA446F376e713636A29b95a02d63aE5f057dDC` | EIP-2535 proxy |
-| Hook | `0x82fe732c651B9cc5c98Cee165B12FEb8a3006Ae0` | ERC-1967 proxy (salt-mined) |
-| Exchange | `0x9Ecef729f80739C2451Dc56354c986041dD8070D` | ERC-1967 proxy |
-| Router | `0x33e7DEFD413125A0033355F8Cc931966c8aD1566` | Stateless |
-| MarketFactory | `0xdaD4EA7072c88Fa6e8E7689845a63F38d64622cd` | Stateless |
-| ManualOracle | `0x733502f3524D6610d93965d3E5D6C675DEE0b9c4` | Standalone |
-| Timelock | `0x759143eC46131631259e8Ecc5DedeE0Fb66818A1` | TimelockController |
-| USDC | `0x2D56777Af1B52034068Af6864741a161dEE613Ac` | TestUSDC |
-| Faucet | `0x2BA626ff0840d3a77fe321fa2fa59FD652F2c9E7` | FaucetRelayedV2 |
+| Diamond | `0x2904bca87379ff3acf3203acea54955c1898b8a3` | EIP-2535 proxy |
+| Hook | `0x861e5140b6ce266f9f46a9ef90951b9d83452ae0` | ERC-1967 proxy (salt-mined) |
+| Exchange | `0x82159e6605621611ebfcfd81cb7bf22db7e5a0d3` | ERC-1967 proxy |
+| Router | `0xb88c45b0f76c7ddab49d1d0733807f2b847a7caa` | Stateless |
+| MarketFactory | `0xbcebeb35cbf73ba1ff5da96417670dcd51f66293` | Stateless |
+| ManualOracle | `0xfcadc037237e66a38733ab0b71d057b7171f6a66` | Standalone |
+| Timelock | `0x48ad90990a1ae213e3510376f13b8d2d65ae8a40` | TimelockController |
+| USDC | `0x5a9153c368946b5b252c32921ebb3c16c692d7d4` | TestUSDC |
+| Faucet | `0x76c951b6185a2b44e44c98e7a0e9ee59b08760da` | FaucetRelayedV2 |
