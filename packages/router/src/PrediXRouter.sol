@@ -89,6 +89,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Price precision used by the CLOB and by the AMM fee math (1e6 = 100%).
     uint256 internal constant PRICE_PRECISION = 1e6;
 
+    /// @notice Canonical Permit2 deployment address. Deterministic across every EVM
+    ///         chain via the deployer pattern documented in the Uniswap Permit2 repo.
+    ///         Exposed as a constant so off-chain tooling and the deploy verifier can
+    ///         assert the router was wired to the real Permit2 in production.
+    address public constant CANONICAL_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
     // =========================================================================
     // Immutables
     // =========================================================================
@@ -153,6 +159,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             address(_poolManager) == address(0) || _diamond == address(0) || _usdc == address(0) || _hook == address(0)
                 || _exchange == address(0) || address(_quoter) == address(0) || address(_permit2) == address(0)
         ) revert ZeroAddress();
+
+        // Catch the obvious "deployer pointed at an EOA" typo. The audited
+        // canonical Permit2 lives at `CANONICAL_PERMIT2`, but test fixtures
+        // and pre-canonical-deployment chains may legitimately wire a fresh
+        // Permit2 — enforcing the canonical address here would break those
+        // paths. Verifying that the target has contract code is the minimum
+        // viable check; deploy-time `verifyPostDeploy` should additionally
+        // assert `address(permit2) == CANONICAL_PERMIT2` for mainnet.
+        if (address(_permit2).code.length == 0) revert Permit2NotAContract();
 
         poolManager = _poolManager;
         diamond = _diamond;

@@ -84,6 +84,18 @@ interface IPrediXRouter {
     ///         matching the exact `amountIn`.
     error InvalidPermitAmount();
 
+    /// @notice Thrown when the address passed as `_permit2` does not host any
+    ///         contract code at construction time. Catches the obvious
+    ///         deployer typo before any user funds can be lost.
+    error Permit2NotAContract();
+
+    /// @notice Thrown when `permitSingle.spender` is not the router itself.
+    ///         A permit signed with a different spender cannot be consumed
+    ///         here; reject upfront with a clear error rather than letting
+    ///         the downstream `transferFrom` revert with an opaque allowance
+    ///         failure.
+    error InvalidPermitSpender();
+
     /// @notice Defensive invariant: the router's balance of a token MUST be zero after a call
     ///         settles. A non-zero residue means accounting drifted — revert hard instead of
     ///         silently stranding the dust.
