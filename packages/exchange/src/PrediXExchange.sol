@@ -36,6 +36,7 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     error ExchangePaused();
     error OnlyPauser();
+    error OnlyAdmin();
     error Exchange_AlreadyInitialized();
 
     event Paused(address indexed account);
@@ -51,6 +52,13 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     modifier onlyPauser() {
         if (!IAccessControlFacet(diamond).hasRole(Roles.PAUSER_ROLE, msg.sender)) {
             revert OnlyPauser();
+        }
+        _;
+    }
+
+    modifier onlyAdmin() {
+        if (!IAccessControlFacet(diamond).hasRole(Roles.ADMIN_ROLE, msg.sender)) {
+            revert OnlyAdmin();
         }
         _;
     }
@@ -88,7 +96,7 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     /// @notice Update the fee recipient address. Gated by diamond's ADMIN_ROLE.
     ///         Enables migration to a FeeController contract without redeploying.
-    function setFeeRecipient(address _feeRecipient) external onlyPauser {
+    function setFeeRecipient(address _feeRecipient) external onlyAdmin {
         if (_feeRecipient == address(0)) revert ZeroAddress();
         address previous = feeRecipient;
         feeRecipient = _feeRecipient;
