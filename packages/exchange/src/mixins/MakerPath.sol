@@ -256,13 +256,22 @@ abstract contract MakerPath is ExchangeStorage {
 
             // Dust filter: if `fillAmt * makerPrice` floors to 0, executing this
             // fill would transfer tokens on one leg for 0 USDC consideration — a
-            // silent wealth transfer. Skip the maker atomically without ANY state
-            // mutation so `cost` / `filled` stay accurate and the phase-A loop
-            // advances cleanly.
+            // silent wealth transfer. Differentiate two cases:
+            //   Type A — maker is STRUCTURAL dust: `makerRemaining * price / 1e6 == 0`.
+            //            Force-clean (mirrors TakerPath behaviour). The dust order
+            //            cannot fill at any future fill amount, so leaving it in the
+            //            queue would gas-burn every subsequent placeOrder against
+            //            this price level.
+            //   Type B — placer's `newRemaining` is sub-tick at this price but the
+            //            maker is fine at its own scale. Break the inner loop without
+            //            mutating either order so `filled` stays accurate.
             uint256 usdcAmt = (fillAmt * makerPrice) / PRICE_PRECISION;
             if (usdcAmt == 0) {
-                i++;
-                continue;
+                if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
+                    _forceCleanDustMaker(ctx.marketId, makerOrderId, makerPrice);
+                    continue; // queue length shrunk; re-read at index `i`
+                }
+                break;
             }
 
             // Effects on both order ledgers BEFORE any external transfer (CEI).

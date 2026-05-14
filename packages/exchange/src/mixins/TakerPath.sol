@@ -382,42 +382,7 @@ abstract contract TakerPath is ExchangeStorage {
         return ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken;
     }
 
-    /// @dev Force-clean a dust maker order whose remaining capacity is too small to
-    ///      produce a non-zero fill. Marks the order fully-filled, drops it from the
-    ///      queue/bitmap via `_onMakerFullyFilled`, and sweeps residual `depositLocked`
-    ///      to `feeRecipient`. This keeps the orderbook live and dis-incentivises
-    ///      dust-griefing.
-    function _forceCleanDustMaker(uint256 marketId, bytes32 dustOrderId, uint256 makerPrice) internal {
-        IPrediXExchange.Order storage dust = orders[dustOrderId];
-        IPrediXExchange.Side dustSide = dust.side;
-        address dustOwner = dust.owner;
-        uint8 priceIdx = _priceToIndex(makerPrice);
-        // Mark order fully-filled so subsequent peeks skip it. `filled = amount`
-        // is the canonical terminal-state marker.
-        dust.filled = uint128(dust.amount);
-        // `_onMakerFullyFilled` handles BUY-residual sweep + queue/bitmap
-        // cleanup + per-user count decrement. For SELL orders the residual
-        // (in tokens) is left in `depositLocked`; sweep the token residual
-        // to feeRecipient explicitly because `_onMakerFullyFilled`'s sweep
-        // path only covers the USDC (BUY) leg.
-        if (dustSide == IPrediXExchange.Side.SELL_YES || dustSide == IPrediXExchange.Side.SELL_NO) {
-            uint128 tokenResidual = dust.depositLocked;
-            if (tokenResidual > 0) {
-                dust.depositLocked = 0;
-                address tokenAddr =
-                    dustSide == IPrediXExchange.Side.SELL_YES ? _yesTokenFor(marketId) : _noTokenFor(marketId);
-                IERC20(tokenAddr).safeTransfer(feeRecipient, uint256(tokenResidual));
-                emit IPrediXExchange.FeeCollected(marketId, uint256(tokenResidual));
-            }
-        }
-        _onMakerFullyFilled(marketId, dustSide, priceIdx, dustOrderId, dustOwner);
-    }
-
-    function _yesTokenFor(uint256 marketId) private view returns (address) {
-        return IMarketFacet(diamond).getMarket(marketId).yesToken;
-    }
-
-    function _noTokenFor(uint256 marketId) private view returns (address) {
-        return IMarketFacet(diamond).getMarket(marketId).noToken;
-    }
+    // `_forceCleanDustMaker` + `_yesTokenFor` / `_noTokenFor` were moved up to
+    // `ExchangeStorage` so `MakerPath` can also reach them when force-cleaning
+    // structural dust during maker-vs-maker matching (M-04).
 }
