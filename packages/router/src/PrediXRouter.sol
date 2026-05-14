@@ -160,6 +160,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
                 || _exchange == address(0) || address(_quoter) == address(0) || address(_permit2) == address(0)
         ) revert ZeroAddress();
 
+        // Canonical pool shape: the hook's `registerMarketPool` rejects
+        // non-canonical fee / tickSpacing. Catching zero here at construction
+        // gives a louder, earlier failure than a confusing pool-registration
+        // revert later. The hook's own constructor applies the same checks.
+        if (_lpFeeFlag == 0) revert InvalidLpFeeFlag();
+        if (_tickSpacing == 0) revert InvalidTickSpacing();
+
         // Catch the obvious "deployer pointed at an EOA" typo. The audited
         // canonical Permit2 lives at `CANONICAL_PERMIT2`, but test fixtures
         // and pre-canonical-deployment chains may legitimately wire a fresh

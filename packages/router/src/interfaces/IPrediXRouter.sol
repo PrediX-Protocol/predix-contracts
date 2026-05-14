@@ -30,6 +30,18 @@ interface IPrediXRouter {
     /// @notice Thrown when any constructor argument is the zero address.
     error ZeroAddress();
 
+    /// @notice Thrown when the router is constructed with `_lpFeeFlag == 0`.
+    ///         The canonical PrediX pool shape uses the v4 dynamic-fee flag;
+    ///         a zero value would silently route the hook's per-swap fee
+    ///         override into a no-op and break the time-decaying fee logic.
+    error InvalidLpFeeFlag();
+
+    /// @notice Thrown when the router is constructed with `_tickSpacing == 0`.
+    ///         Pool registration on the hook rejects non-canonical tick
+    ///         spacing; failing here at construction surfaces the deploy
+    ///         misconfiguration before any user can attempt a swap.
+    error InvalidTickSpacing();
+
     /// @notice Thrown when the user supplies a zero or below-minimum input amount.
     error ZeroAmount();
 

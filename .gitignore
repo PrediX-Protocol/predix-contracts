@@ -96,3 +96,9 @@ packages/*/.gas-snapshot
 
 # ---------- Internal specs (agent prompts, not published) ----------
 specs/
+
+# ---------- Local audit helpers (per-developer scripts + logs) ----------
+audit-tests.command
+audit-tests.sh
+audit-tests.log
+run-audit-tests.sh

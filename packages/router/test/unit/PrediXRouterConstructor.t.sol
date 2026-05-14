@@ -91,4 +91,34 @@ contract PrediXRouterConstructorTest is Test {
             0x000000000022D473030F116dDEE9F6B43aC78BA3
         );
     }
+
+    function test_Revert_Constructor_ZeroLpFeeFlag() public {
+        vm.expectRevert(IPrediXRouter.InvalidLpFeeFlag.selector);
+        new PrediXRouter(
+            IPoolManager(address(poolManager)),
+            address(diamond),
+            address(usdc),
+            address(hook),
+            address(exchange),
+            IV4Quoter(address(quoter)),
+            IAllowanceTransfer(address(permit2)),
+            0, // canonical pool shape requires the v4 dynamic-fee flag
+            TICK_SPACING
+        );
+    }
+
+    function test_Revert_Constructor_ZeroTickSpacing() public {
+        vm.expectRevert(IPrediXRouter.InvalidTickSpacing.selector);
+        new PrediXRouter(
+            IPoolManager(address(poolManager)),
+            address(diamond),
+            address(usdc),
+            address(hook),
+            address(exchange),
+            IV4Quoter(address(quoter)),
+            IAllowanceTransfer(address(permit2)),
+            LP_FEE_FLAG,
+            0
+        );
+    }
 }
