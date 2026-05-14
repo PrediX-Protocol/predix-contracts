@@ -113,4 +113,27 @@ contract PrediXRouter_Permit2 is RouterFixture {
         router.sellYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
         assertEq(usdc.balanceOf(alice), aliceUsdcBefore + 60e6);
     }
+
+    function test_Revert_Permit2_SpenderMismatch() public {
+        // Permit signed with spender = some attacker address rather than the
+        // router. The router's `_consumePermit` rejects upfront with
+        // `InvalidPermitSpender` instead of letting the downstream
+        // `transferFrom` fail with an opaque allowance error.
+        vm.prank(alice);
+        usdc.approve(address(permit2), type(uint256).max);
+
+        IAllowanceTransfer.PermitSingle memory p = IAllowanceTransfer.PermitSingle({
+            details: IAllowanceTransfer.PermitDetails({
+                token: address(usdc),
+                amount: uint160(100e6),
+                expiration: uint48(block.timestamp + 1 hours),
+                nonce: 0
+            }),
+            spender: makeAddr("attacker"),
+            sigDeadline: block.timestamp + 1 hours
+        });
+        vm.prank(alice);
+        vm.expectRevert(IPrediXRouter.InvalidPermitSpender.selector);
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+    }
 }

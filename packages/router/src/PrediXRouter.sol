@@ -1032,6 +1032,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint160 amount,
         address token
     ) internal {
+        // Reject permits signed for a different spender BEFORE touching Permit2.
+        // Without this check the downstream `transferFrom` would revert deep
+        // inside Permit2 with an opaque allowance error — fail here with a
+        // selector tooling can pattern-match on.
+        if (permitSingle.spender != address(this)) revert InvalidPermitSpender();
         if (permitSingle.details.token != token) revert InvalidPermitToken();
         if (permitSingle.details.amount != amount) revert InvalidPermitAmount();
         permit2.permit(msg.sender, permitSingle, signature);
