@@ -184,11 +184,18 @@ contract PrediXMarketFactory {
         // Full-range LP at midpoint needs ~2/3 YES and ~1/3 USDC.
         // Split 75% of budget to YES+NO, keep 25% as USDC for LP.
         uint256 splitAmount = (budget * 3) / 4;
+        uint256 usdcForLp = budget - splitAmount;
         usdc.forceApprove(diamond, splitAmount);
         IMarketFacet(diamond).splitPosition(marketId, splitAmount);
 
-        IERC20(yesToken).forceApprove(address(lpTest), type(uint256).max);
-        usdc.forceApprove(address(lpTest), type(uint256).max);
+        // Bound the lpTest allowance to the maximum each token the factory could
+        // legitimately hand it for this call, and zero it out after settlement.
+        // The factory holds zero funds between calls, but a standing `max`
+        // allowance survives upgrades of `lpTest` and would let a future
+        // compromised liquidity router pull whatever USDC + outcome tokens the
+        // factory accumulates mid-call. Scoping closes that window.
+        IERC20(yesToken).forceApprove(address(lpTest), splitAmount);
+        usdc.forceApprove(address(lpTest), usdcForLp);
 
         PoolKey memory key = _buildPoolKey(yesToken);
         ModifyLiquidityParams memory params = ModifyLiquidityParams({
@@ -198,6 +205,9 @@ contract PrediXMarketFactory {
             salt: bytes32(0)
         });
         lpTest.modifyLiquidity(key, params, "");
+
+        IERC20(yesToken).forceApprove(address(lpTest), 0);
+        usdc.forceApprove(address(lpTest), 0);
     }
 
     function _buildPoolKey(address yesToken) internal view returns (PoolKey memory key) {
