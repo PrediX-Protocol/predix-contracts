@@ -21,7 +21,7 @@ Router (stateless, điều phối CLOB + AMM)
         └── Oracle (báo kết quả: Manual hoặc Chainlink)
 ```
 
-7 packages, tất cả Solidity 0.8.30:
+7 packages, tất cả Solidity 0.8.34:
 
 | Package | Vai trò | Proxy? |
 |---|---|---|

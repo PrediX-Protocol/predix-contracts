@@ -226,7 +226,7 @@ Full interface surface: [`packages/router/src/interfaces/IPrediXRouter.sol`](pac
 ## Tech stack
 
 - **Foundry** (forge 1.5+), `via_ir = true`, `optimizer_runs = 200`, `bytecode_hash = "none"`
-- **Solidity** `0.8.30` pinned, EVM target `cancun` (EIP-1153 transient storage required)
+- **Solidity** `0.8.34` pinned, EVM target `cancun` (EIP-1153 transient storage required)
 - **Uniswap v4** — `v4-core`, `v4-periphery`, OpenZeppelin `uniswap-hooks`
 - **OpenZeppelin Contracts** — ERC20, ERC20Permit, SafeERC20, AccessControl, ERC1967 proxy, TimelockController
 - **Chainlink** — `AggregatorV3Interface`, L2 sequencer uptime feed
@@ -270,7 +270,7 @@ Full engagement brief for the external auditor is available upon request. See [`
 .
 ├── lib/                  # forge submodules (v4-core, v4-periphery, openzeppelin, chainlink, ...)
 ├── Makefile              # monorepo build/test aggregator
-├── foundry.toml          # shared Solidity 0.8.30 / cancun / via_ir defaults
+├── foundry.toml          # shared Solidity 0.8.34 / cancun / via_ir defaults
 ├── .env.example          # environment template
 ├── scripts/testnet/      # shell wrappers for testnet bootstrap and validation
 ├── docs/                 # production docs (IR plan, key policy, deployment checklist)

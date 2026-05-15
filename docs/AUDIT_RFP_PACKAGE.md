@@ -25,7 +25,7 @@ Users deposit USDC, receive a pair of YES/NO ERC-20 outcome tokens that redeem 1
 | **shared** | ~700 | Cross-package interfaces, `OutcomeToken` (ERC-20 + EIP-2612), `TransientReentrancyGuard`, `Roles`, `Modules` | — |
 | **Total** | **~8,700** | | |
 
-Solidity 0.8.30, EVM Cancun, `via_ir = true`, optimizer 200 runs.
+Solidity 0.8.34, EVM Cancun, `via_ir = true`, optimizer 200 runs.
 
 ## 3. Architecture diagram
 

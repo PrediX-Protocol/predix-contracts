@@ -97,11 +97,11 @@ deleted or kept as a doc artifact at the team's discretion.
 ## Why no in-process real PoolManager
 
 `@uniswap/v4-core/src/PoolManager.sol` pins `pragma solidity 0.8.26;` (exact).
-The router package is on `solc_version = "0.8.30"` and cannot import the
+The router package is on `solc_version = "0.8.34"` and cannot import the
 PoolManager contract type directly. Attempting an in-process deploy fails
 with `Encountered invalid solc version` at compile time. Fork tests side-step
 this entirely by calling the already-deployed PoolManager via interface —
-interfaces use permissive `^0.8.0` pragma and compile cleanly against 0.8.30.
+interfaces use permissive `^0.8.0` pragma and compile cleanly against 0.8.34.
 
 An alternative pattern — extending `MockPoolManager` to forward `beforeSwap`
 calls to the real hook — is tracked as a future CI-hardening task but not
