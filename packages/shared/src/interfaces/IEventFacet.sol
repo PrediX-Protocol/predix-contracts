@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IEventFacet
 /// @notice Public interface for the PrediX multi-outcome event coordinator. An event
@@ -19,6 +19,7 @@ interface IEventFacet {
         uint256 winningIndex;
         bool isResolved;
         bool refundModeActive;
+        address oracle;
     }
 
     // ---------------------------------------------------------------------
@@ -28,16 +29,28 @@ interface IEventFacet {
     /// @notice Emitted on every successful `createEvent` call. Each child market also
     ///         emits its own `IMarketFacet.MarketCreated` in the same transaction.
     event EventCreated(
-        uint256 indexed eventId, address indexed creator, uint256 endTime, string name, uint256[] marketIds
+        uint256 indexed eventId,
+        address indexed creator,
+        uint256 endTime,
+        string name,
+        uint256[] marketIds,
+        address oracle
     );
 
     /// @notice Emitted when `resolveEvent` settles the event. One
     ///         `IMarketFacet.MarketResolved` also fires per child in the same tx.
     event EventResolved(uint256 indexed eventId, uint256 winningIndex, address indexed resolver);
 
+    /// @notice Emitted when an operator emergency-resolves an event after the
+    ///         oracle stalls past the grace period.
+    event EventEmergencyResolved(uint256 indexed eventId, uint256 winningIndex, address indexed resolver);
+
     /// @notice Emitted when an admin enables refund mode for the whole event. One
     ///         `IMarketFacet.RefundModeEnabled` also fires per child in the same tx.
     event EventRefundModeEnabled(uint256 indexed eventId, address indexed enabler);
+
+    /// @notice Emitted per-child when `sweepUnclaimedEvent` recovers residual collateral.
+    event EventChildSwept(uint256 indexed eventId, uint256 indexed childMarketId, uint256 amount);
 
     // ---------------------------------------------------------------------
     // Errors
@@ -53,40 +66,58 @@ interface IEventFacet {
     error Event_EmptyName();
     error Event_InvalidEndTime();
     /// @notice Reverts when a non-CREATOR_ROLE caller invokes `createEvent`.
-    ///         Mirrors `Market_NotCreator` for the event path.
     error Event_NotCreator();
+    error Event_ZeroOracle();
+    error Event_OracleNotApproved();
+    error Event_OracleNotResolved();
+    error Event_TooEarlyForEmergency();
+    error Event_OracleResolvedUseResolve();
 
     // ---------------------------------------------------------------------
     // Lifecycle
     // ---------------------------------------------------------------------
 
     /// @notice Create a new event with N binary child markets. All children share
-    ///         `endTime`, have `address(0)` as their oracle (events are resolved by
-    ///         role-gated `resolveEvent`), and are marked with the new `eventId`.
-    ///         Each child is charged the standard `marketCreationFee` individually,
-    ///         so the caller must have approved `N * marketCreationFee` collateral.
+    ///         `endTime` and are marked with the new `eventId`. The event stores
+    ///         the oracle address for resolution — child markets have `oracle = address(0)`
+    ///         since they resolve atomically via the event's oracle.
     /// @param name                Event name (non-empty).
     /// @param candidateQuestions  One question per candidate. Length must be in
     ///                            `[2, 50]`. Every question must be non-empty.
     /// @param endTime             Shared end time for every child market.
+    /// @param oracle              Oracle contract implementing `IEventOracle`. Must
+    ///                            be in the diamond's approved-oracles set.
     /// @return eventId            Newly assigned monotonic event id.
     /// @return marketIds          Ids of the child markets created, in the same
     ///                            order as `candidateQuestions`.
-    function createEvent(string calldata name, string[] calldata candidateQuestions, uint256 endTime)
+    function createEvent(string calldata name, string[] calldata candidateQuestions, uint256 endTime, address oracle)
         external
         returns (uint256 eventId, uint256[] memory marketIds);
 
-    /// @notice Resolve an event atomically. Sets the winning child's outcome to `true`
-    ///         and every other child's outcome to `false`, all in one transaction.
-    ///         Restricted to `OPERATOR_ROLE`.
+    /// @notice Resolve an event atomically by reading the outcome from its oracle.
+    ///         Permissionless — anyone may call once the oracle has reported.
+    ///         Sets the winning child's outcome to `true` and every other child's
+    ///         outcome to `false`, all in one transaction.
+    /// @param eventId Target event.
+    function resolveEvent(uint256 eventId) external;
+
+    /// @notice Emergency-resolve an event when the oracle stalls. Restricted to
+    ///         `OPERATOR_ROLE`. Only callable after `endTime + EMERGENCY_DELAY`.
+    ///         Reverts if the oracle has since produced an answer.
     /// @param eventId       Target event.
     /// @param winningIndex  Index into the event's `marketIds` array.
-    function resolveEvent(uint256 eventId, uint256 winningIndex) external;
+    function emergencyResolveEvent(uint256 eventId, uint256 winningIndex) external;
 
     /// @notice Enable refund mode across every child market in an event. Restricted
     ///         to `ADMIN_ROLE`. Each child's `refundModeActive` flag is set;
     ///         subsequently users call `IMarketFacet.refund` on each child they hold.
     function enableEventRefundMode(uint256 eventId) external;
+
+    /// @notice Sweep unclaimed collateral from all child markets of a finalized
+    ///         event in a single transaction. Restricted to `ADMIN_ROLE`. Each child
+    ///         must be in a final state (resolved or refund-mode) and past GRACE_PERIOD.
+    /// @return total Total USDC swept across all children.
+    function sweepUnclaimedEvent(uint256 eventId) external returns (uint256 total);
 
     // ---------------------------------------------------------------------
     // Views
@@ -97,6 +128,12 @@ interface IEventFacet {
 
     /// @notice Return the event id a market belongs to, or `0` if it is standalone.
     function eventOfMarket(uint256 marketId) external view returns (uint256);
+
+    /// @notice Lightweight status view consumed by oracles for timing gates.
+    function getEventStatus(uint256 eventId)
+        external
+        view
+        returns (uint256 endTime, uint256 candidateCount, bool isResolved, bool refundModeActive);
 
     /// @notice Total number of events ever created. Latest id == this value.
     function eventCount() external view returns (uint256);

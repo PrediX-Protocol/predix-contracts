@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -97,6 +97,7 @@ contract PrediXExchangeProxy {
 
     // ======== Upgrade flow (48h timelock) ========
 
+    /// @notice Propose a new implementation. Becomes executable after UPGRADE_DELAY.
     function proposeUpgrade(address newImpl) external onlyAdmin {
         if (_readAddress(_PENDING_IMPL_SLOT) != address(0)) revert Proxy_AlreadyPendingUpgrade();
         if (newImpl == address(0)) revert Proxy_ZeroAddress();
@@ -107,6 +108,7 @@ contract PrediXExchangeProxy {
         emit UpgradeProposed(newImpl, readyAt);
     }
 
+    /// @notice Execute a pending upgrade after the timelock elapses.
     function executeUpgrade() external onlyAdmin {
         address pending = _readAddress(_PENDING_IMPL_SLOT);
         if (pending == address(0)) revert Proxy_NoPendingUpgrade();
@@ -118,6 +120,7 @@ contract PrediXExchangeProxy {
         emit Upgraded(pending);
     }
 
+    /// @notice Cancel a pending upgrade. Clears the pending implementation.
     function cancelUpgrade() external onlyAdmin {
         address pending = _readAddress(_PENDING_IMPL_SLOT);
         if (pending == address(0)) revert Proxy_NoPendingUpgrade();
@@ -128,6 +131,7 @@ contract PrediXExchangeProxy {
 
     // ======== Admin rotation (48h timelock) ========
 
+    /// @notice Propose a new admin. Pending admin must call acceptAdmin after delay.
     function changeAdmin(address newAdmin) external onlyAdmin {
         if (_readAddress(_PENDING_ADMIN_SLOT) != address(0)) revert Proxy_AlreadyPendingAdmin();
         if (newAdmin == address(0)) revert Proxy_ZeroAddress();
@@ -136,6 +140,7 @@ contract PrediXExchangeProxy {
         emit AdminChangeProposed(_readAddress(_ADMIN_SLOT), newAdmin);
     }
 
+    /// @notice Accept the pending admin role. Only callable by the pending admin after delay.
     function acceptAdmin() external {
         address pending = _readAddress(_PENDING_ADMIN_SLOT);
         if (msg.sender != pending) revert Proxy_OnlyPendingAdmin();
@@ -147,6 +152,7 @@ contract PrediXExchangeProxy {
         emit AdminChanged(previous, pending);
     }
 
+    /// @notice Cancel a pending admin rotation.
     function cancelAdminChange() external onlyAdmin {
         address pending = _readAddress(_PENDING_ADMIN_SLOT);
         if (pending == address(0)) revert Proxy_NoPendingAdmin();
@@ -157,26 +163,32 @@ contract PrediXExchangeProxy {
 
     // ======== Views ========
 
+    /// @notice Current implementation address.
     function implementation() external view returns (address) {
         return _readAddress(_IMPL_SLOT);
     }
 
+    /// @notice Current proxy admin address.
     function admin() external view returns (address) {
         return _readAddress(_ADMIN_SLOT);
     }
 
+    /// @notice Pending implementation (zero if none).
     function pendingImplementation() external view returns (address) {
         return _readAddress(_PENDING_IMPL_SLOT);
     }
 
+    /// @notice Timestamp when the pending upgrade becomes executable (zero if none).
     function upgradeReadyAt() external view returns (uint256) {
         return _readUint(_UPGRADE_READY_AT_SLOT);
     }
 
+    /// @notice Pending admin address (zero if none).
     function pendingAdmin() external view returns (address) {
         return _readAddress(_PENDING_ADMIN_SLOT);
     }
 
+    /// @notice Timestamp when the pending admin can accept (zero if none).
     function pendingAdminReadyAt() external view returns (uint256) {
         return _readUint(_PENDING_ADMIN_READY_AT_SLOT);
     }

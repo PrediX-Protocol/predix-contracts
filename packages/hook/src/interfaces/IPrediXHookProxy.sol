@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IPrediXHookProxy
 /// @notice Proxy-side surface of the PrediX hook: timelocked upgrade flow and two-step

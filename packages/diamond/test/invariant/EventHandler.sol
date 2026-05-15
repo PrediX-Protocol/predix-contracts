@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {CommonBase} from "forge-std/Base.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
@@ -9,6 +9,7 @@ import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
+import {MockEventOracle} from "../mocks/MockEventOracle.sol";
 import {MockUSDC} from "../mocks/MockUSDC.sol";
 
 /// @notice Stateful handler for EventFacet invariants. Randomly creates events,
@@ -18,6 +19,7 @@ contract EventHandler is CommonBase, StdCheats, StdUtils {
     IMarketFacet internal immutable market;
     IEventFacet internal immutable eventFacet;
     MockUSDC internal immutable usdc;
+    MockEventOracle internal immutable eventOracle;
     address internal immutable diamondAddr;
     address internal immutable admin;
     uint256 internal immutable eventEndTime;
@@ -27,10 +29,11 @@ contract EventHandler is CommonBase, StdCheats, StdUtils {
     uint256[] public eventIds;
     mapping(uint256 => uint256[]) public eventChildren;
 
-    constructor(address _diamond, address _usdc, address _admin, uint256 _endTime) {
+    constructor(address _diamond, address _usdc, address _admin, uint256 _endTime, address _eventOracle) {
         market = IMarketFacet(_diamond);
         eventFacet = IEventFacet(_diamond);
         usdc = MockUSDC(_usdc);
+        eventOracle = MockEventOracle(_eventOracle);
         diamondAddr = _diamond;
         admin = _admin;
         eventEndTime = _endTime;
@@ -53,7 +56,7 @@ contract EventHandler is CommonBase, StdCheats, StdUtils {
             qs[i] = "q";
         }
         vm.prank(users[0]);
-        (uint256 id, uint256[] memory mids) = eventFacet.createEvent("e", qs, eventEndTime);
+        (uint256 id, uint256[] memory mids) = eventFacet.createEvent("e", qs, eventEndTime, address(eventOracle));
         eventIds.push(id);
         for (uint256 i; i < mids.length; ++i) {
             eventChildren[id].push(mids[i]);
@@ -102,8 +105,8 @@ contract EventHandler is CommonBase, StdCheats, StdUtils {
             vm.warp(e.endTime + 1);
         }
         uint256 winIdx = winIdxRaw % e.marketIds.length;
-        vm.prank(admin);
-        eventFacet.resolveEvent(eId, winIdx);
+        eventOracle.setEventResolution(eId, winIdx);
+        eventFacet.resolveEvent(eId);
     }
 
     function eventCount() external view returns (uint256) {

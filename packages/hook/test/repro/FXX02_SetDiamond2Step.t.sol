@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -118,7 +118,7 @@ contract FXX02_SetDiamond2Step is Test {
         hook.proposeDiamond(newDiamond);
 
         // execute + cancel are also admin-gated — F-X-02 makes execute admin-
-        // only (different from executeTrustedRouter which is permissionless)
+        // only (consistent with executeTrustedRouter which is also admin-gated)
         // because diamond rotation is even more sensitive than trust rotation.
         vm.prank(rando);
         vm.expectRevert(IPrediXHook.Hook_OnlyAdmin.selector);

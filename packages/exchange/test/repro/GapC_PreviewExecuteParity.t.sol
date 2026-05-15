@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IPrediXExchange} from "../../src/IPrediXExchange.sol";
 import {MatchMath} from "../../src/libraries/MatchMath.sol";
@@ -27,7 +27,7 @@ contract GapC_PreviewExecuteParity is ExchangeTestBase {
 
         vm.prank(taker);
         (actualFilled, actualCost) =
-            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, _deadline(), bytes32(0));
     }
 
     function test_GapC_PreviewMatchesExecute_ComplementaryFill() public {

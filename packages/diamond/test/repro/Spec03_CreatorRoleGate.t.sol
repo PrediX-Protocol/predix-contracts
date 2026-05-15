@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
@@ -67,11 +67,11 @@ contract Spec03_CreatorRoleGate is EventFixture {
 
         vm.prank(rando);
         vm.expectRevert(IEventFacet.Event_NotCreator.selector);
-        eventFacet.createEvent("AvB", qs, endTime);
+        eventFacet.createEvent("AvB", qs, endTime, address(eventOracle));
 
         // `alice` has the role, same call succeeds.
         vm.prank(alice);
-        (uint256 eventId,) = eventFacet.createEvent("AvB", qs, endTime);
+        (uint256 eventId,) = eventFacet.createEvent("AvB", qs, endTime, address(eventOracle));
         assertEq(eventId, 1, "alice can create events");
     }
 

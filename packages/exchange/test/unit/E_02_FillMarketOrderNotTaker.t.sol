@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IPrediXExchange} from "../../src/IPrediXExchange.sol";
 
@@ -32,7 +32,8 @@ contract E_02_FillMarketOrderNotTaker is ExchangeTestBase {
             victim, // spoofed funding source
             attacker, // attacker pockets the output
             0,
-            _deadline()
+            _deadline(),
+            bytes32(0)
         );
     }
 
@@ -43,7 +44,8 @@ contract E_02_FillMarketOrderNotTaker is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(filled, 100 * ONE_SHARE, "filled");
@@ -60,7 +62,8 @@ contract E_02_FillMarketOrderNotTaker is ExchangeTestBase {
         address recipient = carol;
         vm.prank(bob);
         exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, recipient, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, recipient, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(_yesBalance(recipient), 100 * ONE_SHARE, "recipient receives");

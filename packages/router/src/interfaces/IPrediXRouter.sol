@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
@@ -29,6 +29,18 @@ interface IPrediXRouter {
 
     /// @notice Thrown when any constructor argument is the zero address.
     error ZeroAddress();
+
+    /// @notice Thrown when the router is constructed with `_lpFeeFlag == 0`.
+    ///         The canonical PrediX pool shape uses the v4 dynamic-fee flag;
+    ///         a zero value would silently route the hook's per-swap fee
+    ///         override into a no-op and break the time-decaying fee logic.
+    error InvalidLpFeeFlag();
+
+    /// @notice Thrown when the router is constructed with `_tickSpacing == 0`.
+    ///         Pool registration on the hook rejects non-canonical tick
+    ///         spacing; failing here at construction surfaces the deploy
+    ///         misconfiguration before any user can attempt a swap.
+    error InvalidTickSpacing();
 
     /// @notice Thrown when the user supplies a zero or below-minimum input amount.
     error ZeroAmount();
@@ -64,9 +76,6 @@ interface IPrediXRouter {
     /// @notice Thrown when `unlockCallback` is invoked by anyone other than the PoolManager.
     error OnlyPoolManager();
 
-    /// @notice Thrown when the v4 pool for a market has no liquidity (Quoter returns zero).
-    error PoolNotInitialized();
-
     /// @notice Thrown when the combined CLOB + AMM depth cannot satisfy the trade within the
     ///         `buyNo` / `sellNo` virtual-NO 3% safety margin.
     error InsufficientLiquidity();
@@ -86,6 +95,18 @@ interface IPrediXRouter {
     ///         Permit2 allowances. Frontends must sign a per-trade permit
     ///         matching the exact `amountIn`.
     error InvalidPermitAmount();
+
+    /// @notice Thrown when the address passed as `_permit2` does not host any
+    ///         contract code at construction time. Catches the obvious
+    ///         deployer typo before any user funds can be lost.
+    error Permit2NotAContract();
+
+    /// @notice Thrown when `permitSingle.spender` is not the router itself.
+    ///         A permit signed with a different spender cannot be consumed
+    ///         here; reject upfront with a clear error rather than letting
+    ///         the downstream `transferFrom` revert with an opaque allowance
+    ///         failure.
+    error InvalidPermitSpender();
 
     /// @notice Defensive invariant: the router's balance of a token MUST be zero after a call
     ///         settles. A non-zero residue means accounting drifted — revert hard instead of

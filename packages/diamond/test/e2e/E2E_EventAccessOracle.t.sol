@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
@@ -23,7 +23,8 @@ contract E2E_EventAccessOracle is E2EForkBase {
         questions[1] = "B wins?";
 
         vm.prank(alice);
-        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("Election", questions, block.timestamp + 7 days);
+        (uint256 eventId, uint256[] memory marketIds) =
+            eventFacet.createEvent("Election", questions, block.timestamp + 7 days, MANUAL_ORACLE);
 
         assertEq(marketIds.length, 2);
         assertGt(eventId, 0);
@@ -36,7 +37,7 @@ contract E2E_EventAccessOracle is E2EForkBase {
 
         vm.prank(alice);
         vm.expectRevert();
-        eventFacet.createEvent("Bad event", questions, block.timestamp + 7 days);
+        eventFacet.createEvent("Bad event", questions, block.timestamp + 7 days, MANUAL_ORACLE);
     }
 
     function test_R05_resolveEvent_winnerIndex0() public {
@@ -47,14 +48,16 @@ contract E2E_EventAccessOracle is E2EForkBase {
         questions[2] = "C?";
 
         vm.prank(alice);
-        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("Race", questions, block.timestamp + 1 hours);
+        (uint256 eventId, uint256[] memory marketIds) =
+            eventFacet.createEvent("Race", questions, block.timestamp + 1 hours, MANUAL_ORACLE);
 
         _splitPosition(alice, marketIds[0], 100e6);
         _splitPosition(alice, marketIds[1], 100e6);
 
         vm.warp(block.timestamp + 2 hours);
-        vm.prank(DEPLOYER);
-        eventFacet.resolveEvent(eventId, 0);
+        vm.prank(OPERATOR);
+        oracle.reportEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
 
         // Winner (index 0) resolved YES
         assertTrue(diamond.getMarket(marketIds[0]).isResolved);
@@ -71,12 +74,13 @@ contract E2E_EventAccessOracle is E2EForkBase {
         questions[1] = "B?";
 
         vm.prank(alice);
-        (uint256 eventId,) = eventFacet.createEvent("Test", questions, block.timestamp + 1 hours);
+        (uint256 eventId,) = eventFacet.createEvent("Test", questions, block.timestamp + 1 hours, MANUAL_ORACLE);
 
         vm.warp(block.timestamp + 2 hours);
-        vm.prank(DEPLOYER);
+        // Oracle validates candidateCount — reporting index 5 for a 2-candidate event reverts
+        vm.prank(OPERATOR);
         vm.expectRevert();
-        eventFacet.resolveEvent(eventId, 5); // index out of bounds
+        oracle.reportEvent(eventId, 5);
     }
 
     function test_R07_enableEventRefundMode() public {
@@ -86,7 +90,8 @@ contract E2E_EventAccessOracle is E2EForkBase {
         questions[1] = "B?";
 
         vm.prank(alice);
-        (uint256 eventId, uint256[] memory marketIds) = eventFacet.createEvent("Refund test", questions, block.timestamp + 1 hours);
+        (uint256 eventId, uint256[] memory marketIds) =
+            eventFacet.createEvent("Refund test", questions, block.timestamp + 1 hours, MANUAL_ORACLE);
 
         vm.warp(block.timestamp + 2 hours);
         vm.prank(DEPLOYER);
@@ -103,15 +108,15 @@ contract E2E_EventAccessOracle is E2EForkBase {
         questions[1] = "B?";
 
         vm.prank(alice);
-        (uint256 eventId,) = eventFacet.createEvent("Once", questions, block.timestamp + 1 hours);
+        (uint256 eventId,) = eventFacet.createEvent("Once", questions, block.timestamp + 1 hours, MANUAL_ORACLE);
 
         vm.warp(block.timestamp + 2 hours);
-        vm.prank(DEPLOYER);
-        eventFacet.resolveEvent(eventId, 0);
+        vm.prank(OPERATOR);
+        oracle.reportEvent(eventId, 0);
+        eventFacet.resolveEvent(eventId);
 
-        vm.prank(DEPLOYER);
         vm.expectRevert();
-        eventFacet.resolveEvent(eventId, 1);
+        eventFacet.resolveEvent(eventId);
     }
 
     // ================================================================

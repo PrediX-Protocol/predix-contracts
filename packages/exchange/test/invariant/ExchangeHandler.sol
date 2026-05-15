@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -76,7 +76,7 @@ contract ExchangeHandler is Test {
 
         vm.prank(a);
         try exchange.placeOrder(
-            marketId, yes ? IPrediXExchange.Side.BUY_YES : IPrediXExchange.Side.BUY_NO, price, amount
+            marketId, yes ? IPrediXExchange.Side.BUY_YES : IPrediXExchange.Side.BUY_NO, price, amount, bytes32(0)
         ) returns (
             bytes32 id, uint256
         ) {
@@ -99,7 +99,7 @@ contract ExchangeHandler is Test {
 
         vm.prank(a);
         try exchange.placeOrder(
-            marketId, yes ? IPrediXExchange.Side.SELL_YES : IPrediXExchange.Side.SELL_NO, price, amount
+            marketId, yes ? IPrediXExchange.Side.SELL_YES : IPrediXExchange.Side.SELL_NO, price, amount, bytes32(0)
         ) returns (
             bytes32 id, uint256
         ) {
@@ -136,7 +136,7 @@ contract ExchangeHandler is Test {
         }
 
         vm.prank(a);
-        try exchange.fillMarketOrder(marketId, side, limit, amountIn, a, a, 0, block.timestamp + 60) {} catch {}
+        try exchange.fillMarketOrder(marketId, side, limit, amountIn, a, a, 0, block.timestamp + 60, bytes32(0)) {} catch {}
     }
 
     function orderCount() external view returns (uint256) {

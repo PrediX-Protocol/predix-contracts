@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IAccessControlFacet} from "@predix/shared/interfaces/IAccessControlFacet.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
@@ -117,5 +117,34 @@ contract AccessControlTest is DiamondFixture {
         accessControl.grantRole(Roles.OPERATOR_ROLE, alice);
         vm.stopPrank();
         assertTrue(accessControl.hasRole(Roles.OPERATOR_ROLE, alice));
+    }
+
+    function test_Revert_RevokeRole_NotARoleMember() public {
+        // Alice never received OPERATOR_ROLE. The legacy OZ behaviour was to
+        // silently no-op; we now require the caller to address a real holder
+        // so call traces are unambiguous in governance audits.
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControlFacet.AccessControl_NotARoleMember.selector, Roles.OPERATOR_ROLE, alice
+            )
+        );
+        accessControl.revokeRole(Roles.OPERATOR_ROLE, alice);
+    }
+
+    function test_RevokeRole_AfterRevoke_RevertsOnSecondCall() public {
+        vm.startPrank(admin);
+        accessControl.grantRole(Roles.OPERATOR_ROLE, alice);
+        accessControl.revokeRole(Roles.OPERATOR_ROLE, alice);
+
+        // Second revoke on the same address must now revert with the new
+        // selector instead of silently succeeding.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControlFacet.AccessControl_NotARoleMember.selector, Roles.OPERATOR_ROLE, alice
+            )
+        );
+        accessControl.revokeRole(Roles.OPERATOR_ROLE, alice);
+        vm.stopPrank();
     }
 }

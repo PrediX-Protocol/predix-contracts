@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
+import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOracle} from "@predix/shared/interfaces/IOracle.sol";
+import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
 
 import {IManualOracle} from "../interfaces/IManualOracle.sol";
 
 /// @title ManualOracle
-/// @notice Reporter-driven `IOracle` implementation: a role-gated reporter
-///         publishes the outcome by hand, and an admin can revoke it before a
-///         market consumes the answer.
-/// @dev Each deployment is a standalone contract with its own OZ AccessControl
-///      registry and is bound at construction to exactly one diamond proxy; it
-///      is NOT a diamond facet and does not share storage with the diamond.
-///      Markets are keyed by the diamond's own `marketId`.
+/// @notice Reporter-driven oracle for both binary markets (`IOracle`) and
+///         multi-outcome events (`IEventOracle`). A role-gated reporter publishes
+///         outcomes by hand; an admin can revoke before the diamond consumes.
+/// @dev Standalone contract bound to one diamond proxy at construction. NOT a
+///      diamond facet — has its own AccessControl and storage.
 contract ManualOracle is IManualOracle, AccessControl {
     /// @notice Role granted to addresses permitted to call `report`.
     bytes32 public constant REPORTER_ROLE = keccak256("predix.oracle.reporter");
@@ -33,6 +33,16 @@ contract ManualOracle is IManualOracle, AccessControl {
     }
 
     mapping(uint256 marketId => Resolution) internal _resolutions;
+
+    struct EventResolution {
+        bool reported;
+        uint256 winningIndex;
+        uint64 reportedAt;
+        address reporter;
+        bool frozen;
+    }
+
+    mapping(uint256 eventId => EventResolution) internal _eventResolutions;
 
     /// @notice Deploy the oracle, seat the initial admin, and bind to a diamond.
     /// @param admin    Address granted `DEFAULT_ADMIN_ROLE`; must be non-zero.
@@ -101,5 +111,60 @@ contract ManualOracle is IManualOracle, AccessControl {
     /// @param marketId The diamond market identifier.
     function reporterOf(uint256 marketId) external view returns (address) {
         return _resolutions[marketId].reporter;
+    }
+
+    // -----------------------------------------------------------------------
+    // Event resolution
+    // -----------------------------------------------------------------------
+
+    /// @inheritdoc IManualOracle
+    function reportEvent(uint256 eventId, uint256 winningIndex) external onlyRole(REPORTER_ROLE) {
+        EventResolution storage r = _eventResolutions[eventId];
+        if (r.reported) revert ManualOracle_EventAlreadyReported();
+        if (r.frozen) revert ManualOracle_EventFrozen();
+
+        (uint256 endTime, uint256 candidateCount,,) = IEventFacet(diamond).getEventStatus(eventId);
+        if (block.timestamp < endTime) revert ManualOracle_BeforeEventEnd();
+        if (winningIndex >= candidateCount) revert ManualOracle_InvalidWinningIndex();
+
+        r.reported = true;
+        r.winningIndex = winningIndex;
+        r.reportedAt = uint64(block.timestamp);
+        r.reporter = msg.sender;
+
+        emit EventOutcomeReported(eventId, winningIndex, msg.sender);
+    }
+
+    /// @inheritdoc IManualOracle
+    function revokeEvent(uint256 eventId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        EventResolution storage r = _eventResolutions[eventId];
+        if (!r.reported) revert ManualOracle_EventNotReported();
+
+        r.reported = false;
+        r.frozen = true;
+
+        emit EventOutcomeRevoked(eventId, msg.sender);
+    }
+
+    /// @inheritdoc IEventOracle
+    function isEventResolved(uint256 eventId) external view returns (bool) {
+        return _eventResolutions[eventId].reported;
+    }
+
+    /// @inheritdoc IEventOracle
+    function eventOutcome(uint256 eventId) external view returns (uint256) {
+        EventResolution storage r = _eventResolutions[eventId];
+        if (!r.reported) revert ManualOracle_EventNotReported();
+        return r.winningIndex;
+    }
+
+    /// @notice Timestamp at which `eventId` was reported. Returns zero if not reported.
+    function eventReportedAt(uint256 eventId) external view returns (uint64) {
+        return _eventResolutions[eventId].reportedAt;
+    }
+
+    /// @notice Address of the reporter that published the outcome for `eventId`.
+    function eventReporterOf(uint256 eventId) external view returns (address) {
+        return _eventResolutions[eventId].reporter;
     }
 }

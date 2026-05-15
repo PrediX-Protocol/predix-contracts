@@ -1,17 +1,27 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Script} from "forge-std/Script.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @notice Testnet-only collateral token with an open mint so developers can
-///         fund an unlimited number of test accounts.
-/// @dev Metadata matches mainnet USDC so downstream tooling (wallets, block
-///      explorers, the PrediX frontend) renders the token identically to its
-///      production counterpart. Do NOT deploy on mainnet.
-contract TestUSDC is ERC20, ERC20Permit {
-    constructor(address initialRecipient, uint256 initialSupply) ERC20("USD Coin", "USDC") ERC20Permit("USD Coin") {
+/// @notice Walled-garden USDC for testnet. Only owner can mint. Transfers
+///         restricted: at least one side (sender or receiver) must be a
+///         whitelisted protocol contract. User-to-user transfers are blocked.
+/// @dev Metadata matches mainnet USDC. Do NOT deploy on mainnet.
+contract TestUSDC is ERC20, ERC20Permit, Ownable {
+    mapping(address => bool) public whitelisted;
+
+    error TransferRestricted();
+
+    event WhitelistUpdated(address indexed account, bool status);
+
+    constructor(address initialRecipient, uint256 initialSupply)
+        ERC20("USD Coin", "USDC")
+        ERC20Permit("USD Coin")
+        Ownable(initialRecipient)
+    {
         if (initialRecipient != address(0) && initialSupply > 0) {
             _mint(initialRecipient, initialSupply);
         }
@@ -21,11 +31,34 @@ contract TestUSDC is ERC20, ERC20Permit {
         return 6;
     }
 
-    /// @notice Open faucet — anyone can mint any amount to any address.
-    ///         Testnet convenience only; the contract must never be deployed
-    ///         on mainnet because of this.
-    function mint(address to, uint256 amount) external {
+    /// @notice Only owner can mint.
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
+    }
+
+    /// @notice Add or remove a protocol contract from the whitelist.
+    function setWhitelist(address account, bool status) external onlyOwner {
+        whitelisted[account] = status;
+        emit WhitelistUpdated(account, status);
+    }
+
+    /// @notice Batch whitelist multiple addresses.
+    function setWhitelistBatch(address[] calldata accounts, bool status) external onlyOwner {
+        for (uint256 i; i < accounts.length; ++i) {
+            whitelisted[accounts[i]] = status;
+            emit WhitelistUpdated(accounts[i], status);
+        }
+    }
+
+    /// @dev Override OZ v5 _update hook. Enforces: for non-mint/burn transfers,
+    ///      at least one of (from, to) must be whitelisted. Owner is always allowed.
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            if (!whitelisted[from] && !whitelisted[to] && from != owner() && to != owner()) {
+                revert TransferRestricted();
+            }
+        }
+        super._update(from, to, value);
     }
 }
 
@@ -36,10 +69,16 @@ contract TestUSDC is ERC20, ERC20Permit {
 /// Usage:
 ///   forge script packages/shared/script/DeployTestUSDC.s.sol:DeployTestUSDC \
 ///       --rpc-url $UNICHAIN_RPC_PRIMARY --broadcast
+/// @title DeployTestUSDC
+/// @notice Deploy walled-garden TestUSDC + whitelist protocol contracts.
+///
+/// Usage:
+///   forge script packages/shared/script/DeployTestUSDC.s.sol:DeployTestUSDC \
+///       --rpc-url $UNICHAIN_RPC_PRIMARY --broadcast
+///
+/// After deploy, call setWhitelistBatch with protocol addresses:
+///   Diamond, Exchange, Router, Hook, Faucet, MarketFactory, PoolModifyLiquidityTest
 contract DeployTestUSDC is Script {
-    /// @notice Default initial mint: 1,000,000,000 USDC (raw value with 6
-    ///         decimals) → 10^15 base units. Covers every realistic testnet
-    ///         scenario without rolling over.
     uint256 internal constant DEFAULT_INITIAL_SUPPLY = 1_000_000_000 * 1e6;
 
     function run() external returns (TestUSDC usdc) {
@@ -51,16 +90,5 @@ contract DeployTestUSDC is Script {
         vm.startBroadcast(deployerKey);
         usdc = new TestUSDC(deployer, initialSupply);
         vm.stopBroadcast();
-
-        console2log(address(usdc), deployer, initialSupply);
-    }
-
-    function console2log(address usdc, address deployer, uint256 initialSupply) private pure {
-        // `console2` omitted to keep the script dependency surface minimal.
-        // Forge prints the returned `TestUSDC` so the user can grab it from
-        // the `forge script` output (`Contract Deployed: 0x...`).
-        usdc;
-        deployer;
-        initialSupply;
     }
 }

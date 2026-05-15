@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -106,7 +106,7 @@ contract Phase7HappyPath is Phase7ForkBase {
 
         vm.startPrank(maker);
         IERC20(USDC).approve(EXCHANGE, budget);
-        (bytes32 orderId, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.6e6, 10e6);
+        (bytes32 orderId, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.6e6, 10e6, bytes32(0));
         vm.stopPrank();
 
         assertTrue(orderId != bytes32(0), "orderId should be set");
@@ -132,7 +132,7 @@ contract Phase7HappyPath is Phase7ForkBase {
 
         vm.startPrank(maker);
         IERC20(mkt.yesToken).approve(EXCHANGE, 10e6);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 0.5e6, 10e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 0.5e6, 10e6, bytes32(0));
         vm.stopPrank();
 
         // Taker: place BUY_YES at 0.5, same amount → COMPLEMENTARY match.
@@ -140,7 +140,7 @@ contract Phase7HappyPath is Phase7ForkBase {
         deal(USDC, taker, 10e6);
         vm.startPrank(taker);
         IERC20(USDC).approve(EXCHANGE, 10e6);
-        (, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.5e6, 10e6);
+        (, uint256 filled) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.5e6, 10e6, bytes32(0));
         vm.stopPrank();
 
         assertEq(filled, 10e6, "match should fill entire cross");
@@ -160,7 +160,7 @@ contract Phase7HappyPath is Phase7ForkBase {
 
         vm.startPrank(maker);
         IERC20(USDC).approve(EXCHANGE, budget);
-        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.5e6, 20e6);
+        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 0.5e6, 20e6, bytes32(0));
         uint256 afterPlace = IERC20(USDC).balanceOf(maker);
 
         exchange.cancelOrder(orderId);

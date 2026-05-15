@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
@@ -54,7 +54,8 @@ contract Phase7RemediationGuards is Phase7ForkBase {
             taker: victim,
             recipient: attacker,
             maxFills: 0,
-            deadline: block.timestamp + 1
+            deadline: block.timestamp + 1,
+            takerBuilder: bytes32(0)
         });
     }
 

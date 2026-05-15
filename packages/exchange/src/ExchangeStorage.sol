@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -51,6 +51,7 @@ abstract contract ExchangeStorage {
     uint256 internal constant DEFAULT_MAX_FILLS = 10;
     uint8 internal constant MAX_FILLS_PER_PLACE = 20;
     uint256 internal constant MAX_QUEUE_DEPTH_PER_PRICE = 200;
+    uint256 internal constant MAX_BATCH_CANCEL = 50;
 
     // ======== Internal enums ========
 
@@ -183,5 +184,46 @@ abstract contract ExchangeStorage {
         if (mkt.isResolved) revert IPrediXExchange.MarketResolved();
         if (mkt.refundModeActive) revert IPrediXExchange.MarketInRefundMode();
         if (IPausableFacet(diamond).isModulePaused(Modules.MARKET)) revert IPrediXExchange.MarketPaused();
+    }
+
+    // ======== Dust force-clean ========
+
+    /// @dev Force-clean a dust maker order whose remaining capacity is too small
+    ///      to produce a non-zero fill at its own price level (i.e.
+    ///      `(amount - filled) * price / 1e6 == 0`). Marks the order
+    ///      fully-filled, drops it from the queue/bitmap via
+    ///      `_onMakerFullyFilled`, and sweeps residual `depositLocked` to
+    ///      `feeRecipient`. Shared by both `TakerPath` and `MakerPath` so the
+    ///      orderbook never accumulates structurally unfillable entries.
+    ///
+    ///      `_onMakerFullyFilled` already sweeps the USDC residual on BUY
+    ///      orders. For SELL orders the residual sits in `depositLocked` as
+    ///      outcome-token wei; sweep it explicitly here because the BUY-only
+    ///      branch of `_onMakerFullyFilled` does not cover the token leg.
+    function _forceCleanDustMaker(uint256 marketId, bytes32 dustOrderId, uint256 makerPrice) internal {
+        IPrediXExchange.Order storage dust = orders[dustOrderId];
+        IPrediXExchange.Side dustSide = dust.side;
+        address dustOwner = dust.owner;
+        uint8 priceIdx = _priceToIndex(makerPrice);
+        dust.filled = uint128(dust.amount);
+        if (dustSide == IPrediXExchange.Side.SELL_YES || dustSide == IPrediXExchange.Side.SELL_NO) {
+            uint128 tokenResidual = dust.depositLocked;
+            if (tokenResidual > 0) {
+                dust.depositLocked = 0;
+                address tokenAddr =
+                    dustSide == IPrediXExchange.Side.SELL_YES ? _yesTokenFor(marketId) : _noTokenFor(marketId);
+                IERC20(tokenAddr).safeTransfer(feeRecipient, uint256(tokenResidual));
+                emit IPrediXExchange.FeeCollected(marketId, uint256(tokenResidual));
+            }
+        }
+        _onMakerFullyFilled(marketId, dustSide, priceIdx, dustOrderId, dustOwner);
+    }
+
+    function _yesTokenFor(uint256 marketId) internal view returns (address) {
+        return IMarketFacet(diamond).getMarket(marketId).yesToken;
+    }
+
+    function _noTokenFor(uint256 marketId) internal view returns (address) {
+        return IMarketFacet(diamond).getMarket(marketId).noToken;
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -41,6 +41,7 @@ interface ITestUSDC {
 ///         Required env vars:
 ///           - DEPLOYER_PRIVATE_KEY
 ///           - NEW_DIAMOND, NEW_HOOK_PROXY, POOL_MANAGER_ADDRESS, USDC_ADDRESS
+///           - EVENT_ORACLE_ADDRESS        — IEventOracle address (must be approved)
 ///           - CANDIDATE_QUESTIONS         — comma-delimited list, e.g.
 ///                                            "Will A win?,Will B win?,Will C win?"
 ///
@@ -82,6 +83,7 @@ contract Phase7CreateEventFull is Script {
         address hook;
         address poolManager;
         address usdc;
+        address oracle;
         string eventName;
         string[] questions;
         uint256 endTime;
@@ -117,7 +119,7 @@ contract Phase7CreateEventFull is Script {
 
         // Step 1: create event (creates N child markets atomically)
         (uint256 eventId, uint256[] memory marketIds) =
-            IEventFacet(i.diamond).createEvent(i.eventName, i.questions, i.endTime);
+            IEventFacet(i.diamond).createEvent(i.eventName, i.questions, i.endTime, i.oracle);
         console2.log("Created eventId:", eventId);
         console2.log("Child market count:", marketIds.length);
         for (uint256 k = 0; k < marketIds.length; k++) {
@@ -233,6 +235,7 @@ contract Phase7CreateEventFull is Script {
         i.hook = vm.envAddress("NEW_HOOK_PROXY");
         i.poolManager = vm.envAddress("POOL_MANAGER_ADDRESS");
         i.usdc = vm.envAddress("USDC_ADDRESS");
+        i.oracle = vm.envAddress("EVENT_ORACLE_ADDRESS");
         i.eventName = vm.envOr("EVENT_NAME", string("Phase 7 auto-created event"));
         // CANDIDATE_QUESTIONS is required — comma-delimited list
         i.questions = vm.envString("CANDIDATE_QUESTIONS", ",");

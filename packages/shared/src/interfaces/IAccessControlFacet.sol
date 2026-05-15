@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IAccessControlFacet
 /// @notice Diamond-storage-backed AccessControl facet, modelled on OpenZeppelin's AccessControl.
@@ -18,6 +18,12 @@ interface IAccessControlFacet {
     ///         re-granted from outside — emptying the holder set bricks the role
     ///         permanently.
     error AccessControl_LastSelfAdministeredHolder(bytes32 role);
+    /// @notice Reverts when `revokeRole` targets an account that does not hold
+    ///         the role. The legacy OpenZeppelin behaviour was to silently no-op,
+    ///         but that leaves call traces with no `RoleRevoked` event which makes
+    ///         off-chain governance audits brittle. Force the caller to address
+    ///         a real holder.
+    error AccessControl_NotARoleMember(bytes32 role, address account);
 
     /// @notice Whether `account` holds `role`.
     function hasRole(bytes32 role, address account) external view returns (bool);

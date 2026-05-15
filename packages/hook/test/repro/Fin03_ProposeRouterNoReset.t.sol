@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -77,6 +77,7 @@ contract Fin03_ProposeRouterNoReset is Test {
         hook.proposeTrustedRouter(routerA, true);
 
         vm.warp(block.timestamp + 48 hours + 1);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
         assertTrue(hook.isTrustedRouter(routerA), "execute applied first proposal");
 

@@ -1,64 +1,59 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IOracle} from "@predix/shared/interfaces/IOracle.sol";
+import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
 
 /// @title IManualOracle
-/// @notice Human-curated binary oracle. A trusted reporter submits the outcome
-///         by hand; an admin can revoke a reported outcome before it has been
-///         consumed by the diamond.
-/// @dev The diamond snapshots `isResolved` / `outcome` the moment `resolveMarket`
-///      is called, so `revoke` is a best-effort escape hatch: once a market has
-///      pulled the answer, revoking here does not unwind the market. Each
-///      deployment is bound to a single diamond at construction so `report`
-///      can enforce the market's `endTime` gate via `IMarketFacet.getMarketStatus`.
-interface IManualOracle is IOracle {
-    /// @notice Emitted when a reporter publishes the final outcome for a market.
-    /// @param marketId The diamond market identifier.
-    /// @param outcome  `true` if YES wins, `false` if NO wins.
-    /// @param reporter The address that reported the outcome.
-    event OutcomeReported(uint256 indexed marketId, bool outcome, address indexed reporter);
+/// @notice Human-curated oracle for both binary markets and multi-outcome events.
+///         A trusted reporter submits outcomes by hand; an admin can revoke before
+///         the diamond consumes the answer.
+/// @dev Implements `IOracle` (binary) AND `IEventOracle` (events). Each deployment
+///      is bound to a single diamond at construction so `report`/`reportEvent` can
+///      enforce timing gates via diamond status views.
+interface IManualOracle is IOracle, IEventOracle {
+    // -- Binary market events/errors --
 
-    /// @notice Emitted when an admin revokes a previously reported outcome.
-    /// @param marketId The diamond market identifier whose resolution was cleared.
-    /// @param admin    The admin that performed the revocation.
+    event OutcomeReported(uint256 indexed marketId, bool outcome, address indexed reporter);
     event OutcomeRevoked(uint256 indexed marketId, address indexed admin);
 
-    /// @notice Reverts when constructing the oracle with a zero admin address.
     error ManualOracle_ZeroAdmin();
-
-    /// @notice Reverts when constructing the oracle with a zero diamond address.
     error ManualOracle_ZeroDiamond();
-
-    /// @notice Reverts when a reporter tries to report a market that already has an outcome.
     error ManualOracle_AlreadyReported();
-
-    /// @notice Reverts when `outcome` or `revoke` is called for a market that was never reported.
     error ManualOracle_NotReported();
-
-    /// @notice Reverts when a reporter tries to `report` a market whose slot has
-    ///         been tombstoned by a prior `revoke`. The admin playbook after
-    ///         revoke is to manually enable refund mode on the diamond.
     error ManualOracle_Frozen();
-
-    /// @notice Reverts when a reporter tries to publish an outcome before the
-    ///         diamond-side market `endTime` has elapsed.
     error ManualOracle_BeforeMarketEnd();
 
-    /// @notice Publish the final outcome for `marketId`.
-    /// @dev Callable only by an address with `REPORTER_ROLE`. Reverts if the
-    ///      market has already been reported, has been tombstoned by `revoke`,
-    ///      or has not yet reached its diamond-side `endTime`.
+    // -- Event events/errors --
+
+    event EventOutcomeReported(uint256 indexed eventId, uint256 winningIndex, address indexed reporter);
+    event EventOutcomeRevoked(uint256 indexed eventId, address indexed admin);
+
+    error ManualOracle_EventAlreadyReported();
+    error ManualOracle_EventNotReported();
+    error ManualOracle_EventFrozen();
+    error ManualOracle_BeforeEventEnd();
+    error ManualOracle_InvalidWinningIndex();
+
+    // -- Binary market functions --
+
+    /// @notice Publish the final outcome for a binary market.
     /// @param marketId The diamond market identifier to resolve.
     /// @param outcome  `true` if YES wins, `false` if NO wins.
     function report(uint256 marketId, bool outcome) external;
 
-    /// @notice Tombstone a previously reported outcome so the diamond can no
-    ///         longer consume it. The slot is frozen — the reporter cannot
-    ///         re-publish. Admin follow-up is to call
-    ///         `IMarketFacet.enableRefundMode` on the diamond side.
-    /// @dev Callable only by `DEFAULT_ADMIN_ROLE`. Has no effect on markets that
-    ///      have already snapshotted the answer on the diamond side.
+    /// @notice Tombstone a binary market outcome. Slot is frozen after revoke.
     /// @param marketId The diamond market identifier to clear.
     function revoke(uint256 marketId) external;
+
+    // -- Event functions --
+
+    /// @notice Publish the winning candidate index for a multi-outcome event.
+    /// @param eventId      The diamond event identifier.
+    /// @param winningIndex Index into the event's candidates array.
+    function reportEvent(uint256 eventId, uint256 winningIndex) external;
+
+    /// @notice Tombstone a previously reported event outcome. Slot is frozen.
+    /// @param eventId The diamond event identifier to clear.
+    function revokeEvent(uint256 eventId) external;
 }

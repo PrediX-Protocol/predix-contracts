@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -88,11 +88,13 @@ contract H_H02_TrustedRouterTimelock is Test {
         hook.proposeTrustedRouter(routerA, true);
 
         vm.expectRevert(IPrediXHook.Hook_TrustedRouterDelayNotElapsed.selector);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
 
         // Still not after 47h59m59s.
         vm.warp(block.timestamp + 48 hours - 1);
         vm.expectRevert(IPrediXHook.Hook_TrustedRouterDelayNotElapsed.selector);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
     }
 
@@ -103,6 +105,7 @@ contract H_H02_TrustedRouterTimelock is Test {
         hook.proposeTrustedRouter(routerA, true);
 
         vm.warp(block.timestamp + 48 hours + 1);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
 
         assertTrue(hook.isTrustedRouter(routerA));
@@ -126,6 +129,7 @@ contract H_H02_TrustedRouterTimelock is Test {
         // After cancel, executing reverts.
         vm.warp(block.timestamp + 48 hours + 1);
         vm.expectRevert(IPrediXHook.Hook_NoPendingRouterChange.selector);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
     }
 
@@ -133,6 +137,7 @@ contract H_H02_TrustedRouterTimelock is Test {
         vm.prank(admin);
         hook.completeBootstrap();
         vm.expectRevert(IPrediXHook.Hook_NoPendingRouterChange.selector);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
     }
 
@@ -156,6 +161,7 @@ contract H_H02_TrustedRouterTimelock is Test {
         vm.prank(admin);
         hook.proposeTrustedRouter(routerA, false);
         vm.warp(block.timestamp + 48 hours + 1);
+        vm.prank(admin);
         hook.executeTrustedRouter(routerA);
         assertFalse(hook.isTrustedRouter(routerA));
     }

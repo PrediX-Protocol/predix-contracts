@@ -16,7 +16,10 @@ edit `SC/.env`, do not edit `.s.sol`.
 | `../hook/script/DeployHook.s.sol` | `PrediXHookV2` implementation + CREATE2-salt-mined `PrediXHookProxyV2`. |
 | `../exchange/script/DeployExchange.s.sol` | Standalone `PrediXExchange`. |
 | `../router/script/DeployRouter.s.sol` | `PrediXRouter` with 9 immutables. |
-| `../shared/script/DeployTestUSDC.s.sol` | Testnet-only open-mint ERC20 with mainnet USDC metadata. Deploy once per testnet before `DeployAll`. |
+| `../shared/script/DeployTestUSDC.s.sol` | Testnet-only restricted ERC20 with mainnet USDC metadata. Owner-only mint, transfer-restricted (at least one side must be whitelisted protocol contract). Deploy once per testnet before `DeployAll`. |
+| `../shared/script/DeployFaucet.s.sol` | `FaucetRelayedV2` — testnet faucet dispensing USDC + optional ETH. Deploy after `DeployAll`. |
+| `../router/script/DeployMarketFactory.s.sol` | `PrediXMarketFactory` — batches market creation + AMM pool in 1 tx. Deploy after `DeployAll`. |
+| `PostDeployWiring.s.sol` | Post-deploy wiring: whitelist protocol contracts on TestUSDC, grant CREATOR_ROLE, fund faucet + deployer. |
 
 ## Environment setup
 
@@ -33,11 +36,12 @@ edit `SC/.env`, do not edit `.s.sol`.
 
 Circle's public USDC testnet faucets are rate-limited and can't cover a full
 end-to-end flow (split 100k + CLOB + AMM + redeem). The repo ships a
-testnet-only open-mint token at
+testnet-only restricted token at
 `packages/shared/script/DeployTestUSDC.s.sol` that matches mainnet USDC
 metadata exactly (name `USD Coin`, symbol `USDC`, 6 decimals, EIP-2612
-permit). Anyone can mint any amount to any address via the `mint` entry
-point — **never deploy on mainnet.**
+permit). **Only the owner can mint.** Transfers are restricted: at least one
+side (sender or receiver) must be a whitelisted protocol contract —
+user-to-user transfers are blocked. **Never deploy on mainnet.**
 
 **Step 0 (testnet only):**
 
@@ -61,6 +65,34 @@ locally; never commit the real value.
 
 ## Deployment order
 
+### Full testnet flow (6 steps)
+
+```
+Step 1: DeployTestUSDC         → USDC_ADDRESS
+Step 2: DeployAll              → DIAMOND_ADDRESS, HOOK_PROXY_ADDRESS, EXCHANGE_ADDRESS, ROUTER_ADDRESS, ...
+Step 3: Deploy PoolModifyLiquidityTest (forge create) → LP_TEST_ADDRESS
+Step 4: DeployFaucet           → FAUCET_ADDRESS
+Step 5: DeployMarketFactory    → MARKET_FACTORY_ADDRESS
+Step 6: PostDeployWiring       → whitelist, roles, funding
+```
+
+After each step, paste emitted addresses into `.env` before running the next step.
+
+**Step 3 — PoolModifyLiquidityTest** is a Uniswap v4 test utility that
+`PrediXMarketFactory` uses for LP operations. Deploy it via `forge create`
+from the diamond package directory (which has the v4-core remapping):
+
+```bash
+cd SC/packages/diamond
+forge create \
+    @uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol:PoolModifyLiquidityTest \
+    --constructor-args $POOL_MANAGER_ADDRESS \
+    --rpc-url $RPC_URL \
+    --private-key $DEPLOYER_PRIVATE_KEY
+```
+
+### Core protocol (DeployAll)
+
 `DeployAll.s.sol` is the canonical path and enforces this order in a single broadcast:
 
 ```
@@ -71,7 +103,8 @@ Timelock
                             └── Hook impl + salt-mined Hook proxy
                                     └── Exchange
                                             └── Router
-                                                    └── transferGovernance (multisig + Timelock)
+                                                    └── setTrustedRouter (router + quoter)
+                                                            └── transferGovernance (multisig + Timelock)
 ```
 
 During the middle steps the EOA deployer temporarily holds every admin role on the
@@ -80,6 +113,12 @@ diamond so it can wire `MarketInit` via a second `diamondCut` and call
 role to the multisig, grants `CUT_EXECUTOR_ROLE` to the Timelock, and renounces every
 role from the deployer. `DiamondDeployLib.verifyPostDeploy` is called post-broadcast
 and **will revert the simulation** if the final role layout is wrong.
+
+### Production (mainnet)
+
+On mainnet, skip Step 1 (use real Circle USDC), Step 3 (use canonical
+PositionManager instead of PoolModifyLiquidityTest), and Step 6 (no testnet
+wiring needed). Steps 4 and 5 are optional operational helpers.
 
 ## Dry-run (required before any live deploy)
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -82,7 +82,7 @@ contract PreviewExecuteParityTest is Test {
 
     function _place(address owner, IPrediXExchange.Side side, uint256 price, uint256 amount) internal {
         vm.prank(owner);
-        exchange.placeOrder(MARKET_ID, side, price, amount);
+        exchange.placeOrder(MARKET_ID, side, price, amount, bytes32(0));
     }
 
     /// @notice Fuzz dimension: `sideRaw` ∈ {0..3}, `amountIn` sized so it can
@@ -116,7 +116,7 @@ contract PreviewExecuteParityTest is Test {
 
         vm.prank(taker);
         (uint256 actualFilled, uint256 actualCost) =
-            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, block.timestamp + 1);
+            exchange.fillMarketOrder(MARKET_ID, side, limitPrice, amountIn, taker, taker, maxFills, block.timestamp + 1, bytes32(0));
 
         assertEq(previewFilled, actualFilled, "filled drift");
         assertEq(previewCost, actualCost, "cost drift");

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -36,7 +36,8 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_YES, 30_000, 1_000_003, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 30_000, 1_000_003, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         // Only iter-1 executed; iter-2 dust fill was skipped.
@@ -74,7 +75,7 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) =
-            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 1, bob, bob, 0, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 1, bob, bob, 0, _deadline(), bytes32(0));
 
         assertEq(filled, 0, "no shares filled");
         assertEq(cost, 0, "no cost");
@@ -100,7 +101,7 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) =
-            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 1, bob, bob, 0, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 990_000, 1, bob, bob, 0, _deadline(), bytes32(0));
 
         assertEq(filled, 0, "no shares");
         assertEq(cost, 0, "no cost");
@@ -133,7 +134,7 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 filled, uint256 cost) =
-            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 10_000, 1, bob, bob, 0, _deadline());
+            exchange.fillMarketOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 10_000, 1, bob, bob, 0, _deadline(), bytes32(0));
 
         assertEq(filled, 0, "no USDC out");
         assertEq(cost, 0, "no YES in");
@@ -158,7 +159,7 @@ contract PrediXExchangeDustTest is ExchangeTestBase {
         _giveUsdc(bob, 65 * ONE_SHARE);
         vm.prank(bob);
         (bytes32 bobId, uint256 bobFilled) =
-            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE);
+            exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 650_000, 100 * ONE_SHARE, bytes32(0));
 
         // MINT taker price improvement: $5 back to bob (not feeRecipient).
         assertEq(bobFilled, 100 * ONE_SHARE, "bob fully filled");

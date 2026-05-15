@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -63,14 +63,16 @@ contract FlashLoanCLOBAttacker {
         IERC20(usdc).approve(address(exchange), type(uint256).max);
 
         (bytes32 sellOrderId,) = exchange.placeOrder(
-            marketId, IPrediXExchange.Side.SELL_YES, 10_000, 200e6
+            marketId, IPrediXExchange.Side.SELL_YES, 10_000, 200e6,
+                bytes32(0)
         );
 
         // 3. Try to buy cheap from own order via fillMarketOrder
         // This should fail: self-match or NotTaker
         try exchange.fillMarketOrder(
             marketId, IPrediXExchange.Side.BUY_YES, 10_000, 2e6,
-            address(this), address(this), 10, block.timestamp + 300
+            address(this), address(this), 10, block.timestamp + 300,
+                bytes32(0)
         ) {
             // If succeeded, attacker bought own cheap YES
         } catch {
@@ -149,7 +151,7 @@ contract DustAccumulator {
         for (uint256 i; i < numFills; i++) {
             try exchange.fillMarketOrder(
                 marketId, IPrediXExchange.Side.BUY_YES, 990_000, fillAmount,
-                address(this), address(this), 1, block.timestamp + 300
+                address(this), address(this), 1, block.timestamp + 300, bytes32(0)
             ) {} catch { break; }
         }
 
@@ -455,7 +457,7 @@ contract E2EAttackVectors is Script {
         {
             // Place a large SELL YES order
             IERC20(mkt.yesToken).approve(EXCHANGE, type(uint256).max);
-            IPrediXExchange(EXCHANGE).placeOrder(mid, IPrediXExchange.Side.SELL_YES, 500_000, 200e6);
+            IPrediXExchange(EXCHANGE).placeOrder(mid, IPrediXExchange.Side.SELL_YES, 500_000, 200e6, bytes32(0));
 
             uint256 exchangeUsdcBefore = IERC20(USDC).balanceOf(EXCHANGE);
 
@@ -464,7 +466,7 @@ contract E2EAttackVectors is Script {
             for (uint256 i; i < 10; i++) {
                 try IPrediXExchange(EXCHANGE).fillMarketOrder(
                     mid, IPrediXExchange.Side.BUY_YES, 500_000, 1e6,
-                    deployer, deployer, 1, block.timestamp + 300
+                    deployer, deployer, 1, block.timestamp + 300, bytes32(0)
                 ) {} catch { break; }
             }
 

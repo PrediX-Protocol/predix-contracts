@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IAccessControlFacet} from "@predix/shared/interfaces/IAccessControlFacet.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
@@ -21,6 +21,13 @@ contract AccessControlFacet is IAccessControlFacet {
     /// @inheritdoc IAccessControlFacet
     function revokeRole(bytes32 role, address account) external override {
         LibAccessControl.checkRole(LibAccessControl.getRoleAdmin(role));
+        // Force callers to address a real holder. The legacy OZ silent-no-op
+        // hides governance-call misuse from off-chain audits (no RoleRevoked
+        // event is emitted, but the call trace still records a successful
+        // privileged call).
+        if (!LibAccessControl.hasRole(role, account)) {
+            revert AccessControl_NotARoleMember(role, account);
+        }
         _enforceLastAdminGuard(role, account);
         LibAccessControl.revokeRole(role, account);
     }

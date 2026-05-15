@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title LibDiamondStorage
 /// @notice Diamond storage layout for EIP-2535 cut + loupe state and ERC-165 registry.

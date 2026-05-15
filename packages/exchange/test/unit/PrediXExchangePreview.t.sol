@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Vm} from "forge-std/Vm.sol";
 
@@ -22,7 +22,8 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 600_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(pf, af, "filled");
@@ -39,7 +40,8 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(pf, af);
@@ -56,7 +58,8 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(pf, af);
@@ -76,7 +79,8 @@ contract PrediXExchangePreviewTest is ExchangeTestBase {
 
         vm.prank(bob);
         (uint256 af, uint256 ac) = exchange.fillMarketOrder(
-            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline()
+            MARKET_ID, IPrediXExchange.Side.BUY_YES, 700_000, 100 * ONE_SHARE, bob, bob, 0, _deadline(),
+            bytes32(0)
         );
 
         assertEq(pf, 100 * ONE_SHARE, "filled both levels");

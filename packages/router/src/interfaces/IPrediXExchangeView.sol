@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IPrediXExchangeView
 /// @notice Minimal local copy of the surface of `IPrediXExchange` that `PrediXRouter` uses.
@@ -32,7 +32,8 @@ interface IPrediXExchangeView {
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 takerBuilder
     ) external returns (uint256 filled, uint256 cost);
 
     /// @notice Simulate `fillMarketOrder` without execution. Safe to call from `eth_call`.

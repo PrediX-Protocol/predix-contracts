@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPrediXExchangeView} from "@predix/router/interfaces/IPrediXExchangeView.sol";
@@ -58,7 +58,8 @@ contract MockExchange {
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 /* takerBuilder */
     ) external returns (uint256 filled, uint256 cost) {
         require(!revertOnFill, "MockExchange: revertOnFill");
         require(block.timestamp <= deadline, "MockExchange: deadline");

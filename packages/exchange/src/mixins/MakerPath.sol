@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -44,7 +44,7 @@ abstract contract MakerPath is ExchangeStorage {
 
     // ============ placeOrder ============
 
-    function _placeOrder(uint256 marketId, IPrediXExchange.Side side, uint256 price, uint256 amount)
+    function _placeOrder(uint256 marketId, IPrediXExchange.Side side, uint256 price, uint256 amount, bytes32 builder)
         internal
         virtual
         returns (bytes32 orderId, uint256 filledAmount)
@@ -75,7 +75,8 @@ abstract contract MakerPath is ExchangeStorage {
             price: price,
             amount: amount,
             filled: 0,
-            depositLocked: uint128(depositRequired)
+            depositLocked: uint128(depositRequired),
+            builder: builder
         });
 
         // 4. Try matching against resting makers
@@ -128,7 +129,7 @@ abstract contract MakerPath is ExchangeStorage {
             }
         }
 
-        emit IPrediXExchange.OrderPlaced(orderId, marketId, msg.sender, side, price, amount);
+        emit IPrediXExchange.OrderPlaced(orderId, marketId, msg.sender, side, price, amount, builder);
     }
 
     // ============ cancelOrder ============
@@ -255,13 +256,22 @@ abstract contract MakerPath is ExchangeStorage {
 
             // Dust filter: if `fillAmt * makerPrice` floors to 0, executing this
             // fill would transfer tokens on one leg for 0 USDC consideration — a
-            // silent wealth transfer. Skip the maker atomically without ANY state
-            // mutation so `cost` / `filled` stay accurate and the phase-A loop
-            // advances cleanly.
+            // silent wealth transfer. Differentiate two cases:
+            //   Type A — maker is STRUCTURAL dust: `makerRemaining * price / 1e6 == 0`.
+            //            Force-clean (mirrors TakerPath behaviour). The dust order
+            //            cannot fill at any future fill amount, so leaving it in the
+            //            queue would gas-burn every subsequent placeOrder against
+            //            this price level.
+            //   Type B — placer's `newRemaining` is sub-tick at this price but the
+            //            maker is fine at its own scale. Break the inner loop without
+            //            mutating either order so `filled` stays accurate.
             uint256 usdcAmt = (fillAmt * makerPrice) / PRICE_PRECISION;
             if (usdcAmt == 0) {
-                i++;
-                continue;
+                if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
+                    _forceCleanDustMaker(ctx.marketId, makerOrderId, makerPrice);
+                    continue; // queue length shrunk; re-read at index `i`
+                }
+                break;
             }
 
             // Effects on both order ledgers BEFORE any external transfer (CEI).
@@ -294,7 +304,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -413,7 +424,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MINT, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MINT, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -532,7 +544,8 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MERGE, fillAmt, makerPrice
+                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MERGE, fillAmt, makerPrice,
+                maker.builder, orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {

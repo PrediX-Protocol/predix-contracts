@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
@@ -18,7 +18,7 @@ contract EventInvariantTest is EventFixture {
     function setUp() public override {
         super.setUp();
         eventEndTime = block.timestamp + 365 days;
-        handler = new EventHandler(address(diamond), address(usdc), admin, eventEndTime);
+        handler = new EventHandler(address(diamond), address(usdc), admin, eventEndTime, address(eventOracle));
 
         // SPEC-03: handler drives `createEvent` from its `users[0]` identity, so
         // that address needs CREATOR_ROLE for the fuzzer to make progress.

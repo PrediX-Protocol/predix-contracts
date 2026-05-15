@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title LibMarketStorage
 /// @notice Diamond storage layout for the market lifecycle facet.

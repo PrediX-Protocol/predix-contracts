@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
@@ -59,6 +59,7 @@ contract DeployAll is Script {
         uint256 deployerKey;
         address deployer;
         address multisig;
+        address pauser;
         address reporter;
         address registrar;
         address feeRecipient;
@@ -172,13 +173,15 @@ contract DeployAll is Script {
                 IPrediXHook(out.hookProxy).setAdmin(env.hookRuntimeAdmin);
             }
 
-            DiamondDeployLib.transferGovernance(out.diamond, env.deployer, env.multisig, out.timelock);
+            DiamondDeployLib.transferGovernance(
+                out.diamond, env.deployer, env.multisig, env.pauser, out.timelock
+            );
         }
 
         vm.stopBroadcast();
 
         if (env.finalizeGovernance) {
-            DiamondDeployLib.verifyPostDeploy(out.diamond, out.facets, env.multisig, out.timelock);
+            DiamondDeployLib.verifyPostDeploy(out.diamond, out.facets, env.multisig, env.pauser, out.timelock);
         }
         _logSummary(env, out);
     }
@@ -189,6 +192,12 @@ contract DeployAll is Script {
         e.deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         e.deployer = vm.addr(e.deployerKey);
         e.multisig = vm.envAddress("MULTISIG_ADDRESS");
+        // PAUSER_ADDRESS is intentionally a required env var (no fallback)
+        // so the operator must make the separate-key vs single-key choice
+        // explicitly. Set `PAUSER_ADDRESS=$MULTISIG_ADDRESS` for the
+        // single-key model. See docs/KEY_MANAGEMENT_POLICY.md for the
+        // separation rationale (audit N-10).
+        e.pauser = vm.envAddress("PAUSER_ADDRESS");
         e.reporter = vm.envAddress("REPORTER_ADDRESS");
         e.feeRecipient = vm.envAddress("FEE_RECIPIENT");
         e.hookProxyAdmin = vm.envAddress("HOOK_PROXY_ADMIN");

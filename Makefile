@@ -38,3 +38,11 @@ clean:
 
 $(PACKAGES):
 	$(MAKE) -C packages/$@ build
+
+# ── Slither static analysis ──────────────────────────────────────────
+SLITHER_PKGS := diamond exchange router hook oracle
+
+slither-%:
+	cd packages/$* && slither . --config-file slither.config.json
+
+slither-all: $(addprefix slither-,$(SLITHER_PKGS))

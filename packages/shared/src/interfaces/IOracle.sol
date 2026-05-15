@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 /// @title IOracle
 /// @notice Minimal oracle interface PrediX markets use to resolve their binary outcome.

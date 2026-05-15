@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -425,7 +425,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     }
 
     /// @inheritdoc IPrediXHook
-    function executeTrustedRouter(address router) external override {
+    function executeTrustedRouter(address router) external override onlyAdmin {
         uint256 proposedAt = _pendingRouterProposedAt[router];
         if (proposedAt == 0) revert Hook_NoPendingRouterChange();
         if (block.timestamp < proposedAt + TRUSTED_ROUTER_DELAY) {
@@ -612,11 +612,17 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // ---------------------------------------------------------------------
 
     /// @inheritdoc IHooks
+    /// @dev `whenNotPaused` covers the audit N-05 finding: a paused hook
+    ///      previously still accepted new pool initializations, which would
+    ///      onboard fresh user funds into a known-broken state. Remove and
+    ///      liquidity paths are paused too; only `beforeRemoveLiquidity` and
+    ///      cancel-only flows stay open so LPs can always exit.
     function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
         external
         view
         override
         onlyPoolManager
+        whenNotPaused
         returns (bytes4)
     {
         return _beforeInitialize(sender, key, sqrtPriceX96);
@@ -796,8 +802,9 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         address trader = _resolveIdentity(sender, poolId);
         bool isBuy = yesIsCurrency0 ? !params.zeroForOne : params.zeroForOne;
         uint256 yesPrice = _sqrtPriceToYesPrice(sqrtPriceX96, yesIsCurrency0);
+        uint256 noPrice = yesPrice <= FeeTiers.PRICE_UNIT ? FeeTiers.PRICE_UNIT - yesPrice : 0;
 
-        emit Hook_MarketTraded(marketId, trader, isBuy, usdcVolume, yesVolume, yesPrice);
+        emit Hook_MarketTraded(marketId, trader, isBuy, usdcVolume, yesVolume, yesPrice, noPrice);
 
         if (hookData.length >= FeeTiers.HOOKDATA_REFERRER_END) {
             address referrer = address(bytes20(hookData[0:FeeTiers.HOOKDATA_REFERRER_END]));

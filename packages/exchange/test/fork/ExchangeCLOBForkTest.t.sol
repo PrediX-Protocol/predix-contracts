@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -67,9 +67,9 @@ contract ExchangeCLOBForkTest is Test {
         _giveYesNo(bob, 100e6);
 
         vm.prank(alice);
-        (bytes32 aliceOrder,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 400_000, 100e6);
+        (bytes32 aliceOrder,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 400_000, 100e6, bytes32(0));
         vm.prank(bob);
-        (bytes32 bobOrder,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 600_000, 100e6);
+        (bytes32 bobOrder,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_NO, 600_000, 100e6, bytes32(0));
 
         // Neutralise compiler unused-var warnings (both ids are structural proof
         // that orders landed; later asserts check the on-chain state instead).
@@ -85,7 +85,7 @@ contract ExchangeCLOBForkTest is Test {
         // exchange must refund the full USDC deposit and hold zero balance.
         _giveUsdc(alice, 40e6);
         vm.prank(alice);
-        (bytes32 orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 400_000, 100e6);
+        (bytes32 orderId,) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 400_000, 100e6, bytes32(0));
 
         // Strict solvency while the order rests.
         assertEq(usdc.balanceOf(address(exchange)), 40e6);

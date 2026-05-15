@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -71,9 +71,6 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         Below this, rounding dust dominates and the user would lose more than they gain.
     uint256 internal constant MIN_TRADE_AMOUNT = 1000;
 
-    /// @notice Default `maxFills` substituted when the caller supplies zero.
-    uint256 internal constant DEFAULT_MAX_FILLS = 10;
-
     /// @notice Virtual-NO path safety margin. The router under-sizes the `mintAmount` by 3%
     ///         relative to the Quoter's spot-price estimate, absorbing v4 price impact between
     ///         the quote and the actual swap. See spec §6.8.
@@ -91,6 +88,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
     /// @notice Price precision used by the CLOB and by the AMM fee math (1e6 = 100%).
     uint256 internal constant PRICE_PRECISION = 1e6;
+
+    /// @notice Canonical Permit2 deployment address. Deterministic across every EVM
+    ///         chain via the deployer pattern documented in the Uniswap Permit2 repo.
+    ///         Exposed as a constant so off-chain tooling and the deploy verifier can
+    ///         assert the router was wired to the real Permit2 in production.
+    address public constant CANONICAL_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // =========================================================================
     // Immutables
@@ -156,6 +159,22 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             address(_poolManager) == address(0) || _diamond == address(0) || _usdc == address(0) || _hook == address(0)
                 || _exchange == address(0) || address(_quoter) == address(0) || address(_permit2) == address(0)
         ) revert ZeroAddress();
+
+        // Canonical pool shape: the hook's `registerMarketPool` rejects
+        // non-canonical fee / tickSpacing. Catching zero here at construction
+        // gives a louder, earlier failure than a confusing pool-registration
+        // revert later. The hook's own constructor applies the same checks.
+        if (_lpFeeFlag == 0) revert InvalidLpFeeFlag();
+        if (_tickSpacing == 0) revert InvalidTickSpacing();
+
+        // Catch the obvious "deployer pointed at an EOA" typo. The audited
+        // canonical Permit2 lives at `CANONICAL_PERMIT2`, but test fixtures
+        // and pre-canonical-deployment chains may legitimately wire a fresh
+        // Permit2 — enforcing the canonical address here would break those
+        // paths. Verifying that the target has contract code is the minimum
+        // viable check; deploy-time `verifyPostDeploy` should additionally
+        // assert `address(permit2) == CANONICAL_PERMIT2` for mainnet.
+        if (address(_permit2).code.length == 0) revert Permit2NotAContract();
 
         poolManager = _poolManager;
         diamond = _diamond;
@@ -554,7 +573,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
             ) returns (
             uint256 _filled, uint256 _cost
         ) {
@@ -639,7 +658,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
             ) returns (
             uint256 _filled, uint256 _cost
         ) {
@@ -1020,6 +1039,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint160 amount,
         address token
     ) internal {
+        // Reject permits signed for a different spender BEFORE touching Permit2.
+        // Without this check the downstream `transferFrom` would revert deep
+        // inside Permit2 with an opaque allowance error — fail here with a
+        // selector tooling can pattern-match on.
+        if (permitSingle.spender != address(this)) revert InvalidPermitSpender();
         if (permitSingle.details.token != token) revert InvalidPermitToken();
         if (permitSingle.details.amount != amount) revert InvalidPermitAmount();
         permit2.permit(msg.sender, permitSingle, signature);

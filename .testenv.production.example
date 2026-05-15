@@ -14,8 +14,17 @@ DEPLOYER_PRIVATE_KEY=0x_REPLACE_WITH_DEPLOYER_PRIVATE_KEY
 
 # ============ GOVERNANCE ============
 # Safe 3-of-5 multisig address. Deploy Safe FIRST at https://app.safe.global
-# then paste address here.
+# then paste address here. Holds DEFAULT_ADMIN + ADMIN + OPERATOR + CREATOR
+# roles after `transferGovernance`. CANNOT pause directly — see PAUSER_ADDRESS.
 MULTISIG_ADDRESS=0x_REPLACE_WITH_SAFE_MULTISIG_ADDRESS
+
+# Pause hot wallet (audit N-10). Holds PAUSER_ROLE separately so incident
+# response is not blocked on multisig signing. Use a hardware-wallet EOA or
+# a 1-of-N Safe with a dedicated key. SET TO `$MULTISIG_ADDRESS` for the
+# single-key model — explicit so the operator must make the choice.
+# Tradeoff: a compromised pauser can DoS (pause) but CANNOT drain fees or
+# rotate roles. Multisig unpauses after timelock.
+PAUSER_ADDRESS=0x_REPLACE_WITH_PAUSER_WALLET_OR_SET_TO_MULTISIG
 
 # TimelockController: deployed by DeployAll.s.sol automatically.
 # Proposer + executor = MULTISIG_ADDRESS.
@@ -78,3 +87,33 @@ TICK_SPACING=60
 # Set to true for production deploy (transfers all roles to multisig).
 # Set to false for testnet (keeps deployer as admin for convenience).
 DIAMOND_FINALIZE_GOVERNANCE=true
+
+# ============ POST-DEPLOY ADDRESSES (fill after DeployAll) ============
+# These are outputs of DeployAll, used by auxiliary scripts.
+DIAMOND_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
+HOOK_PROXY_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
+EXCHANGE_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
+ROUTER_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
+MANUAL_ORACLE_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
+POSITION_MANAGER_ADDRESS=0x_UNISWAP_V4_POSITION_MANAGER
+
+# ============ AUXILIARY CONTRACTS ============
+# PoolModifyLiquidityTest (v4-core test utility, required by MarketFactory).
+# Deploy via: forge create PoolModifyLiquidityTest --constructor-args $POOL_MANAGER_ADDRESS
+LP_TEST_ADDRESS=0x_DEPLOY_SEPARATELY
+
+# ============ FAUCET (testnet only) ============
+FAUCET_RELAYER=0x_BE_SIGNER_ADDRESS
+FAUCET_USDC_AMOUNT=10000000000
+FAUCET_ETH_AMOUNT=0
+FAUCET_COOLDOWN_SEC=86400
+FAUCET_ADDRESS=0x_FROM_DEPLOY_FAUCET_OUTPUT
+
+# ============ MARKET FACTORY ============
+MARKET_FACTORY_ADDRESS=0x_FROM_DEPLOY_MARKET_FACTORY_OUTPUT
+
+# ============ POST-DEPLOY WIRING (testnet only) ============
+# USDC minting amounts for PostDeployWiring. Defaults: 10M faucet, 1M deployer.
+# Set to 0 to skip minting.
+# FAUCET_FUND_AMOUNT=10000000000000
+# DEPLOYER_FUND_AMOUNT=1000000000000

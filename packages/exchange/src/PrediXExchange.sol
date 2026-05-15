@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -36,6 +36,7 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     error ExchangePaused();
     error OnlyPauser();
+    error OnlyAdmin();
     error Exchange_AlreadyInitialized();
 
     event Paused(address indexed account);
@@ -51,6 +52,13 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     modifier onlyPauser() {
         if (!IAccessControlFacet(diamond).hasRole(Roles.PAUSER_ROLE, msg.sender)) {
             revert OnlyPauser();
+        }
+        _;
+    }
+
+    modifier onlyAdmin() {
+        if (!IAccessControlFacet(diamond).hasRole(Roles.ADMIN_ROLE, msg.sender)) {
+            revert OnlyAdmin();
         }
         _;
     }
@@ -88,7 +96,7 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     /// @notice Update the fee recipient address. Gated by diamond's ADMIN_ROLE.
     ///         Enables migration to a FeeController contract without redeploying.
-    function setFeeRecipient(address _feeRecipient) external onlyPauser {
+    function setFeeRecipient(address _feeRecipient) external onlyAdmin {
         if (_feeRecipient == address(0)) revert ZeroAddress();
         address previous = feeRecipient;
         feeRecipient = _feeRecipient;
@@ -98,14 +106,14 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     // ======== Maker path (gated by Exchange pause) ========
 
     /// @inheritdoc IPrediXExchange
-    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount)
+    function placeOrder(uint256 marketId, Side side, uint256 price, uint256 amount, bytes32 builder)
         external
         override
         nonReentrant
         whenNotPaused
         returns (bytes32 orderId, uint256 filledAmount)
     {
-        return _placeOrder(marketId, side, price, amount);
+        return _placeOrder(marketId, side, price, amount, builder);
     }
 
     /// @inheritdoc IPrediXExchange
@@ -113,6 +121,35 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     ///      withdraw locked deposits, even when the maker path is paused.
     function cancelOrder(bytes32 orderId) external override nonReentrant {
         _cancelOrder(orderId);
+    }
+
+    /// @inheritdoc IPrediXExchange
+    /// @dev Bypass pause (user exit guarantee). Partial success — skips orders that
+    ///      don't belong to caller, are already cancelled, or fully filled.
+    function cancelOrders(bytes32[] calldata orderIds) external override nonReentrant returns (uint256 cancelledCount) {
+        uint256 len = orderIds.length;
+        if (len == 0) revert Exchange_EmptyArray();
+        if (len > MAX_BATCH_CANCEL) revert Exchange_BatchTooLarge();
+
+        for (uint256 i; i < len;) {
+            if (_tryCancel(orderIds[i])) {
+                unchecked { ++cancelledCount; }
+            }
+            unchecked { ++i; }
+        }
+    }
+
+    /// @dev Attempt to cancel a single order owned by msg.sender. Returns false
+    ///      (no revert) if the order is invalid, not owned, or already terminal.
+    function _tryCancel(bytes32 orderId) internal returns (bool) {
+        Order storage order = orders[orderId];
+        if (order.owner == address(0)) return false;
+        if (order.owner != msg.sender) return false;
+        if (order.cancelled) return false;
+        if (order.filled >= order.amount) return false;
+
+        _cancelOrder(orderId);
+        return true;
     }
 
     // ======== Taker path (permissionless) ========
@@ -128,9 +165,12 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         address taker,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 takerBuilder
     ) external override nonReentrant returns (uint256 filled, uint256 cost) {
-        return _fillMarketOrder(marketId, takerSide, limitPrice, amountIn, taker, recipient, maxFills, deadline);
+        return _fillMarketOrder(
+            marketId, takerSide, limitPrice, amountIn, taker, recipient, maxFills, deadline, takerBuilder
+        );
     }
 
     // ======== Views (E2c stubs delegate to mixin) ========

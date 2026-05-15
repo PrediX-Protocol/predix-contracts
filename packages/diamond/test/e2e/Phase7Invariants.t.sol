@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -69,7 +69,7 @@ contract Phase7Invariants is Phase7ForkBase {
 
         vm.startPrank(maker);
         IERC20(USDC).approve(EXCHANGE, budget);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, price, amount);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, price, amount, bytes32(0));
         vm.stopPrank();
 
         uint256 exAfter = IERC20(USDC).balanceOf(EXCHANGE);

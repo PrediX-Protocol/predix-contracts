@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {Script, console2} from "forge-std/Script.sol";
 
@@ -23,6 +23,7 @@ contract DeployDiamond is Script {
     function run() external returns (address diamond, DiamondDeployLib.FacetAddresses memory facets) {
         address deployer = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
+        address pauser = vm.envAddress("PAUSER_ADDRESS");
         address timelock = vm.envAddress("TIMELOCK_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
         address feeRecipient = vm.envAddress("FEE_RECIPIENT");
@@ -37,12 +38,12 @@ contract DeployDiamond is Script {
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, usdc, feeRecipient, marketCreationFee, defaultPerMarketCap);
 
         if (finalize) {
-            DiamondDeployLib.transferGovernance(diamond, deployer, multisig, timelock);
+            DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, timelock);
         }
 
         vm.stopBroadcast();
 
-        if (finalize) DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, timelock);
+        if (finalize) DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock);
 
         console2.log("Diamond:", diamond);
         console2.log("  cut facet:", facets.cut);

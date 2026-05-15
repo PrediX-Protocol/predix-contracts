@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
@@ -68,7 +68,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Alice places SELL YES @0.60
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 600_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills via taker
@@ -76,7 +76,8 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 60e6, bob, bob, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 60e6, bob, bob, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -111,7 +112,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Sell 3_000 YES on CLOB, merge remaining 7_000
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 3_000e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 3_000e6, bytes32(0));
 
         // Merge 7_000 (burns 7_000 YES + 7_000 NO, returns 7_000 USDC)
         uint256 usdcBefore = IERC20(USDC).balanceOf(alice);
@@ -159,12 +160,12 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Alice sells YES, Bob buys → pure token swap, no collateral change
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 10, block.timestamp + 300);
+        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
 
         uint256 collateralAfter = diamond.getMarket(marketId).totalCollateral;
@@ -194,7 +195,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Place order at MIN_ORDER_AMOUNT = 1e6
         vm.startPrank(alice);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6);
+        (bytes32 orderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 1e6, bytes32(0));
         vm.stopPrank();
         assertTrue(orderId != bytes32(0));
     }
@@ -203,8 +204,8 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         // Place at first and last valid ticks
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 10_000, 1e6); // $0.01
-        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 990_000, 1e6); // $0.99
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 10_000, 1e6, bytes32(0)); // $0.01
+        exchange.placeOrder(marketId, IPrediXExchange.Side.BUY_YES, 990_000, 1e6, bytes32(0)); // $0.99
         vm.stopPrank();
     }
 
@@ -212,16 +213,17 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Place 3 orders
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6, bytes32(0));
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6, bytes32(0));
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 10e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills with maxFills=1 → only 1 fill
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 1, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 1, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
@@ -262,7 +264,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(eve);
         vm.expectRevert();
         // eve is msg.sender, taker=alice → E-02 revert
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100e6, alice, eve, 10, block.timestamp + 300);
+        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100e6, alice, eve, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -325,20 +327,21 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Place a large order, then fill almost all of it leaving dust
         vm.startPrank(alice);
         IERC20(yesToken).approve(EXCHANGE, type(uint256).max);
-        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100e6);
+        exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 500_000, 100e6, bytes32(0));
         vm.stopPrank();
 
         // Bob fills 99e6 of the 100e6 order
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 49e6, bob, bob, 10, block.timestamp + 300);
+        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 49e6, bob, bob, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
 
         // Market still functional — another fill works
         vm.startPrank(charlie);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300,
+                bytes32(0)
         );
         vm.stopPrank();
 
