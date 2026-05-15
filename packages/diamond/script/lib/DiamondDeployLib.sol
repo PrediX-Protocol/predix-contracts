@@ -108,11 +108,26 @@ library DiamondDeployLib {
         IDiamondCut(diamond).diamondCut(buildMarketAndEventCuts(f), f.marketInit, initData);
     }
 
-    /// @notice Final governance handover. Grants `multisig` the four runtime admin roles,
-    ///         grants `timelock` CUT_EXECUTOR_ROLE, and revokes everything from `deployer`.
-    ///         Caller (deployer) must still hold DEFAULT_ADMIN_ROLE at entry.
-    function transferGovernance(address diamond, address deployer, address multisig, address timelock) internal {
+    /// @notice Final governance handover. Grants the cold multisig the
+    ///         DEFAULT_ADMIN, ADMIN, OPERATOR, CREATOR roles; grants `pauser`
+    ///         the PAUSER_ROLE separately so incident response is not blocked
+    ///         on the multisig signing flow; grants `timelock` CUT_EXECUTOR.
+    ///         Then revokes every role from `deployer`. Caller (deployer)
+    ///         must still hold DEFAULT_ADMIN_ROLE at entry.
+    /// @dev Pass `pauser == multisig` for the single-key operational model
+    ///      (KEY_MANAGEMENT_POLICY.md still recommends separation). The split
+    ///      means a compromised pauser cannot drain fees or rotate roles —
+    ///      only DoS via pause, which the cold multisig can unpause after
+    ///      timelock.
+    function transferGovernance(
+        address diamond,
+        address deployer,
+        address multisig,
+        address pauser,
+        address timelock
+    ) internal {
         if (multisig == address(0)) revert ZeroAddress("multisig");
+        if (pauser == address(0)) revert ZeroAddress("pauser");
         if (timelock == address(0)) revert ZeroAddress("timelock");
 
         IAccessControlFacet ac = IAccessControlFacet(diamond);
@@ -120,26 +135,40 @@ library DiamondDeployLib {
         ac.grantRole(Roles.DEFAULT_ADMIN_ROLE, multisig);
         ac.grantRole(Roles.ADMIN_ROLE, multisig);
         ac.grantRole(Roles.OPERATOR_ROLE, multisig);
-        ac.grantRole(Roles.PAUSER_ROLE, multisig);
+        ac.grantRole(Roles.CREATOR_ROLE, multisig);
+        ac.grantRole(Roles.PAUSER_ROLE, pauser);
         ac.grantRole(Roles.CUT_EXECUTOR_ROLE, timelock);
 
         ac.revokeRole(Roles.CUT_EXECUTOR_ROLE, deployer);
         ac.revokeRole(Roles.PAUSER_ROLE, deployer);
         ac.revokeRole(Roles.OPERATOR_ROLE, deployer);
+        ac.revokeRole(Roles.CREATOR_ROLE, deployer);
         ac.revokeRole(Roles.ADMIN_ROLE, deployer);
         ac.renounceRole(Roles.DEFAULT_ADMIN_ROLE, deployer);
     }
 
     /// @notice Asserts post-deploy invariants so that simulation will revert on a bad wiring.
-    function verifyPostDeploy(address diamond, FacetAddresses memory f, address multisig, address timelock)
-        internal
-        view
-    {
+    /// @dev When `pauser != multisig`, the verifier additionally asserts that
+    ///      `multisig` does NOT hold PAUSER_ROLE. This is the load-bearing
+    ///      check for the audit C-01 fix: an operator who forgets to revoke
+    ///      multisig from PAUSER after split would re-introduce the privilege
+    ///      escalation surface.
+    function verifyPostDeploy(
+        address diamond,
+        FacetAddresses memory f,
+        address multisig,
+        address pauser,
+        address timelock
+    ) internal view {
         IAccessControlFacet ac = IAccessControlFacet(diamond);
         if (!ac.hasRole(Roles.DEFAULT_ADMIN_ROLE, multisig)) revert DeployFailed("multisig DEFAULT_ADMIN");
         if (!ac.hasRole(Roles.ADMIN_ROLE, multisig)) revert DeployFailed("multisig ADMIN");
         if (!ac.hasRole(Roles.OPERATOR_ROLE, multisig)) revert DeployFailed("multisig OPERATOR");
-        if (!ac.hasRole(Roles.PAUSER_ROLE, multisig)) revert DeployFailed("multisig PAUSER");
+        if (!ac.hasRole(Roles.CREATOR_ROLE, multisig)) revert DeployFailed("multisig CREATOR");
+        if (!ac.hasRole(Roles.PAUSER_ROLE, pauser)) revert DeployFailed("pauser PAUSER");
+        if (pauser != multisig && ac.hasRole(Roles.PAUSER_ROLE, multisig)) {
+            revert DeployFailed("multisig still holds PAUSER after split");
+        }
         if (!ac.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock)) revert DeployFailed("timelock CUT_EXECUTOR");
 
         IDiamondLoupe loupe = IDiamondLoupe(diamond);

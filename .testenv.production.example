@@ -14,8 +14,17 @@ DEPLOYER_PRIVATE_KEY=0x_REPLACE_WITH_DEPLOYER_PRIVATE_KEY
 
 # ============ GOVERNANCE ============
 # Safe 3-of-5 multisig address. Deploy Safe FIRST at https://app.safe.global
-# then paste address here.
+# then paste address here. Holds DEFAULT_ADMIN + ADMIN + OPERATOR + CREATOR
+# roles after `transferGovernance`. CANNOT pause directly — see PAUSER_ADDRESS.
 MULTISIG_ADDRESS=0x_REPLACE_WITH_SAFE_MULTISIG_ADDRESS
+
+# Pause hot wallet (audit N-10). Holds PAUSER_ROLE separately so incident
+# response is not blocked on multisig signing. Use a hardware-wallet EOA or
+# a 1-of-N Safe with a dedicated key. SET TO `$MULTISIG_ADDRESS` for the
+# single-key model — explicit so the operator must make the choice.
+# Tradeoff: a compromised pauser can DoS (pause) but CANNOT drain fees or
+# rotate roles. Multisig unpauses after timelock.
+PAUSER_ADDRESS=0x_REPLACE_WITH_PAUSER_WALLET_OR_SET_TO_MULTISIG
 
 # TimelockController: deployed by DeployAll.s.sol automatically.
 # Proposer + executor = MULTISIG_ADDRESS.

@@ -18,11 +18,14 @@ import {MockUSDC} from "../mocks/MockUSDC.sol";
 ///      (vm cheatcodes target the next call-depth frame; library internals
 ///      inline into the test contract and do not cross the frame).
 contract VerifyPostDeployWrapper {
-    function run(address diamond, DiamondDeployLib.FacetAddresses memory f, address multisig, address timelock)
-        external
-        view
-    {
-        DiamondDeployLib.verifyPostDeploy(diamond, f, multisig, timelock);
+    function run(
+        address diamond,
+        DiamondDeployLib.FacetAddresses memory f,
+        address multisig,
+        address pauser,
+        address timelock
+    ) external view {
+        DiamondDeployLib.verifyPostDeploy(diamond, f, multisig, pauser, timelock);
     }
 }
 
@@ -33,6 +36,7 @@ contract VerifyPostDeployWrapper {
 contract DiamondDeployLibTest is Test {
     address internal deployer = makeAddr("deployer");
     address internal multisig = makeAddr("multisig");
+    address internal pauser = makeAddr("pauser");
     address internal feeRecipient = makeAddr("feeRecipient");
 
     // Real TimelockController so `verifyPostDeploy` can assert `getMinDelay()`.
@@ -62,22 +66,25 @@ contract DiamondDeployLibTest is Test {
         // Deployer can hit ADMIN_ROLE-gated setters before handover.
         IMarketFacet(diamond).setDefaultRedemptionFeeBps(100);
 
-        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, timelock);
+        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, timelock);
 
         vm.stopPrank();
 
-        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, timelock);
+        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock);
 
         IAccessControlFacet ac = IAccessControlFacet(diamond);
         assertTrue(ac.hasRole(Roles.DEFAULT_ADMIN_ROLE, multisig), "multisig DEFAULT_ADMIN_ROLE");
         assertTrue(ac.hasRole(Roles.ADMIN_ROLE, multisig), "multisig ADMIN_ROLE");
         assertTrue(ac.hasRole(Roles.OPERATOR_ROLE, multisig), "multisig OPERATOR_ROLE");
-        assertTrue(ac.hasRole(Roles.PAUSER_ROLE, multisig), "multisig PAUSER_ROLE");
+        assertTrue(ac.hasRole(Roles.CREATOR_ROLE, multisig), "multisig CREATOR_ROLE");
+        assertTrue(ac.hasRole(Roles.PAUSER_ROLE, pauser), "pauser PAUSER_ROLE");
+        assertFalse(ac.hasRole(Roles.PAUSER_ROLE, multisig), "multisig must NOT hold PAUSER after split");
         assertTrue(ac.hasRole(Roles.CUT_EXECUTOR_ROLE, timelock), "timelock CUT_EXECUTOR_ROLE");
 
         assertFalse(ac.hasRole(Roles.DEFAULT_ADMIN_ROLE, deployer), "deployer DEFAULT_ADMIN_ROLE revoked");
         assertFalse(ac.hasRole(Roles.ADMIN_ROLE, deployer), "deployer ADMIN_ROLE revoked");
         assertFalse(ac.hasRole(Roles.OPERATOR_ROLE, deployer), "deployer OPERATOR_ROLE revoked");
+        assertFalse(ac.hasRole(Roles.CREATOR_ROLE, deployer), "deployer CREATOR_ROLE revoked");
         assertFalse(ac.hasRole(Roles.PAUSER_ROLE, deployer), "deployer PAUSER_ROLE revoked");
         assertFalse(ac.hasRole(Roles.CUT_EXECUTOR_ROLE, deployer), "deployer CUT_EXECUTOR_ROLE revoked");
 
@@ -106,11 +113,54 @@ contract DiamondDeployLibTest is Test {
         DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
         address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
-        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, address(shortTimelock));
+        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, address(shortTimelock));
         vm.stopPrank();
 
         VerifyPostDeployWrapper wrapper = new VerifyPostDeployWrapper();
         vm.expectRevert(abi.encodeWithSelector(DiamondDeployLib.DeployFailed.selector, "timelock minDelay"));
-        wrapper.run(diamond, facets, multisig, address(shortTimelock));
+        wrapper.run(diamond, facets, multisig, pauser, address(shortTimelock));
+    }
+
+    /// @notice Single-key model (pauser == multisig) must still pass verification.
+    ///         Confirms the post-deploy assertion's `pauser != multisig` branch
+    ///         is conditional on the split, not unconditional.
+    function test_DeployFullDiamond_SingleKey_PauserEqualsMultisig() public {
+        vm.startPrank(deployer);
+        DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
+        address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
+        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, multisig, timelock);
+        vm.stopPrank();
+
+        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, multisig, timelock);
+
+        IAccessControlFacet ac = IAccessControlFacet(diamond);
+        assertTrue(ac.hasRole(Roles.PAUSER_ROLE, multisig), "single-key multisig holds PAUSER");
+    }
+
+    /// @notice Verifier must catch the operator footgun where pauser is split
+    ///         but the operator forgets to revoke PAUSER from multisig. The
+    ///         residual multisig.PAUSER re-introduces the audit C-01 escalation
+    ///         surface (PAUSER can call setFeeRecipient is fixed in C-01, but
+    ///         OTHER PAUSER-gated paths still exist).
+    function test_Revert_VerifyPostDeploy_MultisigStillHoldsPauserAfterSplit() public {
+        vm.startPrank(deployer);
+        DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
+        address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
+        DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, timelock);
+        vm.stopPrank();
+
+        // Multisig (now DEFAULT_ADMIN) grants itself PAUSER — operator footgun.
+        vm.prank(multisig);
+        IAccessControlFacet(diamond).grantRole(Roles.PAUSER_ROLE, multisig);
+
+        VerifyPostDeployWrapper wrapper = new VerifyPostDeployWrapper();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DiamondDeployLib.DeployFailed.selector, "multisig still holds PAUSER after split"
+            )
+        );
+        wrapper.run(diamond, facets, multisig, pauser, timelock);
     }
 }

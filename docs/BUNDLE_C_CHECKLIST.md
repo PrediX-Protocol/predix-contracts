@@ -19,6 +19,11 @@
 
 ### 1.2 Prepare operational hot wallets
 
+- [ ] Create `PAUSER_ADDRESS` wallet (1-of-N Safe or hardware-wallet EOA)
+  - Holds `PAUSER_ROLE` only — separate from cold multisig to avoid 3-of-5
+    signing latency during incident response
+  - Set to `$MULTISIG_ADDRESS` if running single-key model (explicit choice
+    required — env var has no default)
 - [ ] Create `REPORTER_ADDRESS` EOA (manual oracle reporter)
 - [ ] Create `REGISTRAR_ADDRESS` EOA (Chainlink market registrar)
 - [ ] Fund each with ~0.1 ETH for gas
@@ -27,7 +32,7 @@
 ### 1.3 Prepare env file
 
 - [ ] Copy `.testenv.production.example` → `.testenv.production`
-- [ ] Fill ALL addresses (multisig, hot wallets, USDC, PoolManager, Permit2, Quoter)
+- [ ] Fill ALL addresses (multisig, **pauser**, hot wallets, USDC, PoolManager, Permit2, Quoter)
 - [ ] Verify USDC address on Unichain block explorer
 - [ ] Verify PoolManager address on Unichain docs
 - [ ] Set `DIAMOND_FINALIZE_GOVERNANCE=true`
