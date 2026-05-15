@@ -95,4 +95,34 @@ contract PrediXExchangeInvariantTest is Test {
     function invariant_collateral_preserved() public view {
         assertEq(IERC20(yesToken).totalSupply(), IERC20(noToken).totalSupply(), "YES.supply == NO.supply");
     }
+
+    /// @notice Audit N-02: priceBitmap uses only the low 99 bits (indices
+    ///         0..MAX_PRICE_INDEX = 98). High bits must always read zero. A
+    ///         future refactor of `_priceToIndex` or the maker / cancel path
+    ///         that ever sets a bit above the cap would corrupt
+    ///         `highestBit()` / `lowestBit()` peeks — they would return a
+    ///         phantom price index with no backing queue.
+    function invariant_priceBitmapUpperBitsZero() public view {
+        uint256 invalidMask = ~((uint256(1) << 99) - 1);
+        assertEq(
+            exchange.priceBitmap(MARKET_ID, IPrediXExchange.Side.BUY_YES) & invalidMask,
+            0,
+            "BUY_YES bitmap upper bits"
+        );
+        assertEq(
+            exchange.priceBitmap(MARKET_ID, IPrediXExchange.Side.SELL_YES) & invalidMask,
+            0,
+            "SELL_YES bitmap upper bits"
+        );
+        assertEq(
+            exchange.priceBitmap(MARKET_ID, IPrediXExchange.Side.BUY_NO) & invalidMask,
+            0,
+            "BUY_NO bitmap upper bits"
+        );
+        assertEq(
+            exchange.priceBitmap(MARKET_ID, IPrediXExchange.Side.SELL_NO) & invalidMask,
+            0,
+            "SELL_NO bitmap upper bits"
+        );
+    }
 }
