@@ -612,11 +612,17 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // ---------------------------------------------------------------------
 
     /// @inheritdoc IHooks
+    /// @dev `whenNotPaused` covers the audit N-05 finding: a paused hook
+    ///      previously still accepted new pool initializations, which would
+    ///      onboard fresh user funds into a known-broken state. Remove and
+    ///      liquidity paths are paused too; only `beforeRemoveLiquidity` and
+    ///      cancel-only flows stay open so LPs can always exit.
     function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
         external
         view
         override
         onlyPoolManager
+        whenNotPaused
         returns (bytes4)
     {
         return _beforeInitialize(sender, key, sqrtPriceX96);

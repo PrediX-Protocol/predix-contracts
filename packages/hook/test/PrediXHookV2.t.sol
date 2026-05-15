@@ -552,6 +552,21 @@ contract PrediXHookV2Test is Test {
         assertEq(sel, IHooks.beforeRemoveLiquidity.selector);
     }
 
+    /// @notice Audit N-05: paused hook must reject pool initialization. A paused
+    ///         protocol should not onboard fresh user funds into a known-broken
+    ///         state — initializing a pool while paused is exactly that.
+    function test_Revert_BeforeInitialize_Paused_ViaExternal() public {
+        // sqrt(0.5) * 2^96, rounded — matches the midpoint used in the
+        // happy-path test. Value reproduced inline because the original is
+        // a local in that test rather than a contract-level constant.
+        uint160 midpoint_ = 56022770974786143748341366784;
+        vm.prank(admin);
+        hook.setPaused(true);
+        vm.prank(POOL_MANAGER);
+        vm.expectRevert(IPrediXHook.Hook_Paused.selector);
+        hook.beforeInitialize(trader, key0, midpoint_);
+    }
+
     function test_Revert_External_NotPoolManager() public {
         vm.expectRevert(IPrediXHook.Hook_NotPoolManager.selector);
         hook.beforeSwap(trader, key0, swapZeroForOne, "");
