@@ -40,23 +40,25 @@ jobs:
         with:
           version: nightly
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: aderyn-cargo-${{ runner.os }}-v1
-
       - name: Install Aderyn
-        # Cyfrinup's install URL changed multiple times — switch to a direct
-        # `cargo install` against the latest published crate. Slow (~3 min)
-        # on first run, then served from the cargo cache above.
+        # Cyfrin distributes Aderyn via GitHub releases (and homebrew / npm),
+        # not crates.io — `cargo install aderyn` pulls a different,
+        # unrelated crate squatting the name. Download the prebuilt
+        # x86_64-linux tarball directly. Bump ADERYN_VERSION when a newer
+        # release ships.
+        env:
+          ADERYN_VERSION: "0.6.8"
         run: |
-          if ! command -v aderyn >/dev/null 2>&1; then
-            cargo install aderyn --locked
+          curl -fL \
+            "https://github.com/Cyfrin/aderyn/releases/download/aderyn-v${ADERYN_VERSION}/aderyn-x86_64-unknown-linux-gnu.tar.xz" \
+            -o /tmp/aderyn.tar.xz
+          mkdir -p /tmp/aderyn-extract
+          tar -xJf /tmp/aderyn.tar.xz -C /tmp/aderyn-extract
+          ADERYN_BIN="$(find /tmp/aderyn-extract -type f -name aderyn -perm -u+x | head -1)"
+          if [ -z "$ADERYN_BIN" ]; then
+            echo "ERROR: aderyn binary not found in tarball"; ls -R /tmp/aderyn-extract; exit 1
           fi
+          sudo install -m 0755 "$ADERYN_BIN" /usr/local/bin/aderyn
           aderyn --version
 
       - name: Compile package
