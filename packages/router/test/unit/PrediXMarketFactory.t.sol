@@ -85,6 +85,24 @@ contract PrediXMarketFactoryTest is Test {
         new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, hook, address(0), 0, 60);
     }
 
+    /// @dev Audit R-NEW-14: factory must enforce the same `lpFeeFlag != 0` /
+    ///      `tickSpacing != 0` discipline that the router does (pass-1 N-03).
+    ///      Without this, a misdeployment with `fee=0` or `tickSpacing=0`
+    ///      would fail deep inside v4 PoolManager.initialize at the first
+    ///      `_setupPool` call, after the creator has already paid creation
+    ///      fees and minted outcome tokens.
+    function test_Revert_R14_constructor_ZeroLpFeeFlag() public {
+        vm.expectRevert(PrediXMarketFactory.InvalidLpFeeFlag.selector);
+        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, hook, lpTest, 0, 60);
+    }
+
+    function test_Revert_R14_constructor_ZeroTickSpacing() public {
+        vm.expectRevert(PrediXMarketFactory.InvalidTickSpacing.selector);
+        new PrediXMarketFactory(
+            IPoolManager(poolManager), address(diamond), usdc, hook, lpTest, LPFeeLibrary.DYNAMIC_FEE_FLAG, 0
+        );
+    }
+
     // ======== Access control — CREATOR_ROLE ========
 
     function test_Revert_createMarketWithPool_NotCreator() public {

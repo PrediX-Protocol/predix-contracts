@@ -52,6 +52,17 @@ contract PrediXMarketFactory {
 
     error ZeroAddress();
     error NotCreator();
+    /// @notice Reverts when the factory constructor receives `lpFeeFlag_ == 0`.
+    ///         The flag is the dynamic-fee marker for v4 pool initialization
+    ///         and must never be zero. Audit R-NEW-14 — mirrors the router's
+    ///         constructor enforcement so misdeployments fail fast instead of
+    ///         producing junk `PoolKey`s at the first pool-setup call.
+    error InvalidLpFeeFlag();
+    /// @notice Reverts when the factory constructor receives
+    ///         `tickSpacing_ == 0`. v4 PoolManager.initialize rejects zero
+    ///         tick spacing; catching it at construction surfaces the bug
+    ///         before any market is created. Audit R-NEW-14.
+    error InvalidTickSpacing();
 
     modifier onlyCreator() {
         if (!IAccessControlFacet(diamond).hasRole(CREATOR_ROLE, msg.sender)) revert NotCreator();
@@ -75,6 +86,13 @@ contract PrediXMarketFactory {
     ) {
         if (address(poolManager_) == address(0) || diamond_ == address(0)) revert ZeroAddress();
         if (usdc_ == address(0) || hook_ == address(0) || lpTest_ == address(0)) revert ZeroAddress();
+        // Audit R-NEW-14: match the router's zero-check discipline. Without
+        // these guards a misdeployed factory would build `PoolKey`s with
+        // `fee=0` / `tickSpacing=0` and fail deep inside v4 at the first
+        // `_initPool` call, after the creator has already paid the
+        // `marketCreationFee` and minted outcome tokens.
+        if (lpFeeFlag_ == 0) revert InvalidLpFeeFlag();
+        if (tickSpacing_ == 0) revert InvalidTickSpacing();
 
         poolManager = poolManager_;
         diamond = diamond_;
