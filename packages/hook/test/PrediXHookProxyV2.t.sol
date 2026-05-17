@@ -85,10 +85,25 @@ contract PrediXHookProxyV2Test is Test {
     }
 
     function test_Revert_Reinitialize_FrontRunBlocked() public {
-        // Any post-deploy `initialize` call MUST revert because the constructor
-        // already set `_initialized = true` atomically.
-        vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
+        // Audit H-NEW-09: any post-deploy `initialize` call MUST revert. The
+        // proxy now blocks the selector at its fallback (defense-in-depth),
+        // so reverts surface as `HookProxy_InitializeBlocked` rather than
+        // the impl's `Hook_AlreadyInitialized` (which still protects callers
+        // that reach impl through any path that bypasses the proxy).
+        vm.expectRevert(IPrediXHookProxy.HookProxy_InitializeBlocked.selector);
         IPrediXHook(address(proxy)).initialize(address(diamond), hookAdmin, USDC);
+    }
+
+    /// @dev Audit H-NEW-09 (defense-in-depth): even an arbitrary EOA caller
+    ///      hitting `initialize` post-construction is rejected by the proxy
+    ///      before the delegatecall to impl. Without this, a future impl
+    ///      upgrade that loses the `_initialized` guard would let any caller
+    ///      hijack admin / diamond / quoteToken.
+    function test_Revert_H09_InitializeSelectorBlockedFromAnyCaller() public {
+        address attacker = makeAddr("H09_attacker");
+        vm.expectRevert(IPrediXHookProxy.HookProxy_InitializeBlocked.selector);
+        vm.prank(attacker);
+        IPrediXHook(address(proxy)).initialize(attacker, attacker, attacker);
     }
 
     function test_Revert_Constructor_ZeroImpl() public {

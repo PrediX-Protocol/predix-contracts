@@ -402,7 +402,15 @@ contract PrediXHookProxyV2 is IPrediXHookProxy, BaseHook {
     /// @dev `external` (NOT payable) — Solidity automatically rejects any ETH sent
     ///      to a non-payable fallback, so the proxy cannot accumulate a stuck
     ///      balance. There is no `receive()` function for the same reason.
+    ///
+    ///      Audit H-NEW-09 (defense-in-depth): block the `initialize`
+    ///      selector at the proxy. Post-construction, the implementation's
+    ///      `_initialized` flag already rejects re-init — but if a future
+    ///      impl upgrade ever loses that flag, an unguarded forward would
+    ///      let any caller hijack admin/diamond/quoteToken. Reject here so
+    ///      the invariant holds regardless of impl evolution.
     fallback() external {
+        if (msg.sig == IPrediXHook.initialize.selector) revert HookProxy_InitializeBlocked();
         _delegateToImpl();
     }
 
