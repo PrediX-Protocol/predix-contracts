@@ -402,12 +402,29 @@ abstract contract MakerPath is ExchangeStorage {
             }
 
             uint256 makerRemaining = maker.amount - maker.filled;
+
+            // Audit E-NEW-09: Type-A dust force-clean for the MINT path. If
+            // the maker's full remaining produces zero USDC at this price
+            // tick, the order can never contribute a non-zero fill — leave
+            // it in the queue and every subsequent placer wastes a
+            // `MAX_FILLS_PER_PLACE` slot revisiting it. Mirror the comp-path
+            // pattern from pass-1 M-04: mark filled, force-clean, continue.
+            if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
+                _forceCleanDustMaker(ctx.marketId, makerOrderId, makerPrice);
+                continue;
+            }
+
             uint256 fillAmt = newRemaining < makerRemaining ? newRemaining : makerRemaining;
             address makerOwner = maker.owner;
 
             uint256 makerUsdc = (fillAmt * makerPrice) / PRICE_PRECISION;
             uint256 takerUsdc = (fillAmt * ctx.takerPrice) / PRICE_PRECISION;
             if (makerUsdc + takerUsdc < fillAmt) {
+                // Type-B near-dust: the placer's `remaining` is too small to
+                // pair with this otherwise-healthy maker. Skip to the next
+                // maker without touching the current one — the placer's tiny
+                // remaining is refunded after the matching loop, not force-
+                // cleaned here.
                 i++;
                 continue;
             }
@@ -528,7 +545,28 @@ abstract contract MakerPath is ExchangeStorage {
             }
 
             uint256 makerRemaining = maker.amount - maker.filled;
+
+            // Audit E-NEW-10: dust filter for the MERGE path. Without this,
+            // a maker whose remaining size produces zero USDC payout
+            // (`makerRemaining * makerPrice / 1e6 == 0`) would burn its
+            // tokens for nothing while the taker received the full
+            // `fillAmt` USDC produced by `mergePositions` — a silent wealth
+            // transfer from maker to taker. Force-clean the maker (mirrors
+            // pass-1 M-04 comp-path pattern) and skip to the next maker.
+            if ((makerRemaining * makerPrice) / PRICE_PRECISION == 0) {
+                _forceCleanDustMaker(ctx.marketId, makerOrderId, makerPrice);
+                continue;
+            }
+
             uint256 fillAmt = newRemaining < makerRemaining ? newRemaining : makerRemaining;
+            // Type-B near-dust on MERGE: placer's `remaining` would produce
+            // zero maker payout against this otherwise-healthy maker. Skip
+            // forward without touching the maker — placer's tiny remaining
+            // is settled by the post-loop refund path.
+            if ((fillAmt * makerPrice) / PRICE_PRECISION == 0) {
+                i++;
+                continue;
+            }
             address makerOwner = maker.owner;
 
             // Effects: token deposits consumed by the merge.
