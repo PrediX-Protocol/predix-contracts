@@ -122,9 +122,16 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         if (e.refundModeActive) revert Event_RefundModeActive();
         if (block.timestamp < e.endTime + EMERGENCY_DELAY) revert Event_TooEarlyForEmergency();
 
-        try IEventOracle(e.oracle).isEventResolved(eventId) returns (bool oracleReady) {
-            if (oracleReady) revert Event_OracleResolvedUseResolve();
-        } catch {}
+        // Defer to the oracle only if it is still in the approved set —
+        // matches `enableEventRefundMode`'s gate so a revoked-but-still-
+        // answering oracle no longer deadlocks the operator. Without this
+        // gate `resolveEvent` rejects on approval AND `emergencyResolveEvent`
+        // rejects on `oracleReady`, trapping recovery.
+        if (LibConfigStorage.layout().approvedOracles[e.oracle]) {
+            try IEventOracle(e.oracle).isEventResolved(eventId) returns (bool oracleReady) {
+                if (oracleReady) revert Event_OracleResolvedUseResolve();
+            } catch {}
+        }
 
         uint256 n = e.marketIds.length;
         if (winningIndex >= n) revert Event_InvalidWinningIndex();

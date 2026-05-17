@@ -153,12 +153,18 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (m.refundModeActive) revert Market_RefundModeActive();
         if (block.timestamp < m.endTime + EMERGENCY_DELAY) revert Market_TooEarlyForEmergency();
 
-        // If the oracle has since produced an answer, defer to it. Emergency
-        // path is for genuine stalls only, not operator override.
-        try IOracle(m.oracle).isResolved(marketId) returns (bool oracleReady) {
-            if (oracleReady) revert Market_OracleResolvedUseResolve();
-        } catch {
-            // Oracle unreachable — emergency bypass intended.
+        // If the oracle has since produced an answer AND is still in the
+        // approved set, defer to it. Emergency path is for genuine stalls
+        // only, not operator override. Wrapping the try in the approval gate
+        // mirrors `enableRefundMode` so a revoked-but-still-answering oracle
+        // no longer deadlocks the operator: `resolveMarket` rejects on
+        // approval, this path proceeds, and the market can be force-resolved.
+        if (LibConfigStorage.layout().approvedOracles[m.oracle]) {
+            try IOracle(m.oracle).isResolved(marketId) returns (bool oracleReady) {
+                if (oracleReady) revert Market_OracleResolvedUseResolve();
+            } catch {
+                // Oracle unreachable — emergency bypass intended.
+            }
         }
 
         m.isResolved = true;
