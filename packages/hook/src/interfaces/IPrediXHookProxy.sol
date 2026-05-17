@@ -129,6 +129,13 @@ interface IPrediXHookProxy {
     ///         surfaces only when the implementation reverts with empty return data.
     error HookProxy_InitReverted();
 
+    /// @notice Reverts when the proxy fallback receives the `initialize`
+    ///         selector after construction. Audit H-NEW-09. Defense-in-depth:
+    ///         the implementation's `_initialized` flag already protects
+    ///         against re-init, but blocking at the proxy keeps the invariant
+    ///         true even if a future impl upgrade forgets that check.
+    error HookProxy_InitializeBlocked();
+
     // ---------------------------------------------------------------------
     // Upgrade flow
     // ---------------------------------------------------------------------

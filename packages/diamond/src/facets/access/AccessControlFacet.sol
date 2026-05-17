@@ -35,6 +35,13 @@ contract AccessControlFacet is IAccessControlFacet {
     /// @inheritdoc IAccessControlFacet
     function renounceRole(bytes32 role, address callerConfirmation) external override {
         if (callerConfirmation != msg.sender) revert AccessControl_BadConfirmation();
+        // Mirror `revokeRole`'s strict policy. Without this check the library
+        // would silently no-op (no `RoleRevoked` event) when `msg.sender` does
+        // not actually hold `role`, leaving off-chain audits that key on
+        // `tx.success` unable to distinguish a real renounce from a misfire.
+        if (!LibAccessControl.hasRole(role, msg.sender)) {
+            revert AccessControl_NotARoleMember(role, msg.sender);
+        }
         _enforceLastAdminGuard(role, msg.sender);
         LibAccessControl.revokeRole(role, msg.sender);
     }

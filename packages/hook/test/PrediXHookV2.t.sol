@@ -309,6 +309,53 @@ contract PrediXHookV2Test is Test {
         hook.registerMarketPool(7, k);
     }
 
+    /// @dev Audit H-NEW-05: `registerMarketPool` must reject keys whose
+    ///      currency ordering violates v4's `currency0 < currency1`
+    ///      invariant. Without this check a front-runner could pre-register
+    ///      a reverse-ordered key (which v4 PoolManager.initialize would
+    ///      then reject), bricking the market until admin runs the 48h
+    ///      `proposeUnregisterMarketPool` flow.
+    function test_Revert_RegisterMarketPool_NonCanonicalCurrencyOrder() public {
+        // Build a key with reverse ordering against market 1 (yesLow < usdc).
+        // The legitimate canonical key is (yesLow, usdc); reverse-ordered is
+        // (usdc, yesLow). Both currencies are the right tokens, but the
+        // order violates v4's invariant. Use a fresh market id to avoid
+        // colliding with the already-registered market 1.
+        uint256 freshId = 42;
+        diamond.setMarket(freshId, yesLow, noToken, endTime, false, false);
+        PoolKey memory reverseKey = PoolKey({
+            currency0: Currency.wrap(usdc), // usdc > yesLow → out-of-order
+            currency1: Currency.wrap(yesLow),
+            fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+        vm.expectRevert(IPrediXHook.Hook_NonCanonicalCurrencyOrder.selector);
+        hook.registerMarketPool(freshId, reverseKey);
+    }
+
+    /// @dev Sanity: the strict ordering check must not break the legitimate
+    ///      `yesHigh` case where USDC < yesHigh and the canonical key is
+    ///      `(usdc, yesHigh)`. Uses a fresh yesHigh-shaped address so the
+    ///      `_poolBinding` slot is not colliding with the one registered
+    ///      for `MARKET_ID + 1` in setUp.
+    function test_H05_RegisterMarketPool_CanonicalYesIsCurrency1_StillSucceeds() public {
+        // Pick a distinct yesHigh-shaped address (> usdc) for this fresh
+        // market so the derived poolId differs from the setUp registration.
+        address freshYesHigh = address(0x10000 + 2);
+        uint256 freshId = 43;
+        diamond.setMarket(freshId, freshYesHigh, noToken, endTime, false, false);
+        PoolKey memory canonicalKey = PoolKey({
+            currency0: Currency.wrap(usdc), // usdc < freshYesHigh → canonical
+            currency1: Currency.wrap(freshYesHigh),
+            fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+        hook.registerMarketPool(freshId, canonicalKey);
+        assertEq(hook.poolMarketId(canonicalKey.toId()), freshId);
+    }
+
     // -----------------------------------------------------------------
     // _beforeInitialize
     // -----------------------------------------------------------------
@@ -775,6 +822,28 @@ contract PrediXHookV2Test is Test {
         (,,, uint256 yesPrice, uint256 noPrice) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
         assertLe(yesPrice, FeeTiers.PRICE_UNIT);
         assertEq(noPrice, yesPrice <= FeeTiers.PRICE_UNIT ? FeeTiers.PRICE_UNIT - yesPrice : 0);
+    }
+
+    /// @dev Audit H-NEW-03: when YES is currency1 AND the post-swap sqrtPrice
+    ///      sits near v4's lower bound, the intermediate `priceToken1PerToken0`
+    ///      floors to zero. The legacy branch returned `PRICE_UNIT` (YES = 1.0)
+    ///      which is the OPPOSITE of the true semantic — at that price level
+    ///      USDC dominates the pool and YES should report 0. Pin the fixed
+    ///      behavior so a future refactor cannot regress.
+    function test_H03_UnderflowYesIsCurrency1_ReturnsZero() public {
+        _commitTraderSelf(poolId1);
+        // sqrtPriceX96 = 1 is the smallest non-zero — guarantees
+        // priceX96 = 0 after the `mulDiv(., ., 1<<96)` floors out, hence
+        // priceToken1PerToken0 = 0 in the else-branch.
+        _mockSlot0(poolId1, uint160(1));
+        BalanceDelta delta = toBalanceDelta(int128(1), int128(-1));
+
+        vm.recordLogs();
+        hook.exposed_afterSwap(trader, key1, swapZeroForOne, delta, "");
+        (,,, uint256 yesPrice, uint256 noPrice) = _decodeMarketTraded(vm.getRecordedLogs()[0].data);
+
+        assertEq(yesPrice, 0, "underflow path: YES near v4 lower bound must report 0");
+        assertEq(noPrice, FeeTiers.PRICE_UNIT, "NO must be 1.0 when YES underflows to 0");
     }
 
     /// @dev Decode the non-indexed fields of `Hook_MarketTraded`:

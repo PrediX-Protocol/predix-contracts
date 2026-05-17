@@ -19,6 +19,10 @@ contract PrediXPaymasterTest is Test {
     address internal owner = makeAddr("owner");
     address internal stranger = makeAddr("stranger");
     address internal userAccount = makeAddr("userAccount");
+    /// @dev Default destination contract the helper bundles into every
+    ///      `_buildUserOp`. Allowlisted in `setUp` so existing flow tests
+    ///      pass after PM-NEW-01 introduced the on-chain allowlist gate.
+    address internal allowedDest = makeAddr("allowedDest");
 
     uint256 internal signerKey;
     address internal signerAddr;
@@ -35,8 +39,10 @@ contract PrediXPaymasterTest is Test {
         paymaster = new PrediXPaymaster(IEntryPoint(address(entryPoint)), owner, signerAddr);
 
         vm.deal(owner, 1 ether);
-        vm.prank(owner);
+        vm.startPrank(owner);
         paymaster.deposit{value: 0.1 ether}();
+        paymaster.setAllowedTarget(allowedDest, true);
+        vm.stopPrank();
     }
 
     // ─────────────────────────── Constructor ───────────────────────────
@@ -225,16 +231,31 @@ contract PrediXPaymasterTest is Test {
 
     // ─────────────────────────── helpers ───────────────────────────
 
+    /// @dev Builds a signed UserOp targeting `allowedDest`. See
+    ///      `_buildUserOpFor` for tests that need a different destination
+    ///      (PM-NEW-01 allowlist coverage).
     function _buildUserOp(uint48 validUntil, uint48 validAfter, uint256 signingKey)
         internal
         view
         returns (PackedUserOperation memory userOp)
     {
+        return _buildUserOpFor(validUntil, validAfter, signingKey, allowedDest);
+    }
+
+    function _buildUserOpFor(uint48 validUntil, uint48 validAfter, uint256 signingKey, address dest)
+        internal
+        view
+        returns (PackedUserOperation memory userOp)
+    {
+        // Encode a minimal `execute(address,uint256,bytes)` callData so the
+        // paymaster's PM-NEW-01 target decoder can read the destination.
+        bytes memory callData = abi.encodeWithSelector(bytes4(0xb61d27f6), dest, uint256(0), bytes(""));
+
         userOp = PackedUserOperation({
             sender: userAccount,
             nonce: 0,
             initCode: hex"",
-            callData: hex"",
+            callData: callData,
             accountGasLimits: bytes32((uint256(100000) << 128) | uint256(100000)),
             preVerificationGas: 50000,
             gasFees: bytes32((uint256(1 gwei) << 128) | uint256(1 gwei)),
@@ -272,5 +293,90 @@ contract PrediXPaymasterTest is Test {
         }
         bytes memory sig = new bytes(sigLen);
         return bytes.concat(prefix, sig);
+    }
+
+    // ─────────────────────── Audit PM-NEW-01 target allowlist ───────────────────────
+
+    function test_PM01_SetAllowedTarget_TogglesFlagAndEmits() public {
+        address t = makeAddr("PM01_target");
+        assertFalse(paymaster.isTargetAllowed(t), "initially false");
+
+        vm.expectEmit(true, true, true, true);
+        emit IPrediXPaymaster.TargetAllowlistUpdated(t, true);
+        vm.prank(owner);
+        paymaster.setAllowedTarget(t, true);
+        assertTrue(paymaster.isTargetAllowed(t));
+
+        vm.expectEmit(true, true, true, true);
+        emit IPrediXPaymaster.TargetAllowlistUpdated(t, false);
+        vm.prank(owner);
+        paymaster.setAllowedTarget(t, false);
+        assertFalse(paymaster.isTargetAllowed(t));
+    }
+
+    function test_Revert_PM01_SetAllowedTarget_OnlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        paymaster.setAllowedTarget(makeAddr("t"), true);
+    }
+
+    function test_Revert_PM01_SetAllowedTarget_ZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IPrediXPaymaster.ZeroAddress.selector);
+        paymaster.setAllowedTarget(address(0), true);
+    }
+
+    /// @notice A UserOp aimed at a non-allowlisted destination must revert
+    ///         at validation, regardless of signature legitimacy. Defense
+    ///         in depth against signer compromise (the core PM-NEW-01 fix).
+    function test_Revert_PM01_ValidatePaymasterUserOp_TargetNotAllowed() public {
+        address notAllowed = makeAddr("PM01_not_allowed");
+        assertFalse(paymaster.isTargetAllowed(notAllowed));
+
+        uint48 validUntil = uint48(block.timestamp + 300);
+        uint48 validAfter = uint48(block.timestamp);
+        PackedUserOperation memory userOp = _buildUserOpFor(validUntil, validAfter, signerKey, notAllowed);
+
+        vm.prank(address(entryPoint));
+        vm.expectRevert(abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, notAllowed));
+        paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
+    }
+
+    /// @notice After owner allowlists a destination, the same UserOp passes
+    ///         the gate. Confirms the toggle is read live, not snapshotted.
+    function test_PM01_ValidatePaymasterUserOp_TargetBecomingAllowed_ThenPasses() public {
+        address t = makeAddr("PM01_t");
+        uint48 validUntil = uint48(block.timestamp + 300);
+        uint48 validAfter = uint48(block.timestamp);
+        PackedUserOperation memory userOp = _buildUserOpFor(validUntil, validAfter, signerKey, t);
+
+        // Initially denied.
+        vm.prank(address(entryPoint));
+        vm.expectRevert(abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, t));
+        paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
+
+        // Owner allowlists, then the same UserOp validates.
+        vm.prank(owner);
+        paymaster.setAllowedTarget(t, true);
+
+        vm.prank(address(entryPoint));
+        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
+        assertEq(validationData & uint256(type(uint160).max), 0, "signature OK after allowlist");
+    }
+
+    /// @notice UserOps with `callData` too short to decode an `execute` target
+    ///         must revert with a clear selector instead of panicking on
+    ///         the slice. Mirrors ERC-4337 wallet-account convention.
+    function test_Revert_PM01_ValidatePaymasterUserOp_CallDataTooShort() public {
+        uint48 validUntil = uint48(block.timestamp + 300);
+        uint48 validAfter = uint48(block.timestamp);
+        PackedUserOperation memory userOp = _buildUserOp(validUntil, validAfter, signerKey);
+        // Truncate to 4 bytes (selector only) — below the
+        // `EXECUTE_CALLDATA_MIN = 100` threshold.
+        userOp.callData = hex"b61d27f6";
+
+        vm.prank(address(entryPoint));
+        vm.expectRevert(IPrediXPaymaster.CallDataTooShort.selector);
+        paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
     }
 }
