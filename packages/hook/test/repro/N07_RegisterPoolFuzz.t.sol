@@ -81,17 +81,23 @@ contract N07_RegisterPoolFuzz is Test {
     /// @notice Any currency pair that does not consist of the market's
     ///         (yesToken, quoteToken) must revert. Covers both single-side
     ///         mismatches (one token wrong) and double-side mismatches.
+    /// @dev Sort the fuzzed inputs to satisfy v4's `currency0 < currency1`
+    ///      invariant (also enforced by the hook since audit H-NEW-05) so
+    ///      this test exercises the `Hook_InvalidPoolCurrencies` branch
+    ///      rather than the canonical-order guard.
     function testFuzz_InvalidCurrencies_Reverts(address curr0, address curr1) public {
-        // Exclude the two legitimate orderings to keep this test focused on
-        // the failure surface. The canonical-orderings test below covers the
-        // accepting branch.
-        bool legitA = (curr0 == yesLow && curr1 == usdc);
-        bool legitB = (curr0 == usdc && curr1 == yesLow);
-        vm.assume(!legitA && !legitB);
+        vm.assume(curr0 != curr1);
+        // Normalize so currency0 < currency1.
+        (address lo, address hi) = curr0 < curr1 ? (curr0, curr1) : (curr1, curr0);
+        // Exclude the legitimate ordering (the only one that survives both
+        // the currency-ordering guard and the currency-content check). The
+        // canonical-orderings test below covers the accepting branch.
+        bool legit = (lo == yesLow && hi == usdc);
+        vm.assume(!legit);
 
         PoolKey memory key = _canonicalKey();
-        key.currency0 = Currency.wrap(curr0);
-        key.currency1 = Currency.wrap(curr1);
+        key.currency0 = Currency.wrap(lo);
+        key.currency1 = Currency.wrap(hi);
         vm.expectRevert(IPrediXHook.Hook_InvalidPoolCurrencies.selector);
         hook.registerMarketPool(MARKET_ID, key);
     }

@@ -309,6 +309,13 @@ interface IPrediXHook {
     ///         binding on this hook.
     error Hook_WrongHookAddress();
 
+    /// @notice Reverts when `registerMarketPool` is called with a `PoolKey`
+    ///         whose `currency0 >= currency1`. Mirrors v4 PoolManager's
+    ///         `CurrenciesOutOfOrderOrEqual` invariant so a front-runner cannot
+    ///         pre-register a non-canonical (reverse-ordered) binding that
+    ///         the diamond's deploy script would then be unable to overwrite.
+    error Hook_NonCanonicalCurrencyOrder();
+
     /// @notice Reverts from `commitSwapIdentityFor` when
     ///         `caller != msg.sender` AND `caller != quoter`. Only two
     ///         cross-slot writes are legitimate — self-commit or the

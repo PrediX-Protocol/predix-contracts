@@ -463,6 +463,15 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (key.fee != canonicalLpFee) revert Hook_NonCanonicalFee();
         if (key.tickSpacing != canonicalTickSpacing) revert Hook_NonCanonicalTickSpacing();
         if (address(key.hooks) != address(this)) revert Hook_WrongHookAddress();
+        // Audit H-NEW-05: also enforce the v4-core invariant
+        // `currency0 < currency1` here. v4 PoolManager.initialize reverts on
+        // an out-of-order key, but `registerMarketPool` does not call
+        // initialize — so a front-runner could otherwise bind `_marketToPoolId`
+        // to a reverse-ordered (poolId-distinct) key that the legitimate
+        // deploy flow can never overwrite. Reject up front.
+        if (Currency.unwrap(key.currency0) >= Currency.unwrap(key.currency1)) {
+            revert Hook_NonCanonicalCurrencyOrder();
+        }
 
         // Permissionless registration: anyone may call. The security barrier is the
         // validation block below, NOT a caller-address check. The hook requires that
@@ -967,6 +976,14 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     /// @dev YES price in 1e6 pip units. Computed from the post-swap sqrtPriceX96, inverted
     ///      if YES is currency1, and clamped to [0, 1e6]. Uses `FullMath.mulDiv` twice to
     ///      keep the 512-bit intermediate products from overflowing.
+    ///
+    ///      Underflow case (audit H-NEW-03): when YES is currency1 and the
+    ///      pool sits near v4's lower sqrt-price bound, the intermediate
+    ///      `priceToken1PerToken0` floors to zero. The legacy branch returned
+    ///      `PRICE_UNIT` (YES = 100%) which collides with a legitimate
+    ///      "YES priced at 1.0" output and corrupts `Hook_MarketTraded`
+    ///      telemetry. The correct semantic is YES → 0 (USDC dominates the
+    ///      pool, YES is approaching valueless).
     function _sqrtPriceToYesPrice(uint160 sqrtPriceX96, bool yesIsCurrency0) private pure returns (uint256) {
         if (sqrtPriceX96 == 0) return 0;
         uint256 priceX96 = FullMath.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), 1 << 96);
@@ -975,7 +992,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (yesIsCurrency0) {
             yesPrice = priceToken1PerToken0;
         } else {
-            if (priceToken1PerToken0 == 0) return FeeTiers.PRICE_UNIT;
+            if (priceToken1PerToken0 == 0) return 0;
             yesPrice = FullMath.mulDiv(FeeTiers.PRICE_UNIT, FeeTiers.PRICE_UNIT, priceToken1PerToken0);
         }
         if (yesPrice > FeeTiers.PRICE_UNIT) yesPrice = FeeTiers.PRICE_UNIT;
