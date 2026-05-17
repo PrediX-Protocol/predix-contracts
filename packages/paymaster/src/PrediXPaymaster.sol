@@ -12,12 +12,15 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 import {IPrediXPaymaster} from "./interfaces/IPrediXPaymaster.sol";
 
 /// @title PrediXPaymaster
-/// @notice Self-hosted verifying paymaster. Sponsors UserOps signed by a BE signer.
-///         Owner can rotate signer or pause all sponsorships in an incident.
-/// @dev Pattern adapted from @account-abstraction/contracts/samples/VerifyingPaymaster
-///      with: (a) mutable signer via setSigner(), (b) pause mechanism.
-///      Hash of UserOp fields matches canonical getHash() to ensure off-chain signer
-///      and on-chain verifier agree byte-for-byte.
+/// @notice Self-hosted verifying paymaster. Sponsors UserOps signed by a BE
+///         signer whose call target is on the on-chain allowlist.
+/// @dev Pattern adapted from `@account-abstraction/contracts/samples/VerifyingPaymaster`
+///      with three protocol-specific additions:
+///      (a) mutable signer via `setSigner`,
+///      (b) pause mechanism via `pause`/`unpause`,
+///      (c) on-chain target allowlist (audit PM-NEW-01) — even a compromised
+///          signer cannot direct sponsored UserOps at destinations the owner
+///          has not explicitly authorized.
 contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     using UserOperationLib for PackedUserOperation;
 
@@ -27,8 +30,21 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     uint256 private constant VALID_TIMESTAMP_OFFSET = 52;
     uint256 private constant SIGNATURE_OFFSET = VALID_TIMESTAMP_OFFSET + 64;
 
+    /// @dev ERC-4337 smart accounts dispatch sponsored work via
+    ///      `execute(address dest, uint256 value, bytes data)`. The decoded
+    ///      `dest` is the destination contract we allowlist-check. UserOps
+    ///      whose `callData` does not match this 100-byte minimum layout
+    ///      (selector + 3×32-byte heads + payload) are rejected so the
+    ///      allowlist is enforced uniformly.
+    uint256 private constant EXECUTE_CALLDATA_MIN = 4 + 32 + 32 + 32;
+    uint256 private constant EXECUTE_DEST_HEAD_OFFSET = 4;
+
     address public signer;
     bool public paused;
+
+    /// @notice Allowlist of destination contracts the paymaster will sponsor.
+    ///         Owner manages via `setAllowedTarget`.
+    mapping(address target => bool allowed) public allowedTarget;
 
     constructor(IEntryPoint entryPoint_, address owner_, address signer_) BasePaymaster(entryPoint_) {
         if (owner_ == address(0)) revert ZeroAddress();
@@ -57,6 +73,18 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     function unpause() external override onlyOwner {
         paused = false;
         emit Unpaused(msg.sender);
+    }
+
+    /// @inheritdoc IPrediXPaymaster
+    function setAllowedTarget(address target, bool allowed) external override onlyOwner {
+        if (target == address(0)) revert ZeroAddress();
+        allowedTarget[target] = allowed;
+        emit TargetAllowlistUpdated(target, allowed);
+    }
+
+    /// @inheritdoc IPrediXPaymaster
+    function isTargetAllowed(address target) external view override returns (bool) {
+        return allowedTarget[target];
     }
 
     /// @notice Hash the off-chain signer covers. Excludes paymasterAndData.signature (circular).
@@ -97,6 +125,18 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
         signature = paymasterAndData[SIGNATURE_OFFSET:];
     }
 
+    /// @notice Decode the destination contract from an ERC-4337
+    ///         `execute(address,uint256,bytes)` callData payload. Reverts
+    ///         `CallDataTooShort` if `callData` is shorter than the minimum
+    ///         decodable layout. Audit PM-NEW-01.
+    function _decodeExecuteTarget(bytes calldata callData) private pure returns (address dest) {
+        if (callData.length < EXECUTE_CALLDATA_MIN) revert CallDataTooShort();
+        // First parameter of `execute(address,uint256,bytes)` lives at
+        // calldata offset 4 (after the selector). `address` is left-padded
+        // into a 32-byte head — read the head, cast to address.
+        dest = address(uint160(uint256(bytes32(callData[EXECUTE_DEST_HEAD_OFFSET:EXECUTE_DEST_HEAD_OFFSET + 32]))));
+    }
+
     function _validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
         bytes32,
@@ -109,6 +149,12 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
         returns (bytes memory context, uint256 validationData)
     {
         if (paused) revert ContractPaused();
+
+        // Allowlist check BEFORE signature verification. Cheaper failure path
+        // for the bundler; a UserOp signed for an unallowed target is invalid
+        // regardless of signature legitimacy.
+        address dest = _decodeExecuteTarget(userOp.callData);
+        if (!allowedTarget[dest]) revert TargetNotAllowed(dest);
 
         (uint48 validUntil, uint48 validAfter, bytes calldata sig) = parsePaymasterAndData(userOp.paymasterAndData);
 
