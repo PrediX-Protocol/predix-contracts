@@ -51,11 +51,11 @@ jobs:
 
       - name: Install Aderyn
         # Cyfrinup's install URL changed multiple times — switch to a direct
-        # `cargo install` against a pinned version. Slow (~3 min) on first run,
-        # then served from the cargo cache above.
+        # `cargo install` against the latest published crate. Slow (~3 min)
+        # on first run, then served from the cargo cache above.
         run: |
           if ! command -v aderyn >/dev/null 2>&1; then
-            cargo install aderyn --locked --version 0.5.5
+            cargo install aderyn --locked
           fi
           aderyn --version
 
