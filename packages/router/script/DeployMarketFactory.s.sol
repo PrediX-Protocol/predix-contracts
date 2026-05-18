@@ -8,13 +8,16 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PrediXMarketFactory} from "@predix/router/PrediXMarketFactory.sol";
 
 /// @title DeployMarketFactory
-/// @notice Deploys `PrediXMarketFactory` — batches market creation + AMM pool setup
-///         into a single transaction for operational convenience.
+/// @notice Deploys `PrediXMarketFactory` — atomically creates markets +
+///         registers + initializes the v4 pool with the canonical PrediX
+///         hook binding. Liquidity provisioning is a separate user step
+///         against the v4 PositionManager — see SECURITY.md and the README
+///         for the full mainnet flow.
 ///
 ///         Prerequisites:
 ///         - All core contracts deployed (Diamond, Hook, Exchange, Router)
-///         - `LP_TEST_ADDRESS` set — a PoolModifyLiquidityTest instance (v4-core test
-///           utility) must be deployed beforehand. See script/README.md for instructions.
+///         - `POOL_MANAGER_ADDRESS`, `DIAMOND_ADDRESS`, `USDC_ADDRESS`,
+///           `HOOK_PROXY_ADDRESS`, `LP_FEE_FLAG`, `TICK_SPACING` set in env.
 ///
 ///         After deploy, the factory address must be:
 ///         1. Granted `CREATOR_ROLE` on Diamond
@@ -29,12 +32,11 @@ contract DeployMarketFactory is Script {
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
         address hook = vm.envAddress("HOOK_PROXY_ADDRESS");
-        address lpTest = vm.envAddress("LP_TEST_ADDRESS");
         uint24 lpFeeFlag = uint24(vm.envUint("LP_FEE_FLAG"));
         int24 tickSpacing = int24(vm.envInt("TICK_SPACING"));
 
         vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        factory = address(new PrediXMarketFactory(poolManager, diamond, usdc, hook, lpTest, lpFeeFlag, tickSpacing));
+        factory = address(new PrediXMarketFactory(poolManager, diamond, usdc, hook, lpFeeFlag, tickSpacing));
         vm.stopBroadcast();
 
         console2.log("============================================================");
@@ -43,8 +45,11 @@ contract DeployMarketFactory is Script {
         console2.log("MarketFactory:", factory);
         console2.log("Diamond:     ", diamond);
         console2.log("Hook:        ", hook);
-        console2.log("LP Test:     ", lpTest);
         console2.log("LP Fee:      ", uint256(lpFeeFlag));
         console2.log("Tick Spacing:", int256(tickSpacing));
+        console2.log("");
+        console2.log("Liquidity provisioning is now a downstream step against the");
+        console2.log("canonical v4 PositionManager (see SECURITY.md). The factory");
+        console2.log("only batches createMarket + registerMarketPool + initialize.");
     }
 }

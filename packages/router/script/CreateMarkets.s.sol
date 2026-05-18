@@ -15,7 +15,10 @@ contract CreateMarkets is Script {
         address factory = vm.envAddress("MARKET_FACTORY_ADDRESS");
         address oracle = vm.envAddress("MANUAL_ORACLE_ADDRESS");
 
-        uint256 liquidityDelta = 50e9;
+        // Audit M-05: factory no longer seeds liquidity. Budget covers the
+        // diamond `marketCreationFee` pass-through only; LP provisioning is a
+        // separate downstream step against the canonical v4 PositionManager
+        // (see docs/DEVELOPER_GUIDE.md → "LP provisioning").
         uint256 budgetPerMarket = 200_000e6;
 
         vm.startBroadcast(deployerKey);
@@ -27,7 +30,6 @@ contract CreateMarkets is Script {
             "Will BTS announce a full-group comeback before June 30, 2026?",
             1778616000, // 2026-05-12 20:00 UTC
             oracle,
-            liquidityDelta,
             budgetPerMarket
         );
         console2.log("BTS market created, marketId:", btsMarketId);
@@ -43,7 +45,6 @@ contract CreateMarkets is Script {
             candidates,
             1778702400, // 2026-05-13 20:00 UTC
             oracle,
-            liquidityDelta,
             budgetPerMarket * 3
         );
         console2.log("Netflix event created, eventId:", eventId);
