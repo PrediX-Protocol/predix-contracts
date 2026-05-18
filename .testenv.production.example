@@ -98,9 +98,9 @@ MANUAL_ORACLE_ADDRESS=0x_FROM_DEPLOY_ALL_OUTPUT
 POSITION_MANAGER_ADDRESS=0x_UNISWAP_V4_POSITION_MANAGER
 
 # ============ AUXILIARY CONTRACTS ============
-# PoolModifyLiquidityTest (v4-core test utility, required by MarketFactory).
-# Deploy via: forge create PoolModifyLiquidityTest --constructor-args $POOL_MANAGER_ADDRESS
-LP_TEST_ADDRESS=0x_DEPLOY_SEPARATELY
+# (Reserved — no auxiliary contracts required as of M-05 closeout. The factory
+# no longer takes a PoolModifyLiquidityTest dependency. Liquidity provisioning
+# runs against the canonical v4 PositionManager set above.)
 
 # ============ FAUCET (testnet only) ============
 FAUCET_RELAYER=0x_BE_SIGNER_ADDRESS

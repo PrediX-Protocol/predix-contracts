@@ -42,7 +42,6 @@ contract UpgradeEventOracle is Script {
         address usdc = vm.envAddress("USDC_ADDRESS");
         address operator = vm.envAddress("OPERATOR_ADDRESS");
         address hook = vm.envAddress("HOOK_PROXY_ADDRESS");
-        address lpTest = vm.envAddress("LP_TEST_ADDRESS");
         IPoolManager poolManager = IPoolManager(vm.envAddress("POOL_MANAGER_ADDRESS"));
         uint24 lpFeeFlag = uint24(vm.envUint("LP_FEE_FLAG"));
         int24 tickSpacing = int24(vm.envInt("TICK_SPACING"));
@@ -71,7 +70,7 @@ contract UpgradeEventOracle is Script {
 
         // ── Step 6: Deploy new MarketFactory ──
         PrediXMarketFactory newFactory =
-            new PrediXMarketFactory(poolManager, diamond, usdc, hook, lpTest, lpFeeFlag, tickSpacing);
+            new PrediXMarketFactory(poolManager, diamond, usdc, hook, lpFeeFlag, tickSpacing);
         console2.log("new MarketFactory:", address(newFactory));
 
         // ── Step 7: Grant CREATOR_ROLE to new factory ──

@@ -26,7 +26,6 @@ contract PrediXMarketFactoryTest is Test {
     StubAccessControl internal diamond;
     address internal poolManager = makeAddr("poolManager");
     address internal hook = makeAddr("hook");
-    address internal lpTest = makeAddr("lpTest");
     address internal usdc = makeAddr("usdc");
 
     address internal creator = makeAddr("creator");
@@ -43,7 +42,6 @@ contract PrediXMarketFactoryTest is Test {
             address(diamond),
             usdc,
             hook,
-            lpTest,
             LPFeeLibrary.DYNAMIC_FEE_FLAG,
             60
         );
@@ -55,34 +53,28 @@ contract PrediXMarketFactoryTest is Test {
         assertEq(factory.diamond(), address(diamond));
         assertEq(address(factory.usdc()), usdc);
         assertEq(factory.hook(), hook);
-        assertEq(address(factory.lpTest()), lpTest);
         assertEq(factory.lpFeeFlag(), LPFeeLibrary.DYNAMIC_FEE_FLAG);
         assertEq(factory.tickSpacing(), int24(60));
     }
 
     function test_Revert_constructor_ZeroPoolManager() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(address(0)), address(diamond), usdc, hook, lpTest, 0, 60);
+        new PrediXMarketFactory(IPoolManager(address(0)), address(diamond), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
     }
 
     function test_Revert_constructor_ZeroDiamond() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(0), usdc, hook, lpTest, 0, 60);
+        new PrediXMarketFactory(IPoolManager(poolManager), address(0), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
     }
 
     function test_Revert_constructor_ZeroUsdc() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), address(0), hook, lpTest, 0, 60);
+        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), address(0), hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
     }
 
     function test_Revert_constructor_ZeroHook() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, address(0), lpTest, 0, 60);
-    }
-
-    function test_Revert_constructor_ZeroLpTest() public {
-        vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, hook, address(0), 0, 60);
+        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, address(0), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
     }
 
     /// @dev Audit R-NEW-14: factory must enforce the same `lpFeeFlag != 0` /
@@ -93,13 +85,13 @@ contract PrediXMarketFactoryTest is Test {
     ///      fees and minted outcome tokens.
     function test_Revert_R14_constructor_ZeroLpFeeFlag() public {
         vm.expectRevert(PrediXMarketFactory.InvalidLpFeeFlag.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, hook, lpTest, 0, 60);
+        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, hook, 0, 60);
     }
 
     function test_Revert_R14_constructor_ZeroTickSpacing() public {
         vm.expectRevert(PrediXMarketFactory.InvalidTickSpacing.selector);
         new PrediXMarketFactory(
-            IPoolManager(poolManager), address(diamond), usdc, hook, lpTest, LPFeeLibrary.DYNAMIC_FEE_FLAG, 0
+            IPoolManager(poolManager), address(diamond), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 0
         );
     }
 
@@ -108,7 +100,7 @@ contract PrediXMarketFactoryTest is Test {
     function test_Revert_createMarketWithPool_NotCreator() public {
         vm.prank(nobody);
         vm.expectRevert(PrediXMarketFactory.NotCreator.selector);
-        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9, 1e12);
+        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9);
     }
 
     function test_Revert_createEventWithPools_NotCreator() public {
@@ -118,13 +110,7 @@ contract PrediXMarketFactoryTest is Test {
 
         vm.prank(nobody);
         vm.expectRevert(PrediXMarketFactory.NotCreator.selector);
-        factory.createEventWithPools("event", qs, block.timestamp + 1 days, address(1), 1e9, 1e12);
-    }
-
-    function test_Revert_addLiquidity_NotCreator() public {
-        vm.prank(nobody);
-        vm.expectRevert(PrediXMarketFactory.NotCreator.selector);
-        factory.addLiquidity(1, 1e9, 1e12);
+        factory.createEventWithPools("event", qs, block.timestamp + 1 days, address(1), 1e9);
     }
 
     function test_creatorRoleGrantedCanCall() public {
@@ -132,7 +118,7 @@ contract PrediXMarketFactoryTest is Test {
         // The point: CREATOR_ROLE check passes.
         vm.prank(creator);
         vm.expectRevert(); // downstream revert from USDC transferFrom on stub address
-        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9, 1e12);
+        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9);
         // If NotCreator were thrown, expectRevert wouldn't match the downstream error.
     }
 
@@ -141,6 +127,6 @@ contract PrediXMarketFactoryTest is Test {
 
         vm.prank(creator);
         vm.expectRevert(PrediXMarketFactory.NotCreator.selector);
-        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9, 1e12);
+        factory.createMarketWithPool("Q?", block.timestamp + 1 days, address(1), 1e9);
     }
 }

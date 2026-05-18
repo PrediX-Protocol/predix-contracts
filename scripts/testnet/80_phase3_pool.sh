@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # 80_phase3_pool.sh — Phase 3 pool init + liquidity seed + router trust wiring.
 #
+# TESTNET-ONLY. Uses `PoolModifyLiquidityTest` (Uniswap v4-core test harness)
+# to seed pool liquidity via direct cast calls. As of M-05 (pass-2 closeout),
+# the on-chain `PrediXMarketFactory` no longer references PoolModifyLiquidityTest
+# — mainnet liquidity provisioning routes through the canonical v4
+# PositionManager. This script remains useful for Sepolia smoke tests
+# because it bypasses the factory entirely and signs against a hardcoded
+# testnet PoolModifyLiquidityTest deployment.
+#
 # Reproduces the Phase 3 on-chain setup exactly as executed on 2026-04-16 and
 # documented in SC/audits/TEST_REPORT_PHASE3_POOL_AMM_20260416.md.
 #

@@ -294,25 +294,51 @@ Nếu market không có AMM pool:
 
 ## MarketFactory — Batch Helper
 
-Gom tạo market + AMM setup vào 1 tx (thay vì 8 tx riêng lẻ):
+Gom các bước **cần atomic ordering với hook registration** vào 1 tx:
 
 ```solidity
-factory.createMarketWithPool(question, endTime, oracle, liquidityDelta, usdcBudget)
+factory.createMarketWithPool(question, endTime, oracle, usdcBudget)
   // 1. createMarket trên Diamond
-  // 2. registerMarketPool trên Hook
-  // 3. initialize pool trên PoolManager
-  // 4. splitPosition (mint YES+NO)
-  // 5. modifyLiquidity (add full-range LP)
-  // 6. Refund dust cho caller
+  // 2. registerMarketPool trên Hook (bind poolKey ↔ marketId)
+  // 3. PoolManager.initialize(poolKey, sqrtPriceMid)
+  // → emit MarketCreatedWithPool(marketId, creator)
 
-factory.createEventWithPools(name, questions[], endTime, liquidityDelta, usdcBudget)
+factory.createEventWithPools(name, questions[], endTime, oracle, usdcBudget)
   // Tương tự nhưng cho event + N child markets
-
-factory.addLiquidity(marketId, liquidityDelta, usdcBudget)
-  // Thêm LP cho market có sẵn
+  // → emit EventCreatedWithPools(eventId, marketIds, creator)
 ```
 
 Access: Caller phải có **CREATOR_ROLE** trên Diamond. Factory tự có CREATOR_ROLE riêng.
+
+`usdcBudget` chỉ để pass-through cho `marketCreationFee` (diamond pull từ factory).
+Phần dư được refund đồng bộ trong cùng tx; factory không giữ funds giữa các call.
+
+### LP provisioning — bước riêng (không nằm trong factory)
+
+Audit M-05 (pass-2) đã loại bỏ LP code khỏi factory. Lý do: factory cũ gọi
+`PoolModifyLiquidityTest` (v4-core test harness — không có NFT position, không
+Permit2, không transferable receipt). Mainnet routing đi qua canonical v4
+**PositionManager** (`@uniswap/v4-periphery`).
+
+Flow chuẩn để tạo market kèm LP:
+
+```text
+1. factory.createMarketWithPool(...)
+     → emit MarketCreatedWithPool(marketId, creator)
+     → off-chain tooling reconstruct poolKey từ marketId (deterministic)
+2. diamond.splitPosition(marketId, usdcAmount)
+     → mint YES + NO tokens cho creator
+3. permit2.approve(YES, positionManager, ...)
+   permit2.approve(USDC, positionManager, ...)
+4. positionManager.modifyLiquidities(...) — multicall encoded:
+     - MINT_POSITION với poolKey + tickRange + liquidityDelta
+     - SETTLE_PAIR cho YES + USDC
+     - SWEEP để refund dust
+```
+
+Sepolia smoke-test vẫn dùng `PoolModifyLiquidityTest` qua
+`scripts/testnet/80_phase3_pool.sh` (bypass factory) — chỉ cho testnet, không
+phải mainnet path.
 
 ---
 
