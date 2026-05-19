@@ -809,6 +809,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
         (uint256 usdcVolume, uint256 yesVolume) = _extractVolumes(delta, yesIsCurrency0);
         address trader = _resolveIdentity(sender, poolId);
+        _clearIdentityCommit(sender, poolId);
         bool isBuy = yesIsCurrency0 ? !params.zeroForOne : params.zeroForOne;
         uint256 yesPrice = _sqrtPriceToYesPrice(sqrtPriceX96, yesIsCurrency0);
         uint256 noPrice = yesPrice <= FeeTiers.PRICE_UNIT ? FeeTiers.PRICE_UNIT - yesPrice : 0;
@@ -911,6 +912,16 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         }
         if (committed == address(0)) revert Hook_MissingRouterCommit();
         return committed;
+    }
+
+    /// @dev Consume the transient identity commit so it cannot be replayed
+    ///      within the same transaction (e.g. a second swap piggybacking on
+    ///      a stale commit from an earlier swap in the same tx).
+    function _clearIdentityCommit(address sender, PoolId poolId) private {
+        bytes32 slot = _commitSlot(sender, poolId);
+        assembly ("memory-safe") {
+            tstore(slot, 0)
+        }
     }
 
     /// @dev Reverts if `identity` already swapped in the OPPOSITE direction this block on

@@ -94,14 +94,14 @@ abstract contract ExchangeStorage {
         return uint256(idx + 1) * PRICE_TICK;
     }
 
-    /// @notice Decrement `userOrderCount` for `user` in `marketId`, saturating at zero.
+    /// @notice Decrement `userOrderCount` for `user` in `marketId`.
     /// @dev Must be called whenever a maker order becomes fully filled (in either
-    ///      path) and on cancel.
+    ///      path) and on cancel. Reverts on underflow — a zero count here signals
+    ///      a bookkeeping bug that must be surfaced, not silently absorbed.
     function _decrementOrderCount(uint256 marketId, address user) internal {
         uint256 count = userOrderCount[marketId][user];
-        if (count > 0) {
-            userOrderCount[marketId][user] = count - 1;
-        }
+        if (count == 0) revert IPrediXExchange.OrderNotFound();
+        userOrderCount[marketId][user] = count - 1;
     }
 
     /// @notice Remove `orderId` from its FIFO queue and clear the bitmap bit if the queue

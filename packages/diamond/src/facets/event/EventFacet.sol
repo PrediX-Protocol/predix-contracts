@@ -144,7 +144,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     /// @dev Mirrors `MarketFacet.enableRefundMode` oracle-deference pattern: if
     ///      the oracle is still approved AND has reported, defer to `resolveEvent`.
     ///      Revoked-oracle case passes through (refund is the legitimate escape).
-    function enableEventRefundMode(uint256 eventId) external override {
+    function enableEventRefundMode(uint256 eventId) external override nonReentrant {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
 
         LibEventStorage.EventData storage e = _event(eventId);

@@ -60,6 +60,7 @@ library LibMarket {
         m.yesToken = address(yes);
         m.noToken = address(no);
         m.eventId = eventId;
+        if (cfg.defaultRedemptionFeeBps > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
         m.snapshottedDefaultRedemptionFeeBps = uint16(cfg.defaultRedemptionFeeBps);
 
         emit IMarketFacet.MarketCreated(marketId, msg.sender, oracle, address(yes), address(no), endTime, question);

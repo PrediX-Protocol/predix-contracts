@@ -37,6 +37,10 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     ///         last confirmed up before `resolve` is allowed to proceed.
     uint256 public constant SEQUENCER_GRACE_PERIOD = 1 hours;
 
+    /// @notice Maximum age (in seconds) of the sequencer uptime feed's
+    ///         `updatedAt` before the feed is considered stale.
+    uint256 public constant MAX_SEQUENCER_STALENESS = 1 hours;
+
     /// @inheritdoc IChainlinkOracle
     address public immutable override sequencerUptimeFeed;
 
@@ -177,13 +181,11 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     function _checkSequencer() private view {
         address feed = sequencerUptimeFeed;
         if (feed == address(0)) return;
-        (, int256 answer, uint256 startedAt,,) = AggregatorV3Interface(feed).latestRoundData();
-        // A freshly-deployed L2 uptime feed that has never emitted a status
-        // round returns startedAt == 0. `block.timestamp - 0`
-        // trivially clears the grace-period check, so the bare comparison
-        // would silently treat an uninitialized sequencer as healthy.
-        // Reject explicitly before the subtraction.
+        (, int256 answer, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(feed).latestRoundData();
         if (startedAt == 0) revert ChainlinkOracle_SequencerRoundInvalid();
+        if (updatedAt == 0 || block.timestamp - updatedAt > MAX_SEQUENCER_STALENESS) {
+            revert ChainlinkOracle_SequencerStale();
+        }
         if (answer != 0) revert ChainlinkOracle_SequencerDown();
         if (block.timestamp - startedAt < SEQUENCER_GRACE_PERIOD) {
             revert ChainlinkOracle_SequencerGracePeriodNotOver();

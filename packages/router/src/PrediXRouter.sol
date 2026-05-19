@@ -86,6 +86,18 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
+    // Expected exchange error selectors — graceful fallback to AMM when the
+    // CLOB cannot fill. All other selectors indicate caller/protocol bugs
+    // and MUST propagate. Selectors copied here because the monorepo
+    // boundary rule forbids importing cross-package `src/`.
+    bytes4 private constant _EX_PAUSED = bytes4(keccak256("ExchangePaused()"));
+    bytes4 private constant _EX_MARKET_PAUSED = bytes4(keccak256("MarketPaused()"));
+    bytes4 private constant _EX_MARKET_EXPIRED = bytes4(keccak256("MarketExpired()"));
+    bytes4 private constant _EX_MARKET_RESOLVED = bytes4(keccak256("MarketResolved()"));
+    bytes4 private constant _EX_MARKET_REFUND = bytes4(keccak256("MarketInRefundMode()"));
+    bytes4 private constant _EX_DEADLINE = bytes4(keccak256("DeadlineExpired(uint256,uint256)"));
+    bytes4 private constant _EX_NO_LIQUIDITY = bytes4(keccak256("InsufficientLiquidity()"));
+
     /// @notice Price precision used by the CLOB and by the AMM fee math (1e6 = 100%).
     uint256 internal constant PRICE_PRECISION = 1e6;
 
@@ -580,13 +592,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             filled = _filled;
             amountInRemaining = amountIn - _cost;
         } catch (bytes memory err) {
-            // Log-and-fallback. Keep the AMM resilience by not re-throwing, but
-            // surface the selector so silent CLOB reverts become observable.
-            // `msg.sender` here is the end user — internal calls preserve it
-            // through the router entry (`buyYes` / `buyNo`).
+            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
+            if (!_isClobGracefulError(sel)) {
+                assembly ("memory-safe") {
+                    revert(add(err, 0x20), mload(err))
+                }
+            }
             filled = 0;
             amountInRemaining = amountIn;
-            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
             emit ClobSkipped(marketId, msg.sender, sel);
         }
     }
@@ -665,10 +678,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             filled = _filled;
             amountInRemaining = amountIn - _cost;
         } catch (bytes memory err) {
-            // Mirrors `_tryClobBuy` — see the comment there for rationale.
+            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
+            if (!_isClobGracefulError(sel)) {
+                assembly ("memory-safe") {
+                    revert(add(err, 0x20), mload(err))
+                }
+            }
             filled = 0;
             amountInRemaining = amountIn;
-            bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
             emit ClobSkipped(marketId, msg.sender, sel);
         }
     }
@@ -1178,5 +1195,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         _finalizeAndAssertAllZero(yesToken, noToken);
 
         emit Trade(marketId, msg.sender, recipient, TradeType.SELL_NO, noIn, usdcOut, clobFilled, ammFilled);
+    }
+
+    function _isClobGracefulError(bytes4 sel) private pure returns (bool) {
+        return sel == _EX_PAUSED || sel == _EX_MARKET_PAUSED || sel == _EX_MARKET_EXPIRED
+            || sel == _EX_MARKET_RESOLVED || sel == _EX_MARKET_REFUND || sel == _EX_DEADLINE
+            || sel == _EX_NO_LIQUIDITY;
     }
 }

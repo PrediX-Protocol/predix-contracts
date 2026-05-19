@@ -32,6 +32,17 @@ interface IPrediXPaymaster {
     ///         validation path fails with a clear selector instead of
     ///         panicking on the slice.
     error CallDataTooShort();
+    /// @notice Reverts when the UserOp's `callData` selector is not the
+    ///         canonical `execute(address,uint256,bytes)`. Prevents
+    ///         `executeBatch` or arbitrary selectors from bypassing the
+    ///         target allowlist by decoding the ABI offset pointer as an
+    ///         address.
+    error UnsupportedExecuteSelector();
+    /// @notice Reverts when the owner attempts to allowlist a critical
+    ///         infrastructure address (the paymaster itself or the
+    ///         EntryPoint). Sponsoring UserOps that target these would let a
+    ///         compromised signer drain the EntryPoint deposit.
+    error CriticalTargetBlocked();
 
     function signer() external view returns (address);
 

@@ -227,7 +227,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
-    function enableRefundMode(uint256 marketId) external override {
+    function enableRefundMode(uint256 marketId) external override nonReentrant {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
 
         LibMarketStorage.MarketData storage m = _market(marketId);

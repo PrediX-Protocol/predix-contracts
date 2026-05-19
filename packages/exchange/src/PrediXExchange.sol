@@ -65,11 +65,10 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     // ======== Constructor ========
 
-    /// @dev No-op. State initialization happens in `initialize()`, called
-    ///      atomically by the proxy constructor. Calling `initialize()` on
-    ///      the bare impl is harmless: the impl has no proxy-storage state,
-    ///      so any "admin" rights set there have no protocol effect.
-    constructor() {}
+    /// @dev Disable initialization on the bare implementation contract.
+    constructor() {
+        _initialized = true;
+    }
 
     // ======== Initializer (called atomically by proxy constructor) ========
 

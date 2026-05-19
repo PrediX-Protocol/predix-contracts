@@ -39,6 +39,10 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     uint256 private constant EXECUTE_CALLDATA_MIN = 4 + 32 + 32 + 32;
     uint256 private constant EXECUTE_DEST_HEAD_OFFSET = 4;
 
+    /// @dev Only the canonical single-call `execute` is supported.
+    ///      `executeBatch` and other selectors bypass the target allowlist.
+    bytes4 private constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
+
     address public signer;
     bool public paused;
 
@@ -78,6 +82,7 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     /// @inheritdoc IPrediXPaymaster
     function setAllowedTarget(address target, bool allowed) external override onlyOwner {
         if (target == address(0)) revert ZeroAddress();
+        if (target == address(this) || target == address(entryPoint)) revert CriticalTargetBlocked();
         allowedTarget[target] = allowed;
         emit TargetAllowlistUpdated(target, allowed);
     }
@@ -131,9 +136,7 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
     ///         decodable layout. Audit PM-NEW-01.
     function _decodeExecuteTarget(bytes calldata callData) private pure returns (address dest) {
         if (callData.length < EXECUTE_CALLDATA_MIN) revert CallDataTooShort();
-        // First parameter of `execute(address,uint256,bytes)` lives at
-        // calldata offset 4 (after the selector). `address` is left-padded
-        // into a 32-byte head — read the head, cast to address.
+        if (bytes4(callData[:4]) != EXECUTE_SELECTOR) revert UnsupportedExecuteSelector();
         dest = address(uint160(uint256(bytes32(callData[EXECUTE_DEST_HEAD_OFFSET:EXECUTE_DEST_HEAD_OFFSET + 32]))));
     }
 
