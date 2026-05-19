@@ -10,6 +10,8 @@ import {MockERC20} from "./MockERC20.sol";
 ///      transfers so the router's balance invariants stay consistent. If `revertOnFill` is
 ///      set, `fillMarketOrder` reverts — used to exercise the try/catch fallback path.
 contract MockExchange {
+    error ExchangePaused();
+
     address public immutable usdc;
 
     struct Canned {
@@ -61,7 +63,7 @@ contract MockExchange {
         uint256 deadline,
         bytes32 /* takerBuilder */
     ) external returns (uint256 filled, uint256 cost) {
-        require(!revertOnFill, "MockExchange: revertOnFill");
+        if (revertOnFill) revert ExchangePaused();
         require(block.timestamp <= deadline, "MockExchange: deadline");
         lastLimitPrice = limitPrice;
         lastMaxFills = maxFills;

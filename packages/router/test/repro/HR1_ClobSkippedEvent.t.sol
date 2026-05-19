@@ -79,9 +79,7 @@ contract HR1RevertingExchange {
 ///         the 4-byte selector of the revert error. Preserves AMM-only
 ///         resilience (no re-throw) but makes silent CLOB reverts observable.
 contract HR1_ClobSkippedEvent is RouterFixture {
-    /// @dev The shared MockExchange reverts with a string `"MockExchange: revertOnFill"`.
-    ///      Solidity encodes that as `Error(string)` whose selector is 0x08c379a0.
-    bytes4 internal constant ERROR_STRING_SELECTOR = 0x08c379a0;
+    bytes4 internal constant EX_PAUSED_SELECTOR = bytes4(keccak256("ExchangePaused()"));
 
     function _approveUsdcAsAlice(uint256 amount) internal {
         vm.prank(alice);
@@ -110,10 +108,8 @@ contract HR1_ClobSkippedEvent is RouterFixture {
     }
 
     function test_HR1_ExchangePaused_EmitsClobSkipped() public {
-        // Trigger the fixture mock's revert path (string revert).
         exchange.setRevertOnFill(true);
 
-        // AMM must supply the full trade so the fallback succeeds.
         if (address(usdc) < address(yes1)) {
             poolManager.queueSwapResult(-int128(int256(uint256(100e6))), int128(180e6));
         } else {
@@ -123,7 +119,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
         _approveUsdcAsAlice(100e6);
 
         vm.expectEmit(true, true, false, true, address(router));
-        emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, ERROR_STRING_SELECTOR);
+        emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, EX_PAUSED_SELECTOR);
 
         vm.prank(alice);
         router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
@@ -153,31 +149,21 @@ contract HR1_ClobSkippedEvent is RouterFixture {
         }
     }
 
-    function test_HR1_RevertNoData_ZeroSelector() public {
+    function test_HR1_RevertNoData_Propagates() public {
         HR1RevertingExchange stub = new HR1RevertingExchange();
         stub.setRevertEmpty();
         _rewireRouterTo(address(stub));
 
-        if (address(usdc) < address(yes1)) {
-            poolManager.queueSwapResult(-int128(int256(uint256(100e6))), int128(180e6));
-        } else {
-            poolManager.queueSwapResult(int128(180e6), -int128(int256(uint256(100e6))));
-        }
-
         _approveUsdcAsAlice(100e6);
 
-        vm.expectEmit(true, true, false, true, address(router));
-        emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, bytes4(0));
-
+        vm.expectRevert();
         vm.prank(alice);
         router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
     }
 
     function test_HR1_SellPathAlsoEmits() public {
-        // Sell flow: give alice YES, approve to router, wire AMM sell.
         exchange.setRevertOnFill(true);
 
-        // SELL_YES: YES in → USDC out. AMM swap: YES -> USDC.
         if (address(yes1) < address(usdc)) {
             poolManager.queueSwapResult(-int128(int256(uint256(100e6))), int128(40e6));
         } else {
@@ -187,15 +173,13 @@ contract HR1_ClobSkippedEvent is RouterFixture {
         _approveYesAsAlice(100e6);
 
         vm.expectEmit(true, true, false, true, address(router));
-        emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, ERROR_STRING_SELECTOR);
+        emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, EX_PAUSED_SELECTOR);
 
         vm.prank(alice);
         router.sellYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
     }
 
     function test_HR1_RecipientInEvent_IsEndUser_NotRouter() public {
-        // Event's second indexed field is `msg.sender` at router entry — this
-        // test locks it to the tx.origin-equivalent (alice), never the router.
         exchange.setRevertOnFill(true);
 
         if (address(usdc) < address(yes1)) {

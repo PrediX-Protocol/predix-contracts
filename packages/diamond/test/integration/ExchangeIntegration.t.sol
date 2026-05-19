@@ -10,6 +10,7 @@ import {Modules} from "@predix/shared/constants/Modules.sol";
 
 import {IPrediXExchange} from "@predix/exchange/IPrediXExchange.sol";
 import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
+import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
 
 import {MarketFixture} from "../utils/MarketFixture.sol";
 
@@ -38,8 +39,10 @@ contract ExchangeIntegrationTest is MarketFixture {
     function setUp() public override {
         super.setUp();
 
-        exchange = new PrediXExchange();
-        exchange.initialize(address(diamond), address(usdc), feeRecipient);
+        PrediXExchange impl = new PrediXExchange();
+        PrediXExchangeProxy proxy =
+            new PrediXExchangeProxy(address(impl), address(this), address(diamond), address(usdc), feeRecipient);
+        exchange = PrediXExchange(address(proxy));
     }
 
     // ============ Helpers ============

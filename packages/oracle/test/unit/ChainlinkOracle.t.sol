@@ -115,6 +115,8 @@ contract ChainlinkOracleTest is Test {
         _registerOn(l2Oracle, priceFeed);
 
         vm.warp(SNAPSHOT_AT + 1);
+        sequencer.setAnswer(0, block.timestamp - 30 minutes);
+        sequencer.setStartedAt(block.timestamp - 2 hours);
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
@@ -131,6 +133,8 @@ contract ChainlinkOracleTest is Test {
         _registerOn(l2Oracle, priceFeed);
 
         vm.warp(SNAPSHOT_AT + 1);
+        sequencer.setAnswer(1, block.timestamp - 30 minutes);
+        sequencer.setStartedAt(block.timestamp - 2 hours);
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 

@@ -106,16 +106,17 @@ abstract contract ExchangeStorage {
 
     /// @notice Remove `orderId` from its FIFO queue and clear the bitmap bit if the queue
     ///         becomes empty.
-    /// @dev Swap-and-pop. Called whenever an order reaches a terminal state
-    ///      (cancelled, fully filled) so that `_peekBest` returns on iteration 0
-    ///      in the well-behaved case.
+    /// @dev Shift-and-pop: shifts all entries after the removed one left by one
+    ///      position, then pops the tail. Preserves FIFO ordering and keeps the
+    ///      same caller semantic as the old swap-and-pop (queue shrinks by 1, the
+    ///      entry at the removed index now holds the next element).
     function _removeFromQueue(uint256 marketId, IPrediXExchange.Side side, uint8 priceIdx, bytes32 orderId) internal {
         bytes32[] storage queue = _orderQueue[marketId][side][priceIdx];
         uint256 len = queue.length;
         for (uint256 i; i < len; ++i) {
             if (queue[i] == orderId) {
-                if (i != len - 1) {
-                    queue[i] = queue[len - 1];
+                for (uint256 j = i; j < len - 1; ++j) {
+                    queue[j] = queue[j + 1];
                 }
                 queue.pop();
                 break;

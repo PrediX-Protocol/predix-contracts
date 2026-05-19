@@ -3,6 +3,7 @@ pragma solidity 0.8.34;
 
 import {IPrediXExchange} from "../../src/IPrediXExchange.sol";
 import {PrediXExchange} from "../../src/PrediXExchange.sol";
+import {PrediXExchangeProxy} from "../../src/PrediXExchangeProxy.sol";
 
 import {ExchangeTestBase} from "../base/ExchangeTestBase.sol";
 
@@ -114,26 +115,23 @@ contract PrediXExchangePauseTest is ExchangeTestBase {
     function test_Revert_Initialize_ZeroDiamond() public {
         PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        impl.initialize(address(0), address(usdc), feeRecipient);
+        new PrediXExchangeProxy(address(impl), address(this), address(0), address(usdc), feeRecipient);
     }
 
     function test_Revert_Initialize_ZeroUsdc() public {
         PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        impl.initialize(address(diamond), address(0), feeRecipient);
+        new PrediXExchangeProxy(address(impl), address(this), address(diamond), address(0), feeRecipient);
     }
 
     function test_Revert_Initialize_ZeroFeeRecipient() public {
         PrediXExchange impl = new PrediXExchange();
         vm.expectRevert(IPrediXExchange.ZeroAddress.selector);
-        impl.initialize(address(diamond), address(usdc), address(0));
+        new PrediXExchangeProxy(address(impl), address(this), address(diamond), address(usdc), address(0));
     }
 
     function test_Revert_Initialize_AlreadyInitialized() public {
-        PrediXExchange impl = new PrediXExchange();
-        impl.initialize(address(diamond), address(usdc), feeRecipient);
-        // Second call must revert.
         vm.expectRevert(PrediXExchange.Exchange_AlreadyInitialized.selector);
-        impl.initialize(address(diamond), address(usdc), feeRecipient);
+        exchange.initialize(address(diamond), address(usdc), feeRecipient);
     }
 }

@@ -22,6 +22,7 @@ contract MockChainlinkAggregator is AggregatorV3Interface {
 
     int256 private _answer;
     uint256 private _updatedAt;
+    uint256 private _startedAt;
 
     uint80 private _latestRoundId;
     mapping(uint80 => Round) private _rounds;
@@ -34,6 +35,10 @@ contract MockChainlinkAggregator is AggregatorV3Interface {
     function setAnswer(int256 answer_, uint256 updatedAt_) external {
         _answer = answer_;
         _updatedAt = updatedAt_;
+    }
+
+    function setStartedAt(uint256 startedAt_) external {
+        _startedAt = startedAt_;
     }
 
     function setRound(uint80 roundId_, int256 answer_, uint256 updatedAt_) external {
@@ -81,6 +86,7 @@ contract MockChainlinkAggregator is AggregatorV3Interface {
                 return (_latestRoundId, r.answer, r.updatedAt, r.updatedAt, _latestRoundId);
             }
         }
-        return (1, _answer, _updatedAt, _updatedAt, 1);
+        uint256 started = _startedAt != 0 ? _startedAt : _updatedAt;
+        return (1, _answer, started, _updatedAt, 1);
     }
 }

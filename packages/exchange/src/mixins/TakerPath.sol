@@ -189,20 +189,31 @@ abstract contract TakerPath is ExchangeStorage {
         uint256 bitmap = priceBitmap[marketId][side];
         if (bitmap == 0) return (0, bytes32(0));
 
-        uint8 priceIdx = MatchMath.isBuy(side) ? bitmap.highestBit() : bitmap.lowestBit();
-        bytes32[] storage queue = _orderQueue[marketId][side][priceIdx];
+        bool isBuySide = MatchMath.isBuy(side);
+        uint8 idx = isBuySide ? bitmap.highestBit() : bitmap.lowestBit();
 
-        uint256 len = queue.length;
-        for (uint256 i; i < len; ++i) {
-            IPrediXExchange.Order storage order = orders[queue[i]];
-            if (order.cancelled) continue;
-            if (order.filled >= order.amount) continue;
-            if (order.depositLocked == 0) continue;
-            // Skip own orders so the waterfall progresses past them.
-            if (taker != address(0) && order.owner == taker) continue;
-            return (order.price, queue[i]);
+        while (true) {
+            if (bitmap & (uint256(1) << idx) != 0) {
+                bytes32[] storage queue = _orderQueue[marketId][side][idx];
+                uint256 len = queue.length;
+                for (uint256 i; i < len; ++i) {
+                    IPrediXExchange.Order storage order = orders[queue[i]];
+                    if (order.cancelled) continue;
+                    if (order.filled >= order.amount) continue;
+                    if (order.depositLocked == 0) continue;
+                    if (taker != address(0) && order.owner == taker) continue;
+                    return (order.price, queue[i]);
+                }
+            }
+
+            if (isBuySide) {
+                if (idx == 0) return (0, bytes32(0));
+                idx--;
+            } else {
+                if (idx >= MAX_PRICE_INDEX) return (0, bytes32(0));
+                idx++;
+            }
         }
-        return (0, bytes32(0));
     }
 
     function _computeFillAmount(

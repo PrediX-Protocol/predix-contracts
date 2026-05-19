@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {IPrediXExchange} from "../../src/IPrediXExchange.sol";
 import {PrediXExchange} from "../../src/PrediXExchange.sol";
+import {PrediXExchangeProxy} from "../../src/PrediXExchangeProxy.sol";
 
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockDiamond} from "../mocks/MockDiamond.sol";
@@ -38,8 +39,10 @@ abstract contract ExchangeTestBase is Test {
     function setUp() public virtual {
         usdc = new MockERC20("USD Coin", "USDC", 6);
         diamond = new MockDiamond(address(usdc));
-        exchange = new PrediXExchange();
-        exchange.initialize(address(diamond), address(usdc), feeRecipient);
+        PrediXExchange impl = new PrediXExchange();
+        PrediXExchangeProxy proxy =
+            new PrediXExchangeProxy(address(impl), address(this), address(diamond), address(usdc), feeRecipient);
+        exchange = PrediXExchange(address(proxy));
         (yesToken, noToken) = diamond.createMarket(MARKET_ID, block.timestamp + 7 days, address(this));
     }
 

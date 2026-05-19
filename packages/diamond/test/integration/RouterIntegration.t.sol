@@ -41,6 +41,7 @@ import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
 import {PrediXHookProxyV2} from "@predix/hook/proxy/PrediXHookProxyV2.sol";
 import {IPrediXHook} from "@predix/hook/interfaces/IPrediXHook.sol";
 import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
+import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
 import {IPrediXExchange} from "@predix/exchange/IPrediXExchange.sol";
 
 import {MarketFixture} from "../utils/MarketFixture.sol";
@@ -105,8 +106,11 @@ contract RouterIntegrationTest is MarketFixture {
         pm.setHook(address(hookProxy));
 
         // Real exchange.
-        exchange = new PrediXExchange();
-        exchange.initialize(address(diamond), address(usdc), feeRecipient);
+        PrediXExchange exchangeImpl = new PrediXExchange();
+        PrediXExchangeProxy exchangeProxy = new PrediXExchangeProxy(
+            address(exchangeImpl), address(this), address(diamond), address(usdc), feeRecipient
+        );
+        exchange = PrediXExchange(address(exchangeProxy));
 
         // Real router.
         router = new PrediXRouter(

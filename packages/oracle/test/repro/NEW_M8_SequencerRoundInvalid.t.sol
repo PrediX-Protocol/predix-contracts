@@ -81,6 +81,8 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         );
 
         vm.warp(SNAPSHOT_AT + 1);
+        sequencer.setAnswer(0, block.timestamp - 30 minutes);
+        sequencer.setStartedAt(block.timestamp - 2 hours);
         priceFeed.setRound(ROUND_ID, 5000e8, SNAPSHOT_AT);
         priceFeed.setAnswer(5000e8, SNAPSHOT_AT);
 
