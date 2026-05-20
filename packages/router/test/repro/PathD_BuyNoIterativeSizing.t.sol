@@ -98,59 +98,51 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
     }
 
     /// @dev Pathological "linear all the way down" pool: each iter returns
-    ///      proportional proceeds, so the loop strictly shrinks at every
-    ///      iteration without ever converging within MAX_ITER. The cushion
-    ///      and the last-iteration size still produce a feasible mint
-    ///      because each step uses the quoter's price-impact-aware result.
+    ///      proportional proceeds, so the main loop strictly shrinks at every
+    ///      iteration without converging within `BUY_NO_SIZING_MAX_ITER`. The
+    ///      safety loop that follows the cushion application then converges
+    ///      geometrically toward the cushioned linear-pool fixed point
+    ///      `cushion · usdcIn / (1 - cushion · spot)` where the budget
+    ///      invariant holds strictly.
     function test_PathD_PathologicalLinear_BoundedByMaxIter() public {
         // Pass 1 estimatedTarget = 80e6 (spot 0.5, usdcIn 40e6).
-        // Each iter at every size returns proceeds = 0.45 × size (uniform
-        // impact — pathological linear curve that prevents fast convergence).
-        // size_n+1 = 0.45 × size_n + 40e6
-        // Trajectory inside the loop:
-        //   iter 0: size 80,    quote 36,    new 76
-        //   iter 1: size 76,    quote 34.2,  new 74.2
-        //   iter 2: size 74.2,  quote 33.39, new 73.39
-        // Loop exits at size = 73.39e6 (MAX_ITER = 3 exhausted).
+        // Each quote returns proceeds = 0.45 × size (uniform impact — the
+        // worst case for iterative convergence).
         //
-        // candidate = 73.39e6 × 0.995 = 73_023_050.
-        // Final safety quote at 73_023_050 returns 73_023_050 × 0.45 =
-        // 32_860_372. 32_860_372 + 40_000_000 = 72_860_372 < 73_023_050 →
-        // STRICT CAP: mintAmount = 72_860_372 (the quoter-confirmed budget).
-        // Callback swap 72_860_372, get 72_860_372 × 0.45 = 32_787_167.
-        // 32_787_167 + 40_000_000 = 72_787_167 < 72_860_372 → STILL FAILS
-        // in pure-linear mock... need the cushion to provide drift buffer.
+        // Main loop trajectory (size_n+1 = 0.45 × size_n + 40e6):
+        //   iter 1: size 80,    quote 36,    new 76
+        //   iter 2: size 76,    quote 34.2,  new 74.2
+        //   iter 3: size 74.2,  quote 33.39, new 73.39 — MAX_ITER exhausted
         //
-        // Workaround for test: model the strict cap path explicitly by
-        // having final safety quote LESS than 0.45×candidate so the cap
-        // takes effect and the resulting mintAmount is feasible against
-        // the same 0.45×size assumption.
+        // Safety loop (candidate_0 = 73.39 × 0.995 = 73_023_050):
+        //   iter 1: quote(73_023_050) = 32_860_372.
+        //           32_860_372 + 40e6 = 72_860_372 < 73_023_050
+        //           → candidate_1 = 72_860_372 × 0.995 = 72_496_070.
+        //   iter 2: quote(72_496_070) = 32_623_232.
+        //           32_623_232 + 40e6 = 72_623_232 ≥ 72_496_070
+        //           → CONVERGED. mintAmount = 72_496_070.
+        //
+        // Actual flash-swap at mintAmount = 72_496_070 in the same linear
+        // pool yields 0.45 × 72_496_070 = 32_623_232. Budget = 72_623_232 ≥
+        // mintAmount ✓. Trade succeeds.
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](6);
+        uint256[] memory seq = new uint256[](7);
         seq[0] = 500_000;
         seq[1] = 500_000;
-        seq[2] = 36_000_000; // iter 1 at 80e6
-        seq[3] = 34_200_000; // iter 2 at 76e6
-        seq[4] = 33_390_000; // iter 3 at 74.2e6
-        seq[5] = 32_860_372; // final safety at 73_023_050
+        seq[2] = 36_000_000; // main loop iter 1 at 80e6
+        seq[3] = 34_200_000; // main loop iter 2 at 76e6
+        seq[4] = 33_390_000; // main loop iter 3 at 74.2e6
+        seq[5] = 32_860_372; // safety iter 1 at candidate_0 = 73_023_050
+        seq[6] = 32_623_232; // safety iter 2 at candidate_1 = 72_496_070 (converges)
         _queueSellSequence(seq);
 
-        // Path D strict-cap path:
-        //   candidate = 73_023_050
-        //   finalProceeds = 32_860_372 → finalProceeds + usdcIn = 72_860_372
-        //                 < candidate → mintAmount = 72_860_372
-        uint256 expectedMint = 72_860_372;
-        // Callback swap 72_860_372, get linear 0.45 × 72_860_372 = 32_787_167.
-        // But the strict-cap design guarantees finalProceeds (≥ actual at the
-        // smaller cap-mintAmount by concavity) covers the budget. In our
-        // pure-linear mock, finalProceeds at candidate ≥ actual at mintAmount
-        // by exact linearity, so the swap returns the *same proceeds*. Make
-        // the mock match: queue swap result with proceeds = finalProceeds.
-        _queueFlashSell(expectedMint, 32_860_372);
+        uint256 expectedMint = 72_496_070;
+        _queueFlashSell(expectedMint, 32_623_232);
+
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
-        assertEq(noOut, expectedMint, "strict-cap fallback (pathological linear)");
+        assertEq(noOut, expectedMint, "safety loop converges in linear pool");
     }
 
     // ====================================================================

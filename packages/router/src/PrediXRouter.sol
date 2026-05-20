@@ -1047,33 +1047,50 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 candidate = (size * BUY_NO_PRECISION_CUSHION_BPS) / BPS_DENOMINATOR;
         if (candidate == 0) return 0;
 
-        // Final safety quote at the EXACT amount the callback will swap.
-        // This collapses the algebraic LB to equality: if `proceeds + usdcIn
-        // >= candidate` here, the callback's invariant is guaranteed by
-        // construction (modulo the cushion's own precision tolerance). If
-        // not, the iteration didn't converge within `MAX_ITER` (rare,
-        // requires near-linear liquidity over the whole swap range) — cap
-        // strictly at the quoter-confirmed feasible budget instead of
-        // letting the callback revert.
-        _preCommitForQuoter(yesToken);
-        (uint256 finalProceeds,) = quoter.quoteExactInputSingle(
-            IV4Quoter.QuoteExactSingleParams({
-                poolKey: key,
-                zeroForOne: zeroForOne,
-                exactAmount: uint128(candidate),
-                hookData: ""
-            })
-        );
-        if (finalProceeds + usdcIn >= candidate) {
-            mintAmount = candidate;
-        } else {
-            // Strict cap at quoter-confirmed budget. The callback's invariant
-            // becomes `proceedsActual(mintAmount) + usdcIn >= mintAmount`,
-            // which holds because `mintAmount < candidate` and quoter precision
-            // drift is bounded by `BUY_NO_PRECISION_CUSHION_BPS` against the
-            // already-checked `finalProceeds`.
-            mintAmount = finalProceeds + usdcIn;
+        // Safety convergence loop. Each iteration quotes at the EXACT amount
+        // the callback would swap; if the quoter-confirmed budget covers
+        // `candidate` the invariant is satisfied by construction. If not,
+        // shrink `candidate` to a cushioned multiple of the strictly feasible
+        // budget and re-quote. In well-behaved (concave) pools this exits in
+        // iteration 1. In pathologically linear pools the candidate shrinks
+        // geometrically toward the cushioned fixed point
+        // `cushion · usdcIn / (1 - cushion · spot)` where the invariant
+        // holds strictly — without this loop the historical strict-cap
+        // branch could revert `QuoteOutsideSafetyMargin` at the callback,
+        // re-introducing the bug Path D was designed to close.
+        for (uint256 i = 0; i < BUY_NO_SIZING_MAX_ITER; ++i) {
+            _preCommitForQuoter(yesToken);
+            (uint256 finalProceeds,) = quoter.quoteExactInputSingle(
+                IV4Quoter.QuoteExactSingleParams({
+                    poolKey: key,
+                    zeroForOne: zeroForOne,
+                    exactAmount: uint128(candidate),
+                    hookData: ""
+                })
+            );
+            if (finalProceeds + usdcIn >= candidate) {
+                mintAmount = candidate;
+                return mintAmount;
+            }
+            uint256 newCandidate =
+                ((finalProceeds + usdcIn) * BUY_NO_PRECISION_CUSHION_BPS) / BPS_DENOMINATOR;
+            if (newCandidate == 0 || newCandidate >= candidate) {
+                // Saturated — no further shrink possible. Return the
+                // strictly feasible budget cushioned once for drift; in
+                // practice this branch is unreachable because each
+                // iteration above strictly shrinks `candidate`.
+                mintAmount = newCandidate;
+                return mintAmount;
+            }
+            candidate = newCandidate;
         }
+        // Bounded-iteration exit. The cushioned `candidate` from the last
+        // shrink step has NOT been re-quoted, but every shrink applies the
+        // 0.5% cushion on top of the strictly feasible budget, which is
+        // bounded above by the linear-pool fixed point. Returning
+        // `candidate` here is the conservative continuation of the loop's
+        // contraction.
+        mintAmount = candidate;
     }
 
     /// @notice Compute the USDC cost upper bound for flash-buying `noIn` YES in `sellNo`.
