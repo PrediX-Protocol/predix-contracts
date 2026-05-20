@@ -2,7 +2,7 @@
 
 **Audience:** engineers, security
 **Status:** Active
-**Last reviewed:** 2026-05-20
+**Last reviewed:** 2026-05-21
 **Reference audit report:** [`../AUDIT_REPORT_PRE_MAINNET.md`](../AUDIT_REPORT_PRE_MAINNET.md)
 
 This document tracks audit findings that were **NOT** remediated in the
@@ -369,6 +369,77 @@ Group B completion would mean the old `E2EForkBase.t.sol` (hardcoded Sepolia
 staging) can be **deleted** entirely. At that point, all fork test coverage
 flows through `MainnetForkFixture`, and the L-07/M-04 class of finding is
 permanently eliminated.
+
+---
+
+## Group C — Path D virtual-NO follow-ups
+
+Path D (iterative quoter-bounded sizing in `_computeBuyNoMintAmount`)
+closes the `QuoteOutsideSafetyMargin` algebraic gap that pre-fix
+reverted live trades at ~$238+ on Sepolia. The fix is **merged on
+this branch** with 11 PathD repro tests, 2 fuzz tests (CPMM-modelled),
+8 fairness invariants, and 15 hook-side sandwich-detector matrix tests.
+
+The items below are residual optimisations and verification work that
+were intentionally not bundled into the same commit — none are
+deploy-blockers but each tightens the fairness or coverage posture.
+
+### Summary table
+
+| Item | Effort | Priority | Status | Notes |
+|---|---|---|---|---|
+| Cushion benchmark on live V4Quoter | 0.5d | Medium (post-launch) | DEFERRED | Reduce 0.5% → 0.25% if drift data supports |
+| Path E — refine `mintAmount` after strict-cap fallback | 0.5d | Low (post-launch) | DEFERRED | One extra quote round when MAX_ITER doesn't converge |
+| Cap-aware sizing loop (early termination) | 0.5d | Low (post-launch) | DEFERRED | Pass `perMarketCap` into the iter loop |
+| Token-ordering reverse coverage for router PathD tests | 0.3d | Low (post-launch) | DEFERRED | Existing tests deterministically use `yes > usdc` |
+| Live Sepolia $238+ regression replay | 0.3d | Medium (pre-mainnet) | DEFERRED | Re-execute pre-fix failure tx against post-fix router |
+
+**Total deferred effort:** ~2 engineering days, all post-mainnet
+except the Sepolia replay which is a pre-deploy sanity check.
+
+### Path D coverage that IS in this branch
+
+- 11 deterministic repro tests in `PathD_BuyNoIterativeSizing.t.sol`
+  covering deep / thin / pathological pools, on-chain $240/$500/$3000
+  stress thresholds, zero-liquidity, spot-at-unity, and
+  iteration-shrink-to-`usdcIn`.
+- 2 fuzz tests in `PathD_BuyNoFuzz.t.sol` exercising 256+ runs each
+  across the (usdcIn, spot, liquidity) cube under a CPMM impact model.
+- 8 fairness invariants in `Fairness_YesVsNo.t.sol` pinning hidden-cost
+  parity, BUY_NO/SELL_NO cushion symmetry, round-trip recovery, and
+  BUY_NO ≤ 3× BUY_YES gas.
+- 15 hook-side anti-sandwich direction-matrix tests in
+  `RouterCallbackDirectionMatrix.t.sol` pinning the cross-virtual-NO
+  UX surface so any future router refactor that flips a callback's
+  `zeroForOne` derivation fires at CI.
+
+### Rationale per item
+
+- **Cushion benchmark:** the precision cushion currently absorbs both
+  quoter-vs-actual drift AND any residual algebraic gap. With Path D
+  closing the algebra, the cushion's only job is drift, which is
+  empirically <0.1% on canonical V4Quoter. Tightening to 0.25% saves
+  NO traders ~25 bps per leg. Needs production-pool benchmark data.
+- **Path E:** when the iteration doesn't converge within
+  `BUY_NO_SIZING_MAX_ITER = 3`, the strict-cap branch returns
+  `finalProceeds + usdcIn` which is correct but may under-deliver. One
+  more quote at the capped amount could lift `mintAmount` closer to
+  the true feasible maximum. Rare in practice (near-linear pools).
+- **Cap-aware sizing:** when `perMarketCap` is close to the trade
+  size, the iteration can blow past the cap before the post-loop
+  `_enforcePerMarketCap` reverts. Passing the cap into the loop
+  terminates earlier and saves gas on the doomed path. Pure
+  optimisation.
+- **Reverse token ordering:** `RouterFixture` deploys USDC before
+  YES, fixing `yes > usdc` for every router unit test. The opposite
+  branch in callback `zeroForOne` derivation is exercised at the hook
+  level by `RouterCallbackDirectionMatrix` (which tests both `keyLow`
+  and `keyHigh`) but not at the router level. A second fixture
+  variant or vm.etch-based address override would close the gap.
+- **Sepolia replay:** the bug was first observed on a Sepolia tx at
+  ~$238. Path D is unit/fuzz/integration tested locally; replaying
+  the exact pre-fix failure tx against the post-fix router on Sepolia
+  is the strongest "fix verified" signal before mainnet promotion.
 
 ---
 

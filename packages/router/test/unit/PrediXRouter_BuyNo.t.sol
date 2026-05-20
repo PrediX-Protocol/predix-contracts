@@ -45,8 +45,9 @@ contract PrediXRouter_BuyNo is RouterFixture {
     }
 
     function test_VirtualPath_BuyNo_AmmOnly_Quoter() public {
-        // Quoter: yesPriceSpot = 0.5 (Pass 1), proceeds = 40e6 (Pass 2, linear
-        // extrapolation). Post-NEW-M7 mintAmount = 80e6 × 0.99 = 79_200_000.
+        // Quoter: yesPriceSpot = 0.5, iter-1 proceeds = 40e6 (linear at 80e6),
+        // final safety at 79.6e6 returns 39.8e6. Post-Path-D mintAmount =
+        // 80e6 × 0.995 = 79_600_000.
         uint256 usdcIn = 40e6;
         _stubQuoterForBuyNo();
         uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9950) / 10_000; // 79_600_000 (cushion 0.5%)

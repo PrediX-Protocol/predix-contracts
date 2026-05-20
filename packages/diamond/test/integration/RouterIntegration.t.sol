@@ -404,18 +404,21 @@ contract RouterIntegrationTest is MarketFixture {
     function test_BuyNo_VirtualPath_FullStack() public {
         (uint256 marketId, address yesToken, address noToken,) = _createMarketWithPool();
 
-        // NEW-M7: `_computeBuyNoMintAmount` hits the quoter 3 times in the sell
-        // direction per buyNo — `_clobBuyNoLimit` spot, Pass 1 spot, Pass 2
-        // proceeds at estimatedTarget. No-impact pool: Pass 2 returns linear
-        // proceeds = 80e6 × 0.5 = 40e6. mintAmount = 80e6 × 0.99 = 79_200_000.
-        uint256[] memory sellSeq = new uint256[](3);
+        // Path D: `_computeBuyNoMintAmount` hits the sell-direction quoter 4
+        // times per buyNo in the no-impact case — `_clobBuyNoLimit` spot,
+        // Pass 1 spot, iter-1 quote at 80e6, and the final safety quote at
+        // candidate 79.6e6. Linear-no-impact pool: iter-1 returns 40e6
+        // (= 80e6 × 0.5); final safety at 79.6e6 returns 39.8e6. Both pass
+        // the budget invariant → mintAmount = candidate = 80e6 × 0.995.
+        uint256[] memory sellSeq = new uint256[](4);
         sellSeq[0] = 500_000;
         sellSeq[1] = 500_000;
-        sellSeq[2] = 40_000_000;
+        sellSeq[2] = 40_000_000; // iter 1 at 80e6
+        sellSeq[3] = 39_800_000; // final safety at 79.6e6 (linear)
         quoter.setExactInSequence(sellSeq);
 
         uint256 usdcIn = 40e6;
-        uint256 mintAmount = (((usdcIn * 1e6) / 500_000) * 9900) / 10_000; // 79_200_000
+        uint256 mintAmount = (((usdcIn * 1e6) / 500_000) * 9950) / 10_000; // 79_600_000 (cushion 0.5%)
 
         // Pre-stock the diamond so the splitPosition inside the callback can mint.
         // (diamond pulls `mintAmount` USDC from the router during split; router has usdcIn +

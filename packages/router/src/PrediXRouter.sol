@@ -795,6 +795,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///      `QuoteOutsideSafetyMargin`. Only reject on direction-inversion deltas.
     function _callbackBuyNo(AmmCtx memory ctx) internal returns (uint256 noOut) {
         uint256 mintAmount = ctx.amountIn;
+        // Pool-direction equivalence: flash-sells YES, same direction as
+        // `_callbackSellYes`. The hook's anti-sandwich detector groups
+        // BUY_NO with SELL_YES (push YES price down) and BUY_YES with
+        // SELL_NO (push YES price up); cross-class same-block from the
+        // same identity reverts `Hook_SandwichDetected`. See
+        // `packages/hook/test/repro/RouterCallbackDirectionMatrix.t.sol`
+        // for the full pinned matrix.
         bool zeroForOne = ctx.yesToken < usdc;
         BalanceDelta delta = poolManager.swap(
             ctx.key,
@@ -854,6 +861,11 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _callbackSellNo(AmmCtx memory ctx, uint256 maxCost) internal returns (uint256 usdcOut) {
         uint256 noIn = ctx.amountIn;
 
+        // Pool-direction equivalence: flash-buys YES, same direction as
+        // `_callbackBuyYes`. Cross-class same-block sequences (e.g.
+        // SELL_NO → BUY_NO or SELL_YES → SELL_NO) revert in the hook's
+        // sandwich detector by design. Users wanting an atomic "hedge both
+        // sides" should call `MarketFacet.splitPosition` instead.
         bool zeroForOne = usdc < ctx.yesToken;
         BalanceDelta delta = poolManager.swap(
             ctx.key,

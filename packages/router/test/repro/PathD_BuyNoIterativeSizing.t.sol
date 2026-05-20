@@ -279,6 +279,74 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
     }
 
+    /// @dev Sweep the trade sizes that pre-fix reverted on Sepolia
+    ///      ($240, $500, $3000) with the same per-iteration concavity profile.
+    ///      Each size shapes its own (iter1, iter2, final) sequence so the
+    ///      strict-cap path is exercised under multiple absolute magnitudes,
+    ///      not just the original cusp value.
+    function test_PathD_OnchainStressSweep_500usd_DoesNotRevert() public {
+        // YES sell spot 0.71, NO virtual 0.29. usdcIn = 500e6.
+        // estimatedTarget = 500e6 / 0.29 ≈ 1_724_137_931.
+        // Iter 1 (heavy impact, simulating 2× scale concavity vs $240):
+        //   quote(1_724_137_931) returns 1_124_137_931 (per-unit 0.6520).
+        //   size_new = 1_124_137_931 + 500e6 = 1_624_137_931.
+        // Iter 2 at 1_624_137_931:
+        //   quote returns 1_124_137_931 (linear at slightly smaller scale).
+        //   1_124_137_931 + 500e6 = 1_624_137_931 ≥ 1_624_137_931 → break.
+        // Final safety at candidate = 1_624_137_931 × 0.995 = 1_616_017_241:
+        //   linear scaling 1_124_137_931 × 1_616_017_241 / 1_624_137_931 ≈ 1_118_516_241.
+        //   1_118_516_241 + 500e6 = 1_618_516_241 ≥ 1_616_017_241 → use candidate.
+        uint256 usdcIn = 500e6;
+        uint256[] memory seq = new uint256[](5);
+        seq[0] = 710_000;
+        seq[1] = 710_000;
+        seq[2] = 1_124_137_931; // iter 1 at 1.724e9
+        seq[3] = 1_124_137_931; // iter 2 at 1.624e9 (converges)
+        seq[4] = 1_118_516_241; // final safety at 1.616e9 (linear from iter 2)
+        _queueSellSequence(seq);
+
+        uint256 sizeAfterIter = 1_624_137_931;
+        uint256 expectedMint = (sizeAfterIter * 9950) / 10_000;
+        _queueFlashSell(expectedMint, (expectedMint * 70) / 100);
+
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        assertGt(noOut, 0, "$500 trade succeeds post-Path-D");
+        assertEq(noOut, expectedMint, "exact expected mint at $500");
+    }
+
+    function test_PathD_OnchainStressSweep_3000usd_DoesNotRevert() public {
+        // YES sell spot 0.71, NO virtual 0.29. usdcIn = 3000e6.
+        // estimatedTarget = 3000e6 / 0.29 ≈ 10_344_827_586.
+        // Iter 1: quote returns 6_744_827_586 (per-unit 0.6520, deep-pool impact).
+        //   size_new = 6_744_827_586 + 3000e6 = 9_744_827_586.
+        // Iter 2 at 9_744_827_586:
+        //   quote returns 6_744_827_586 (converges, same magnitude).
+        //   6_744_827_586 + 3000e6 = 9_744_827_586 ≥ 9_744_827_586 → break.
+        // Final safety at 9_744_827_586 × 0.995 = 9_696_103_448:
+        //   linear scaling 6_744_827_586 × 9_696_103_448 / 9_744_827_586 = 6_711_103_448.
+        //   6_711_103_448 + 3000e6 = 9_711_103_448 ≥ 9_696_103_448 → use candidate.
+        uint256 usdcIn = 3000e6;
+        uint256[] memory seq = new uint256[](5);
+        seq[0] = 710_000;
+        seq[1] = 710_000;
+        seq[2] = 6_744_827_586; // iter 1
+        seq[3] = 6_744_827_586; // iter 2 (converges)
+        seq[4] = 6_711_103_448; // final safety at 9.696e9 (linear at smaller)
+        _queueSellSequence(seq);
+
+        uint256 sizeAfterIter = 9_744_827_586;
+        uint256 expectedMint = (sizeAfterIter * 9950) / 10_000;
+        _queueFlashSell(expectedMint, (expectedMint * 70) / 100);
+
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        assertGt(noOut, 0, "$3000 trade succeeds post-Path-D");
+        assertEq(noOut, expectedMint, "exact expected mint at $3000");
+    }
+
     /// @dev Iter shrinks under usdcIn → strict-cap path returns mintAmount =
     ///      usdcIn. Flash swap returns proceeds; balance ≥ mintAmount is
     ///      trivially satisfied (proceeds ≥ 0, usdcIn covers mintAmount).
