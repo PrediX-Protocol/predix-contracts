@@ -30,6 +30,7 @@ in a header block; the table below is the canonical entry point.
 | Document | Audience | Status | Purpose |
 |---|---|---|---|
 | [`MAINNET_DEPLOY_REHEARSAL.md`](MAINNET_DEPLOY_REHEARSAL.md) | operators, security | Active | T-48h checklist before mainnet deploy: pin block freeze, fork-test consistency, key ceremony, monitoring readiness, sign-off matrix. |
+| [`DEV_BETA_SETUP.md`](DEV_BETA_SETUP.md) | engineering | Active | Lightweight single-Safe deploy for internal developer testing on real mainnet. Graduation path to public beta + production. |
 | [`KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md) | operators, security | Active | Four-Safe separation, signer overlap rules, role-to-env binding, Safe-loss recovery matrix. |
 | [`SAFE_DEPLOYMENT_RUNBOOK.md`](SAFE_DEPLOYMENT_RUNBOOK.md) | operators, security | Active | Step-by-step procedure for the four-Safe key ceremony: preparation, key generation, on-chain deployment, verification. |
 | [`PAUSER_ONCALL_PLAYBOOK.md`](PAUSER_ONCALL_PLAYBOOK.md) | operators, security | Active | Safe 4 on-call rotation structure, alert tooling, incident response runbook, drill cadence. |
@@ -87,6 +88,14 @@ in a header block; the table below is the canonical entry point.
                                      │
                                      ▼
                           SAFE_DEPLOYMENT_RUNBOOK
+
+  Profile picker (smart contracts identical; operational posture differs)
+       │
+       ├──►  DEV_BETA_SETUP        (internal test, 1 Safe, no on-call)
+       │
+       ├──►  .env.beta.example     (public beta, 4 Safes per policy)
+       │
+       └──►  .env.example          (production, 4 Safes, full rehearsal)
 ```
 
 ## Adding a new document

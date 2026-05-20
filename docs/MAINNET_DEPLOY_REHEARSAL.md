@@ -223,6 +223,12 @@ explicit "beta" UI banner. Use this mode when integrating against real
 Chainlink (when published on the target chain), real Permit2, and real
 Uniswap v4 but before the full external audit has signed off.
 
+This appendix covers **public beta** — limited public users, $50k per-market
+caps, four-Safe operational posture. For an even lighter **internal
+dev-beta** posture (1 Safe, business-hours response, $5k caps) used during
+real-mainnet integration testing before public exposure, see
+[`DEV_BETA_SETUP.md`](DEV_BETA_SETUP.md).
+
 ### What changes vs production
 
 | Lever | Beta value | Production value |
