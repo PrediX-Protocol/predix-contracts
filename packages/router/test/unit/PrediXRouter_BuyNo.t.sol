@@ -12,20 +12,23 @@ contract PrediXRouter_BuyNo is RouterFixture {
     }
 
     // At spot: 1 YES → 0.5 USDC (fee-adjusted sell). For usdcIn = 40 USDC,
-    // effectiveNoPrice = 0.5 → estimatedTarget = 80_000_000. Each `buyNo` call
-    // hits the sell-direction quoter 3 times:
-    //   [0] `_clobBuyNoLimit` spot probe     (exactAmount = 1e6)
-    //   [1] `_computeBuyNoMintAmount` Pass 1 (exactAmount = 1e6)
-    //   [2] `_computeBuyNoMintAmount` Pass 2 (exactAmount = estimatedTarget)
-    // No-impact pool: Pass 2 returns linear proceeds = 80e6 × 0.5 = 40e6.
-    // `proceeds + usdcIn >= estimatedTarget` → no size-down. mintAmount
-    // = 80e6 × 0.99 (BUY_NO_POST_IMPACT_MARGIN_BPS) = 79_200_000.
+    // effectiveNoPrice = 0.5 → Pass-1 estimatedTarget = 80_000_000. Each
+    // `buyNo` call hits the sell-direction quoter 4 times in the no-impact
+    // case (Path D iter converges in 1 step + 1 final safety quote):
+    //   [0] `_clobBuyNoLimit` spot probe       (exactAmount = 1e6)
+    //   [1] `_computeBuyNoMintAmount` Pass 1   (exactAmount = 1e6)
+    //   [2] `_computeBuyNoMintAmount` iter 1   (exactAmount = 80e6 YES)
+    //   [3] `_computeBuyNoMintAmount` final    (exactAmount = candidate 79.6e6)
+    // No-impact pool: iter 1 returns 40e6. Final safety at 79.6e6 returns
+    // 39.8e6 (linear). `39.8 + 40 = 79.8 ≥ 79.6` → mintAmount = candidate
+    // = 79_600_000 (cushion 0.5%).
     function _stubQuoterForBuyNo() internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
-        uint256[] memory sequence = new uint256[](3);
+        uint256[] memory sequence = new uint256[](4);
         sequence[0] = 500_000; // clobBuyNoLimit spot
         sequence[1] = 500_000; // compute Pass 1 spot
-        sequence[2] = 40_000_000; // compute Pass 2 proceeds at 80e6 YES
+        sequence[2] = 40_000_000; // iter 1 at 80e6
+        sequence[3] = 39_800_000; // final safety at 79.6e6 (linear)
         quoter.setExactInSequence(sellIsZeroForOne, sequence);
     }
 
@@ -46,7 +49,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         // extrapolation). Post-NEW-M7 mintAmount = 80e6 × 0.99 = 79_200_000.
         uint256 usdcIn = 40e6;
         _stubQuoterForBuyNo();
-        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9900) / 10_000; // 79_200_000
+        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9950) / 10_000; // 79_600_000 (cushion 0.5%)
 
         // Swap: mintAmount YES → USDC at spot 0.5 → yields expectedMint / 2 USDC.
         uint256 proceeds = expectedMint / 2;
@@ -63,9 +66,9 @@ contract PrediXRouter_BuyNo is RouterFixture {
         assertEq(noOut, expectedMint);
         assertEq(ammFilled, expectedMint);
         assertEq(no1.balanceOf(alice), 1_000_000e6 + expectedMint);
-        // Hook commits: CLOB cap probe (buy-dir spot) + sell-dir spot + Pass 2
-        // re-quote + AMM swap = 4 commits total post-NEW-M7.
-        assertEq(hook.commitCount(), 4);
+        // Hook commits: CLOB cap probe + sell spot + iter-1 quote + final
+        // safety quote + AMM swap = 5 commits total post-Path-D.
+        assertEq(hook.commitCount(), 5);
     }
 
     function test_Revert_BuyNo_QuoteOutsideSafetyMargin() public {
@@ -74,7 +77,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         // `proceeds + usdcIn >= mintAmount` fails and reverts.
         uint256 usdcIn = 40e6;
         _stubQuoterForBuyNo();
-        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9900) / 10_000;
+        uint256 expectedMint = (((usdcIn * 1e6) / 500_000) * 9950) / 10_000; // cushion 0.5%
         // proceeds too small (e.g. 1e6) so usdcIn + proceeds < expectedMint
         uint256 proceeds = 1e6;
         if (address(yes1) < address(usdc)) {
@@ -123,20 +126,24 @@ contract PrediXRouter_BuyNo is RouterFixture {
 
         bool yesIsToken0Sell = address(yes1) < address(usdc);
 
-        // 3 sell-dir quoter calls per buyNo: [clobBuyNoLimit spot, compute
-        // Pass 1 spot, compute Pass 2 proceeds]. First two are exactAmount=1e6
-        // → 475_000. Third is exactAmount = estimatedTarget (≈3.81M YES) →
-        // linear 1_809_524 USDC = 3_809_523 × 475_000 / 1e6. `proceeds + usdcIn
-        // ≈ 3.81M ≥ 3.81M` so no size-down; mintAmount = 3.81M × 0.99 ≈ 3_771_428.
-        uint256[] memory sellSequence = new uint256[](3);
+        // 4 sell-dir quoter calls per buyNo (no-impact case, Path D iter 1
+        // converges + final safety quote): [clobBuyNoLimit spot, Pass 1 spot,
+        // iter-1 quote, final safety quote]. First two are exactAmount=1e6 →
+        // 475_000. Third is exactAmount = estimatedTarget (≈3.81M YES) →
+        // linear 1_809_524 USDC = 3_809_523 × 475_000 / 1e6. Fourth is at
+        // candidate (≈3.79M YES) → linear 1_800_476 USDC.
+        // `proceeds + usdcIn ≈ 3.81M ≥ 3.81M` → loop breaks; final safety
+        // confirms → mintAmount = 3.81M × 0.995 ≈ 3_790_476.
+        uint256[] memory sellSequence = new uint256[](4);
         sellSequence[0] = 475_000;
         sellSequence[1] = 475_000;
-        sellSequence[2] = 1_809_524;
+        sellSequence[2] = 1_809_524; // iter 1 at 3_809_524
+        sellSequence[3] = 1_800_476; // final safety at candidate 3_790_476 (linear)
         quoter.setExactInSequence(yesIsToken0Sell, sellSequence);
         // Buy direction (used by CLOB cap derivation) stays single-shot.
         quoter.setExactInResult(!yesIsToken0Sell, 1_899_872);
 
-        uint256 expectedMint = (((usdcIn * 1e6) / (1e6 - 475_000)) * 9900) / 10_000;
+        uint256 expectedMint = (((usdcIn * 1e6) / (1e6 - 475_000)) * 9950) / 10_000; // cushion 0.5%
         // Flash proceeds at effective sell price 0.475.
         uint256 proceeds = (expectedMint * 475_000) / 1e6;
 

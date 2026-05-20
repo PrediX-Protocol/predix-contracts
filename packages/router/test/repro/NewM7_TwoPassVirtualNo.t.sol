@@ -6,34 +6,67 @@ import {IPrediXRouter} from "@predix/router/interfaces/IPrediXRouter.sol";
 
 import {RouterFixture} from "../utils/RouterFixture.sol";
 
-/// @notice Repro for NEW-M7 / FINAL-M14 — `_computeBuyNoMintAmount` now runs
-///         a two-pass quote (spot probe + re-quote at estimated size) so a
-///         thin-liquidity pool no longer false-reverts with
-///         `QuoteOutsideSafetyMargin`. Pre-fix, the linear extrapolation from
-///         spot could target a size the pool cannot absorb; post-fix, the
-///         Pass 2 re-quote observes actual impact and sizes the mint down to
-///         the maximum feasible target.
+/// @notice Repro for NEW-M7 / FINAL-M14 — `_computeBuyNoMintAmount` runs
+///         iterative quoter-bounded sizing so thin-liquidity pools no longer
+///         false-revert with `QuoteOutsideSafetyMargin`. Pre-fix the linear
+///         extrapolation from spot could target a size the pool cannot
+///         absorb; post-fix the iteration observes actual impact at every
+///         step and converges to the maximum feasible target.
 ///
-///         Margin buffer also drops from `VIRTUAL_SAFETY_MARGIN_BPS` (3%) to
-///         `BUY_NO_POST_IMPACT_MARGIN_BPS` (1%) because the target already
-///         reflects real impact — over-margining was a pre-fix hedge against
-///         impact blindness.
+///         The iterative variant (Path D) supersedes the original two-pass
+///         design. Each iteration uses one `quoteExactInputSingle` call,
+///         bounded by `BUY_NO_SIZING_MAX_ITER`. The precision cushion drops
+///         to 0.5% (`BUY_NO_PRECISION_CUSHION_BPS`) because the iteration
+///         already eliminates the algebraic gap that the historical 1%
+///         cushion was masking — the smaller cushion lets NO traders keep
+///         more of every trade while still absorbing quoter-vs-actual
+///         precision drift.
 contract NewM7_TwoPassVirtualNo is RouterFixture {
     function _approveUsdcAsAlice(uint256 amount) internal {
         vm.prank(alice);
         usdc.approve(address(router), amount);
     }
 
-    /// @dev Queue the 3 sell-direction quoter results for one `buyNo` call.
-    /// @param clobSpot  `_clobBuyNoLimit` spot probe (exactAmount = 1e6).
-    /// @param computeSpot `_computeBuyNoMintAmount` Pass 1 spot.
-    /// @param passTwo  `_computeBuyNoMintAmount` Pass 2 proceeds at target.
-    function _queueSellSequence(uint256 clobSpot, uint256 computeSpot, uint256 passTwo) internal {
+    /// @dev Queue sell-direction quoter results for one `buyNo` call. Layout:
+    ///        [0] `_clobBuyNoLimit` spot probe          (exactAmount = 1e6)
+    ///        [1] `_ammSpotPriceForSell` (Pass 1 spot)  (exactAmount = 1e6)
+    ///        [2] Path D iter 1 quote                   (exactAmount = est)
+    ///        [3] Path D final safety quote             (exactAmount = candidate)
+    ///      Single-iter variant: iter 1 already satisfies budget so the loop
+    ///      breaks after 1 iteration. Final safety quote confirms feasibility
+    ///      at the cushioned size.
+    function _queueSellSequence(
+        uint256 clobSpot,
+        uint256 computeSpot,
+        uint256 iter1,
+        uint256 finalSafety
+    ) internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
-        uint256[] memory sequence = new uint256[](3);
+        uint256[] memory sequence = new uint256[](4);
         sequence[0] = clobSpot;
         sequence[1] = computeSpot;
-        sequence[2] = passTwo;
+        sequence[2] = iter1;
+        sequence[3] = finalSafety;
+        quoter.setExactInSequence(sellIsZeroForOne, sequence);
+    }
+
+    /// @dev Two-iteration variant for thin-pool tests where iter 1 sizes
+    ///      down and iter 2 at the smaller size confirms convergence. Then
+    ///      final safety quote at the cushioned candidate.
+    function _queueSellSequenceTwoIter(
+        uint256 clobSpot,
+        uint256 computeSpot,
+        uint256 iter1,
+        uint256 iter2,
+        uint256 finalSafety
+    ) internal {
+        bool sellIsZeroForOne = address(yes1) < address(usdc);
+        uint256[] memory sequence = new uint256[](5);
+        sequence[0] = clobSpot;
+        sequence[1] = computeSpot;
+        sequence[2] = iter1;
+        sequence[3] = iter2;
+        sequence[4] = finalSafety;
         quoter.setExactInSequence(sellIsZeroForOne, sequence);
     }
 
@@ -48,21 +81,26 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
     }
 
     function test_NewM7_ThinPool_LargeTrade_DoesNotRevert() public {
-        // Pool is thin: linear spot says selling 80e6 YES should yield 40e6 USDC
-        // (price 0.5) but the re-quote reveals it actually yields only 5e6 because
-        // the trade crosses the whole book. Pre-fix: router mints 77.6e6 YES,
-        // flash-sell returns ~5e6 USDC, callback invariant fails, user's trade
-        // reverts even though a smaller trade would have worked.
+        // Pool is thin: linear spot says selling 80e6 YES would yield 40e6 USDC
+        // (price 0.5) but the iter-1 quote reveals it actually yields only 5e6
+        // (concentrated liquidity exhausts past current tick).
         //
-        // Post-fix: Pass 2 sees proceeds = 5e6. `5e6 + 40e6 = 45e6 < 80e6` → size
-        // down to 45e6. mintAmount = 45e6 × 0.99 = 44_550_000. Flash-sell at the
-        // new smaller size is proportionally feasible (pool provides 22_275_000
-        // USDC ≈ mintAmount × 0.5), invariant holds, trade succeeds.
+        // Path D iter 1: quote(80e6) = 5e6. 5e6 + 40e6 = 45e6 < 80e6 → size = 45e6.
+        // Path D iter 2: quote(45e6) = 22.5e6 (better per-unit at smaller size,
+        //   simulating concentrated-liquidity concavity). 22.5e6 + 40e6 = 62.5e6
+        //   ≥ 45e6 → loop breaks at size = 45e6.
+        // mintAmount = 45e6 × 0.995 = 44_775_000.
         uint256 usdcIn = 40e6;
-        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, passTwo: 5_000_000});
+        _queueSellSequenceTwoIter({
+            clobSpot: 500_000,
+            computeSpot: 500_000,
+            iter1: 5_000_000,
+            iter2: 22_500_000,
+            finalSafety: 22_387_500 // linear at candidate 44.775e6
+        });
 
-        uint256 sizedDownTarget = 5_000_000 + usdcIn; // 45e6
-        uint256 expectedMint = (sizedDownTarget * 9900) / 10_000; // 44_550_000
+        uint256 sizedDownTarget = 5_000_000 + usdcIn; // 45e6 (iter 1 → iter 2 confirms)
+        uint256 expectedMint = (sizedDownTarget * 9950) / 10_000; // 44_775_000 (cushion 0.5%)
         uint256 proceeds = expectedMint / 2;
         _queueFlashSell(expectedMint, proceeds);
 
@@ -75,15 +113,19 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
     }
 
     function test_NewM7_DeepPool_SmallTrade_OverMarginMinimized() public {
-        // Deep pool: Pass 2 re-quote matches linear extrapolation (no impact).
-        // Pre-fix: mintAmount = 80e6 × 0.97 = 77_600_000 (3% hedge against
-        // impact blindness that never materialised).
-        // Post-fix: mintAmount = 80e6 × 0.99 = 79_200_000 — user receives 1.6e6
-        // more NO tokens for the same USDC because we no longer over-margin.
+        // Deep pool: iter 1 quote matches linear extrapolation (no impact).
+        // proceeds(80e6) = 40e6 → 40+40=80 ≥ 80 → break in iter 1.
+        //
+        // Cushion evolution:
+        //   pre-NEW-M7:  77_600_000 (3% hedge, blind to actual impact)
+        //   post-NEW-M7: 79_200_000 (1% cushion, two-pass quote)
+        //   post-Path-D: 79_600_000 (0.5% cushion, iterative quote — algebra
+        //                fully closed so cushion's only job is precision drift)
+        // Each step gives NO traders more tokens per USDC.
         uint256 usdcIn = 40e6;
-        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, passTwo: 40_000_000});
+        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, iter1: 40_000_000, finalSafety: 39_800_000});
 
-        uint256 expectedMint = 79_200_000;
+        uint256 expectedMint = 79_600_000;
         uint256 proceeds = expectedMint / 2;
         _queueFlashSell(expectedMint, proceeds);
 
@@ -91,21 +133,21 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         vm.prank(alice);
         (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
 
-        assertEq(noOut, expectedMint, "post-fix noOut");
-        // Lock that post-fix is strictly more than pre-fix's 77_600_000
-        // (3% margin → 1% margin under no-impact conditions).
-        assertGt(noOut, 77_600_000, "user gets strictly more than pre-fix");
+        assertEq(noOut, expectedMint, "post-Path-D noOut");
+        // Pin monotonic improvement across the historical cushion evolution.
+        assertGt(noOut, 77_600_000, "user gets strictly more than pre-NEW-M7 (3% margin)");
+        assertGt(noOut, 79_200_000, "user gets strictly more than NEW-M7 (1% margin)");
     }
 
-    function test_NewM7_GasDelta_Within30kBudget() public {
-        // Pass 2 adds one `quoteExactInputSingle` round-trip. Real v4 Quoter
-        // costs ~30k gas; the mock is cheaper so the ceiling here is looser
-        // than production. Budget is 900k gas for the whole `buyNo` flow —
-        // a loop or accidental double-quote would push through that cap.
-        // Tighten this in a follow-up once real Sepolia gas snapshots exist.
+    function test_NewM7_GasDelta_WithinBudget() public {
+        // Path D iteration adds up to MAX_ITER `quoteExactInputSingle`
+        // round-trips. Real v4 Quoter costs ~30k gas; mock is cheaper so the
+        // ceiling here is looser than production. Budget is 1_100_000 gas for
+        // the whole `buyNo` flow (no-impact, 1 iter) — leaves headroom for
+        // the additional iter quotes vs the historical two-pass design.
         uint256 usdcIn = 40e6;
-        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, passTwo: 40_000_000});
-        uint256 expectedMint = 79_200_000;
+        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, iter1: 40_000_000, finalSafety: 39_800_000});
+        uint256 expectedMint = 79_600_000;
         _queueFlashSell(expectedMint, expectedMint / 2);
 
         _approveUsdcAsAlice(usdcIn);
@@ -113,7 +155,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         uint256 gasBefore = gasleft();
         router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
         uint256 gasUsed = gasBefore - gasleft();
-        assertLt(gasUsed, 900_000, "buyNo gas under 900k ceiling");
+        assertLt(gasUsed, 1_100_000, "buyNo gas under 1.1M ceiling");
     }
 
     function test_NewM7_ZeroLiquidity_Returns0() public {
@@ -130,18 +172,26 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
     }
 
     function test_NewM7_PriceImpactExceedsBudget_SizeDown() public {
-        // Numerical lock-in for the size-down path. Given usdcIn = 100 USDC
-        // and spot 0.5 → estimatedTarget = 200e6. Pass 2 returns proceeds of
-        // 60e6 (heavy impact). `60e6 + 100e6 = 160e6 < 200e6` → sized down to
-        // 160e6. mintAmount = 160e6 × 0.99 = 158_400_000.
+        // Numerical lock-in for the iterative size-down path. usdcIn = 100 USDC,
+        // spot 0.5 → Pass 1 estimatedTarget = 200e6.
+        //   Iter 1: quote(200e6) = 60e6 (impact). 60+100=160 < 200 → size=160e6.
+        //   Iter 2: quote(160e6) = 80e6 (perfect linear at smaller scale,
+        //           simulating "deeper" tick range below the iter-1 boundary).
+        //           80+100=180 ≥ 160 → loop breaks at size=160e6.
+        // mintAmount = 160e6 × 0.995 = 159_200_000 (cushion 0.5%).
         uint256 usdcIn = 100e6;
-        _queueSellSequence({clobSpot: 500_000, computeSpot: 500_000, passTwo: 60_000_000});
+        _queueSellSequenceTwoIter({
+            clobSpot: 500_000,
+            computeSpot: 500_000,
+            iter1: 60_000_000,
+            iter2: 80_000_000,
+            finalSafety: 79_600_000 // linear at candidate 159.2e6
+        });
 
-        uint256 expectedMint = (160_000_000 * 9900) / 10_000;
-        assertEq(expectedMint, 158_400_000, "arithmetic sanity");
+        uint256 expectedMint = (160_000_000 * 9950) / 10_000;
+        assertEq(expectedMint, 159_200_000, "arithmetic sanity");
 
-        // Pool delivers proportional proceeds at the NEW smaller size. Actual
-        // flash-sell of 158.4e6 YES at effective 0.5 ≈ 79.2e6 USDC.
+        // Flash-sell of 159.2e6 YES at effective 0.5 ≈ 79.6e6 USDC.
         uint256 proceeds = expectedMint / 2;
         _queueFlashSell(expectedMint, proceeds);
 

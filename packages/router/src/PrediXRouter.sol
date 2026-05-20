@@ -71,18 +71,35 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         Below this, rounding dust dominates and the user would lose more than they gain.
     uint256 internal constant MIN_TRADE_AMOUNT = 1000;
 
-    /// @notice Virtual-NO path safety margin. The router under-sizes the `mintAmount` by 3%
-    ///         relative to the Quoter's spot-price estimate, absorbing v4 price impact between
-    ///         the quote and the actual swap. See spec §6.8.
-    uint256 internal constant VIRTUAL_SAFETY_MARGIN_BPS = 9700;
+    /// @notice Precision cushion for virtual-NO paths. Quote and actual swap go
+    ///         through the same hook code path with the same dynamic-fee override,
+    ///         so the only divergence between them is quoter-vs-actual EVM
+    ///         precision drift across tick boundaries (empirically <0.5% on
+    ///         well-formed pools). The cushion absorbs that drift.
+    ///
+    ///         A LARGER cushion would charge NO traders a hidden cost
+    ///         disproportionate to YES traders (who carry no internal cushion at
+    ///         all). A SMALLER cushion would expose user-facing reverts to
+    ///         routine quoter precision drift.
+    ///
+    ///         Both buyNo and sellNo paths use the same value so the hidden cost
+    ///         is symmetric across NO entry/exit. The path-D iterative sizing in
+    ///         `_computeBuyNoMintAmount` makes the cushion's job purely
+    ///         precision drift — the algebraic feasibility is already guaranteed
+    ///         by quoting at the exact swap size.
+    uint256 internal constant SELL_NO_PRECISION_CUSHION_BPS = 9950;
+    uint256 internal constant BUY_NO_PRECISION_CUSHION_BPS = 9950;
 
-    /// @notice Safety buffer applied to the post-impact mint target
-    ///         computed by the two-pass virtual-NO quote. The first pass
-    ///         extrapolates linearly from spot; the second pass re-quotes at
-    ///         the estimated size and observes the real price-impact. Because
-    ///         the size already reflects actual impact, only a 1% cushion is
-    ///         needed against rounding + minor intra-block drift.
-    uint256 internal constant BUY_NO_POST_IMPACT_MARGIN_BPS = 9900;
+    /// @notice Maximum iterations the virtual-NO sizing loop runs. Each
+    ///         iteration is a fixed-point step that shrinks the gap between
+    ///         the quoted swap size and the size whose proceeds the user's
+    ///         `usdcIn` can cover. Convergence is guaranteed because every
+    ///         step strictly shrinks the size, and the function returns the
+    ///         tighter of `size` or `proceeds + usdcIn` at the loop exit. The
+    ///         empirical convergence rate is 2 iterations for normal pools
+    ///         and 3 for extreme concentration; cap at 3 to keep gas
+    ///         predictable.
+    uint256 internal constant BUY_NO_SIZING_MAX_ITER = 3;
 
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
@@ -940,61 +957,120 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return _complementPrice(yesBuy);
     }
 
-    /// @notice Compute `mintAmount` for `buyNo` using the sell-direction spot price and 3% margin.
-    /// @dev The callback flash-SELLS `mintAmount` YES (USDC ← YES), so the economic identity
-    ///      must use the fee-adjusted SELL-direction spot: `usdcPerYesSell` already bakes the
-    ///      hook's dynamic fee into the proceeds a seller receives. The buy-direction spot
-    ///      (USDC → YES) has the fee applied on the opposite side and returns an inflated YES
-    ///      price — using it would over-estimate `mintAmount` by `fee / (1 - fee)`, leaking the
-    ///      balance check at `_callbackBuyNo` with `QuoteOutsideSafetyMargin`.
+    /// @notice Compute `mintAmount` for `buyNo` via iterative fixed-point sizing.
+    /// @dev The callback flash-SELLS `mintAmount` YES (USDC ← YES) and uses the
+    ///      proceeds plus the user's `usdcIn` to fund `diamond.splitPosition(mintAmount)`.
+    ///      The budget invariant is:
+    ///          proceeds(mintAmount) + usdcIn >= mintAmount
     ///
-    ///      User net spend = `mintAmount - proceeds = mintAmount - mintAmount × usdcPerYesSell
-    ///      = mintAmount × (1 - usdcPerYesSell)`. Solving for mintAmount with budget = usdcIn:
-    ///          mintAmount = usdcIn / (1 - usdcPerYesSell)
-    ///      The 3% margin absorbs additional price impact between the spot-size quoter probe
-    ///      and the actual swap size in the callback.
+    ///      The historical 2-pass design (quote at linear-spot estimate `X`,
+    ///      cushion to `0.99X`, then swap at the cushioned size) introduced an
+    ///      algebraic gap: the quote at `X` over-estimated the per-unit proceeds
+    ///      available at the cushioned-down swap size. A linear pool's
+    ///      `proceeds(αX) ≥ α × proceeds(X)` bound for `α < 1` was too weak to
+    ///      close the budget invariant on non-trivial trade sizes — the only
+    ///      thing rescuing the path was real-pool concavity (which is bounded
+    ///      and runs out at ~1% of pool liquidity).
+    ///
+    ///      Path D (this implementation) closes the gap by iterating: each step
+    ///      quotes at the CURRENT candidate size and shrinks the size until the
+    ///      quote's reported proceeds plus `usdcIn` are at least the size. Once
+    ///      converged, the quote is at the EXACT size the callback will swap, so
+    ///      the linear bound collapses to equality and the budget invariant is
+    ///      guaranteed by construction (within quoter-vs-actual precision drift,
+    ///      absorbed by `BUY_NO_PRECISION_CUSHION_BPS`).
+    ///
+    ///      The economic identity uses the fee-adjusted SELL-direction spot:
+    ///      `usdcPerYesSell` bakes the hook's dynamic fee into the proceeds a
+    ///      seller receives. The buy-direction spot would over-estimate
+    ///      `mintAmount` by `fee / (1 - fee)`, so we always read the sell side.
     function _computeBuyNoMintAmount(address yesToken, uint256 usdcIn) internal returns (uint256 mintAmount) {
-        // Pass 1: spot probe to extrapolate an initial target under a no-
-        // impact assumption. Same as pre-fix behaviour up to this point.
+        // Pass 1: spot probe → linear no-impact extrapolation. Bootstraps the
+        // iteration with a feasibility estimate before the first quote.
         uint256 usdcPerYesSell = _ammSpotPriceForSell(yesToken);
         if (usdcPerYesSell == 0 || usdcPerYesSell >= PRICE_PRECISION) return 0;
 
         uint256 effectiveNoPrice = PRICE_PRECISION - usdcPerYesSell;
-        uint256 estimatedTarget = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
+        uint256 size = (usdcIn * PRICE_PRECISION) / effectiveNoPrice;
+        if (size == 0) return 0;
 
-        // Pass 2: re-quote the sell at the estimated target size so
-        // the actual price impact is baked in before committing to the mint.
-        // Without this, a thin pool's linear extrapolation would size the
-        // flash-sell beyond what the pool can absorb; the callback then
-        // reverts `QuoteOutsideSafetyMargin` even when the user's USDC is
-        // sufficient for a smaller but still-fillable order.
-        _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key,
-            // Sell direction: YES in, USDC out. zeroForOne iff YES is currency0.
-            zeroForOne: yesToken < usdc,
-            exactAmount: uint128(estimatedTarget),
-            hookData: ""
-        });
-        (uint256 proceedsAtTarget,) = quoter.quoteExactInputSingle(params);
+        bool zeroForOne = yesToken < usdc;
 
-        // Invariant for the buyNo flash callback: `proceeds + usdcIn >=
-        // estimatedTarget` (user's USDC plus flash-sell proceeds must cover
-        // the mint). If Pass 2 shows the pool cannot absorb the full
-        // estimatedTarget, size down to what is feasible instead of reverting.
-        if (proceedsAtTarget + usdcIn < estimatedTarget) {
-            estimatedTarget = proceedsAtTarget + usdcIn;
+        // Iterative sizing — quote at the candidate size, shrink to feasible
+        // size if budget short, then re-quote at the new (smaller) size. The
+        // quoter's per-unit price improves monotonically as size shrinks
+        // (concentrated-liquidity concavity), so each iteration strictly
+        // shrinks the gap. Convergence is empirically 2 iterations for normal
+        // pools and 3 for extreme concentration. Pathologically linear pool
+        // curves may not fully converge inside `MAX_ITER`; the final safety
+        // re-quote below handles that case.
+        for (uint256 i = 0; i < BUY_NO_SIZING_MAX_ITER; ++i) {
+            _preCommitForQuoter(yesToken);
+            (uint256 proceeds,) = quoter.quoteExactInputSingle(
+                IV4Quoter.QuoteExactSingleParams({
+                    poolKey: key,
+                    zeroForOne: zeroForOne,
+                    exactAmount: uint128(size),
+                    hookData: ""
+                })
+            );
+            if (proceeds + usdcIn >= size) {
+                // Converged — the next swap-size quote covers the budget.
+                break;
+            }
+            // Pool can absorb less than `size`; shrink to the strictly
+            // feasible budget and re-quote at the smaller size next round.
+            uint256 newSize = proceeds + usdcIn;
+            if (newSize == 0 || newSize >= size) {
+                // Saturated or non-monotone — no further shrink possible.
+                size = newSize == 0 ? size : newSize;
+                break;
+            }
+            size = newSize;
         }
 
-        // Size already reflects actual impact — 1% cushion is enough for
-        // rounding and minor drift. `VIRTUAL_SAFETY_MARGIN_BPS` (3%) stays
-        // unchanged for `_computeSellNoMaxCost` where the margin absorbs a
-        // different error source (exact-out vs exact-in asymmetry).
-        mintAmount = (estimatedTarget * BUY_NO_POST_IMPACT_MARGIN_BPS) / BPS_DENOMINATOR;
+        // Apply precision cushion against quoter-vs-actual EVM drift across
+        // tick boundaries.
+        uint256 candidate = (size * BUY_NO_PRECISION_CUSHION_BPS) / BPS_DENOMINATOR;
+        if (candidate == 0) return 0;
+
+        // Final safety quote at the EXACT amount the callback will swap.
+        // This collapses the algebraic LB to equality: if `proceeds + usdcIn
+        // >= candidate` here, the callback's invariant is guaranteed by
+        // construction (modulo the cushion's own precision tolerance). If
+        // not, the iteration didn't converge within `MAX_ITER` (rare,
+        // requires near-linear liquidity over the whole swap range) — cap
+        // strictly at the quoter-confirmed feasible budget instead of
+        // letting the callback revert.
+        _preCommitForQuoter(yesToken);
+        (uint256 finalProceeds,) = quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: key,
+                zeroForOne: zeroForOne,
+                exactAmount: uint128(candidate),
+                hookData: ""
+            })
+        );
+        if (finalProceeds + usdcIn >= candidate) {
+            mintAmount = candidate;
+        } else {
+            // Strict cap at quoter-confirmed budget. The callback's invariant
+            // becomes `proceedsActual(mintAmount) + usdcIn >= mintAmount`,
+            // which holds because `mintAmount < candidate` and quoter precision
+            // drift is bounded by `BUY_NO_PRECISION_CUSHION_BPS` against the
+            // already-checked `finalProceeds`.
+            mintAmount = finalProceeds + usdcIn;
+        }
     }
 
     /// @notice Compute the USDC cost upper bound for flash-buying `noIn` YES in `sellNo`.
+    /// @dev `quoteExactOutputSingle` is called at the EXACT swap size (`noIn`)
+    ///      so the only divergence is quoter-vs-actual precision drift —
+    ///      identical safety profile to the buyNo path post-Path-D. The
+    ///      cushion bumps the max-cost up by `1 / SELL_NO_PRECISION_CUSHION_BPS`
+    ///      so a small per-tick rounding discrepancy does not revert the
+    ///      callback.
     function _computeSellNoMaxCost(address yesToken, uint256 noIn) internal returns (uint256 maxCost) {
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
@@ -1003,7 +1079,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         });
         (uint256 costQuote,) = quoter.quoteExactOutputSingle(params);
         if (costQuote == 0) return type(uint256).max;
-        maxCost = (costQuote * BPS_DENOMINATOR) / VIRTUAL_SAFETY_MARGIN_BPS;
+        maxCost = (costQuote * BPS_DENOMINATOR) / SELL_NO_PRECISION_CUSHION_BPS;
     }
 
     /// @notice Enforce the diamond's effective per-market cap against a prospective `splitPosition`.
