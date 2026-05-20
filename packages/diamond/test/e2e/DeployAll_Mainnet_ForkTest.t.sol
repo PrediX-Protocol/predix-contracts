@@ -109,7 +109,10 @@ contract DeployAll_Mainnet_ForkTest is Test {
         vm.setEnv("HOOK_PROXY_ADMIN", Strings.toHexString(hookProxyAdmin));
         vm.setEnv("HOOK_RUNTIME_ADMIN", Strings.toHexString(hookRuntimeAdmin));
         vm.setEnv("EXCHANGE_PROXY_ADMIN", Strings.toHexString(exchangeProxyAdmin));
-        vm.setEnv("TIMELOCK_DELAY_SECONDS", "172800"); // 48h
+        vm.setEnv("TIMELOCK_DELAY_SECONDS", "172800"); // 48h (default production floor)
+        // The new MIN_TIMELOCK_DELAY_SECONDS + HOOK_ADMIN_ROTATION_DELAY_SECONDS
+        // overrides are unset here; DeployAll falls back to the 48h defaults
+        // so this fork test stays representative of production behaviour.
         vm.setEnv("USDC_ADDRESS", Strings.toHexString(UNICHAIN_USDC));
         vm.setEnv("POOL_MANAGER_ADDRESS", Strings.toHexString(UNICHAIN_POOL_MANAGER));
         vm.setEnv("PERMIT2_ADDRESS", Strings.toHexString(CANONICAL_PERMIT2));

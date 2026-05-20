@@ -21,7 +21,7 @@ contract TestHookHarness is PrediXHookV2 {
     int24 internal constant _DEFAULT_CANONICAL_TICK_SPACING = int24(60);
 
     constructor(IPoolManager poolManager_, address quoter_)
-        PrediXHookV2(poolManager_, quoter_, _DEFAULT_CANONICAL_LP_FEE, _DEFAULT_CANONICAL_TICK_SPACING)
+        PrediXHookV2(poolManager_, quoter_, _DEFAULT_CANONICAL_LP_FEE, _DEFAULT_CANONICAL_TICK_SPACING, 48 hours)
     {
         // Reset the defense-in-depth guard that PrediXHookV2's constructor sets.
         // In production the proxy's delegatecall writes to proxy storage (different

@@ -82,7 +82,13 @@ contract DeployTestUSDC is Script {
     uint256 internal constant DEFAULT_INITIAL_SUPPLY = 1_000_000_000 * 1e6;
 
     function run() external returns (TestUSDC usdc) {
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        uint256 deployerKey;
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
         address deployer = vm.addr(deployerKey);
 
         uint256 initialSupply = vm.envOr("TEST_USDC_INITIAL_SUPPLY", DEFAULT_INITIAL_SUPPLY);

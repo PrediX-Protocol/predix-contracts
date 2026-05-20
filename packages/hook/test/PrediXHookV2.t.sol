@@ -113,7 +113,7 @@ contract PrediXHookV2Test is Test {
     ///         because the constructor sets _initialized = true on the impl storage.
     function test_Revert_InitializeImplementationDirectly() public {
         // Deploy a bare PrediXHookV2 (not via proxy, not via TestHookHarness which resets _initialized).
-        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
         vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
         bareImpl.initialize(address(diamond), admin, usdc);
     }

@@ -39,6 +39,10 @@ Relative to `KEY_MANAGEMENT_POLICY.md` v2.0 production:
 | Signer count | 9–10 distinct individuals | 3–5 team leads |
 | Hardware wallet | Strict (Ledger / Trezor) | Recommended; KMS-backed EOA acceptable for non-Safe roles |
 | Key ceremony | Formal three-phase per `SAFE_DEPLOYMENT_RUNBOOK.md` | Generate via `app.safe.global` with existing team wallets, no observers |
+| Key source | Hardware-wallet-generated per signer | **Single BIP-39 mnemonic** imported into Metamask, indices labelled via `DeriveAccountsFromMnemonic` |
+| Diamond cut timelock | 48h (raises to 5-7d after one clean week) | **4h** via `TIMELOCK_DELAY_SECONDS=14400` + `MIN_TIMELOCK_DELAY_SECONDS=14400` |
+| Hook admin rotation delay | 48h | **4h** via `HOOK_ADMIN_ROTATION_DELAY_SECONDS=14400` |
+| USDC | Canonical Circle USDC on Unichain | **Custom `TestUSDC`** deployed via `DeployTestUSDC.s.sol` |
 | PAUSER on-call | 24/7 three-shift rotation per `PAUSER_ONCALL_PLAYBOOK.md` | Business hours, ad-hoc, KMS-backed hot wallet |
 | Monitoring | Forta/Defender + PagerDuty + 24/7 escalation | **Tenderly alerts → Slack channel** |
 | Bug bounty | Immunefi listing live | Internal disclosure only |
@@ -55,7 +59,7 @@ These items hold regardless of deploy profile. Relaxing any of them widens the b
 - [ ] `DIAMOND_FINALIZE_GOVERNANCE=true` — deployer EOA renounces every privileged role in-broadcast.
 - [ ] `forge script VerifyDeployEnv` passes pre-broadcast — canonical Permit2 + sequencer feed enforced.
 - [ ] `forge script PostDeployVerify` passes after the hook admin rotation lands — every wiring invariant confirmed.
-- [ ] `TIMELOCK_DELAY_SECONDS=172800` (48h floor). Do not lower.
+- [ ] Absolute timelock floor of 1h enforced by `DeployAll._requireTimelockFloor` regardless of env override.
 - [ ] PAUSER address SEPARATE from the team Safe — emergency pause must not wait on the governance quorum.
 - [ ] Conservative caps: `DEFAULT_PER_MARKET_CAP=5_000_000_000` (5k USDC), `MARKET_CREATION_FEE=10_000_000` (10 USDC anti-spam), `DEFAULT_REDEMPTION_FEE_BPS=100` (1.00%).
 - [ ] Public-facing UI displays a "Dev beta — real funds at risk" banner. No marketing claiming production.
@@ -64,33 +68,54 @@ These items hold regardless of deploy profile. Relaxing any of them widens the b
 
 ## 4. Setup checklist
 
-### 4.1 Pre-deploy (~30 minutes)
+### 4.1 Mnemonic + accounts (~10 minutes)
 
-- [ ] Identify 3–5 team leads who will hold the Safe.
-- [ ] Each signer connects an existing wallet to `app.safe.global` (hardware preferred; software acceptable for dev beta).
-- [ ] Deploy a fresh Safe on Unichain mainnet with the chosen signers and threshold (recommend 2-of-3 or 3-of-5).
-- [ ] Record the Safe address as `TEAM_SAFE` in the team's password manager — not in the repo.
-- [ ] Generate or designate one KMS-backed hot wallet for `PAUSER_ADDRESS`. AWS KMS, GCP KMS, or HashiCorp Vault.
-- [ ] Generate or designate hot wallets for `CREATOR_ROLE`, `REPORTER_ROLE`, paymaster signer. KMS-backed.
+- [ ] Generate a fresh BIP-39 24-word mnemonic in Metamask (or import an existing dev-only one).
+- [ ] Export the mnemonic to a secure location (password manager only, never the repo).
+- [ ] `MNEMONIC="<phrase>" forge script DeriveAccountsFromMnemonic` to print the first 8 addresses and their suggested role labels.
+- [ ] Import the same mnemonic into Metamask and rename each derived account to match the printed labels (`deployer`, `team-safe-owner-1` … `reporter`) so the ops surface is self-documenting.
+- [ ] Deposit ETH into the `deployer` account (index 0) — enough to cover the deploy (~0.1-0.2 ETH on Unichain).
 
-### 4.2 Env wiring (~10 minutes)
+### 4.2 Team Safe (~20 minutes)
+
+- [ ] Visit `app.safe.global`, select Unichain mainnet.
+- [ ] Add owners — `team-safe-owner-1`, `team-safe-owner-2`, `team-safe-owner-3` from the mnemonic-derived list (or any other team-controlled wallets).
+- [ ] Threshold: 2-of-3 (recommended) or 3-of-5.
+- [ ] Deploy. Record the Safe address as `TEAM_SAFE` in the password manager (not the repo).
+- [ ] Generate or designate one KMS-backed hot wallet for `PAUSER_ADDRESS`, OR use the `pauser` mnemonic-derived account if quick to set up. KMS preferred for production.
+
+### 4.3 Env wiring (~10 minutes)
 
 - [ ] `cp .env.dev-beta.example .env`
-- [ ] Fill in `TEAM_SAFE`, `PAUSER_ADDRESS`, `FEE_RECIPIENT`, `DEPLOYER_PRIVATE_KEY` (or use `--ledger`), `UNICHAIN_RPC_PRIMARY`.
-- [ ] Confirm `CHAINLINK_ENABLED=false` if running first-pass tests with ManualOracle only; flip to `true` and supply `REGISTRAR_ADDRESS=${TEAM_SAFE}` when ready to test Chainlink integration.
+- [ ] Fill in: `MNEMONIC`, `TEAM_SAFE`, `PAUSER_ADDRESS`, `FEE_RECIPIENT`, `UNICHAIN_RPC_PRIMARY`, `DEPLOYER_ADDRESS` (index-0 address from `DeriveAccountsFromMnemonic`).
+- [ ] Confirm timelock overrides: `TIMELOCK_DELAY_SECONDS=14400`, `MIN_TIMELOCK_DELAY_SECONDS=14400`, `HOOK_ADMIN_ROTATION_DELAY_SECONDS=14400` (all 4h).
+- [ ] Confirm `CHAINLINK_ENABLED=false` for the first pass; flip to `true` when ready to test Chainlink integration.
 
-### 4.3 Pre-flight + deploy (~5 minutes)
+### 4.4 TestUSDC deploy (~2 minutes)
+
+- [ ] `forge script DeployTestUSDC --rpc-url $UNICHAIN_RPC_PRIMARY --broadcast`
+      Reads the same `MNEMONIC` env so the deployer is consistent.
+- [ ] Copy the deployed TestUSDC address into `.env` as `USDC_ADDRESS=<deployed>`.
+
+### 4.5 Pre-flight + deploy (~5 minutes)
 
 - [ ] `forge script VerifyDeployEnv --rpc-url $UNICHAIN_RPC_PRIMARY`
       Expected output: `VerifyDeployEnv: OK`.
 - [ ] `forge script DeployAll --rpc-url $UNICHAIN_RPC_PRIMARY --sender $DEPLOYER_ADDRESS --broadcast`
 - [ ] Capture the deployed addresses from the script's log output. Populate `DIAMOND_ADDRESS`, `EXCHANGE_ADDRESS`, `HOOK_PROXY_ADDRESS`, `ROUTER_ADDRESS`, `ORACLE_MANUAL_ADDRESS`, `TIMELOCK_ADDRESS` in `.env`.
 
-### 4.4 Post-deploy handover (T+0+48h)
+### 4.6 TestUSDC whitelist + balance (~5 minutes)
 
-The hook's admin rotation is two-step. The deployer proposes `setAdmin(HOOK_RUNTIME_ADMIN)` in-broadcast; the new admin must call `acceptAdmin()` after the 48h delay. For dev beta:
+TestUSDC is walled-garden: transfers require either side to be whitelisted, or the sender/receiver to be the owner.
 
-- [ ] After 48h, the team Safe signs `hook.acceptAdmin()`.
+- [ ] As the TestUSDC owner (deployer), call `setWhitelistBatch([diamond, exchange, router, hook], true)`.
+- [ ] Distribute test USDC to internal testers: `transfer(<tester>, <amount>)` from the deployer.
+
+### 4.7 Post-deploy handover (T+0+4h)
+
+The hook's admin rotation is two-step. The deployer proposes `setAdmin(HOOK_RUNTIME_ADMIN)` in-broadcast; the new admin must call `acceptAdmin()` after the configured rotation delay. For dev beta with the 4h override:
+
+- [ ] After 4h, the team Safe signs `hook.acceptAdmin()`.
 - [ ] `forge script PostDeployVerify --rpc-url $UNICHAIN_RPC_PRIMARY`
       Expected output: `PostDeployVerify: OK`.
 

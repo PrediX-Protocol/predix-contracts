@@ -47,7 +47,7 @@ contract Spec04_TimelockSelfGated is Test {
 
     function setUp() public {
         diamond = new MockDiamond();
-        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
 
         bytes memory ctorArgs =
             abi.encode(IPoolManager(POOL_MANAGER), address(impl), proxyAdmin, hookAdmin, address(diamond), USDC);

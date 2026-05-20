@@ -44,16 +44,23 @@ contract DeployAll is Script {
             | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG
     );
 
-    /// @notice Deploy-time floor on the diamond cut timelock. Matches the hook
-    ///         proxy's `_DEFAULT_TIMELOCK` so governance delays are uniform
-    ///         across both upgrade surfaces. A typo-deployed shorter delay
-    ///         would neuter the FINAL-H02 / F-D-01 timelock — reject at boot. (NEW-03)
-    uint256 public constant MIN_TIMELOCK_DELAY = 48 hours;
+    /// @notice Default floor on the diamond cut timelock. Production deploys
+    ///         leave this active to keep governance delays uniform with the
+    ///         hook + exchange proxy upgrade timelocks. Dev-beta deploys may
+    ///         override via `MIN_TIMELOCK_DELAY_SECONDS` env to a smaller
+    ///         value; that override is only safe when caps are bounded.
+    uint256 public constant DEFAULT_MIN_TIMELOCK_DELAY = 48 hours;
 
-    /// @notice Pure helper the deploy flow and tests both use so the floor
-    ///         check is unambiguously observable.
-    function _requireTimelockFloor(uint256 delay) internal pure {
-        require(delay >= MIN_TIMELOCK_DELAY, "TIMELOCK_DELAY_SECONDS below 48h floor");
+    /// @notice Absolute minimum the override may be set to. Below 1 hour the
+    ///         governance window is shorter than typical block-explorer
+    ///         indexing latency and operators cannot react.
+    uint256 public constant ABSOLUTE_MIN_TIMELOCK_DELAY = 1 hours;
+
+    /// @notice Helper used by the deploy flow and tests so the floor check is
+    ///         unambiguously observable. Reverts when `delay < floor`.
+    function _requireTimelockFloor(uint256 delay, uint256 floor) internal pure {
+        require(floor >= ABSOLUTE_MIN_TIMELOCK_DELAY, "MIN_TIMELOCK_DELAY_SECONDS below 1h absolute floor");
+        require(delay >= floor, "TIMELOCK_DELAY_SECONDS below configured floor");
     }
 
     struct Env {
@@ -68,6 +75,8 @@ contract DeployAll is Script {
         address hookRuntimeAdmin;
         address exchangeProxyAdmin;
         uint256 timelockDelay;
+        uint256 minTimelockDelay;
+        uint256 hookAdminRotationDelay;
         address usdc;
         IPoolManager poolManager;
         address permit2;
@@ -190,7 +199,18 @@ contract DeployAll is Script {
     // ------------------------------------------------------------------- env ---
 
     function _loadEnv() internal view returns (Env memory e) {
-        e.deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        // Deployer key resolution: `MNEMONIC` takes precedence over
+        // `DEPLOYER_PRIVATE_KEY` when set. The mnemonic is derived at the
+        // standard BIP-44 path m/44'/60'/0'/0/0; downstream tooling
+        // (DeriveAccountsFromMnemonic) prints higher indices so the operator
+        // can import the same mnemonic into Metamask and pre-name the
+        // role-specific accounts.
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            e.deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            e.deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
         e.deployer = vm.addr(e.deployerKey);
         e.multisig = vm.envAddress("MULTISIG_ADDRESS");
         // PAUSER_ADDRESS is intentionally a required env var (no fallback)
@@ -205,7 +225,9 @@ contract DeployAll is Script {
         e.hookRuntimeAdmin = vm.envAddress("HOOK_RUNTIME_ADMIN");
         e.exchangeProxyAdmin = vm.envAddress("EXCHANGE_PROXY_ADMIN");
         e.timelockDelay = vm.envUint("TIMELOCK_DELAY_SECONDS");
-        _requireTimelockFloor(e.timelockDelay);
+        e.minTimelockDelay = vm.envOr("MIN_TIMELOCK_DELAY_SECONDS", DEFAULT_MIN_TIMELOCK_DELAY);
+        _requireTimelockFloor(e.timelockDelay, e.minTimelockDelay);
+        e.hookAdminRotationDelay = vm.envOr("HOOK_ADMIN_ROTATION_DELAY_SECONDS", uint256(48 hours));
         e.usdc = vm.envAddress("USDC_ADDRESS");
         e.poolManager = IPoolManager(vm.envAddress("POOL_MANAGER_ADDRESS"));
         e.permit2 = vm.envAddress("PERMIT2_ADDRESS");
@@ -279,7 +301,9 @@ contract DeployAll is Script {
     ///      acceptance (`hook.acceptAdmin()`) is a follow-up tx the final admin must
     ///      sign post-broadcast — documented in `packages/diamond/script/README.md`.
     function _deployHook(Env memory env, address diamond) internal returns (address impl, address proxy, bytes32 salt) {
-        PrediXHookV2 implC = new PrediXHookV2(env.poolManager, env.v4Quoter, env.lpFeeFlag, env.tickSpacing);
+        PrediXHookV2 implC = new PrediXHookV2(
+            env.poolManager, env.v4Quoter, env.lpFeeFlag, env.tickSpacing, env.hookAdminRotationDelay
+        );
         impl = address(implC);
 
         bytes memory constructorArgs =

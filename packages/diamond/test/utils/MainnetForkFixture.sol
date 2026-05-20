@@ -309,7 +309,7 @@ abstract contract MainnetForkFixture is DiamondFixture {
     function _deployHook() private {
         // Step 1: Deploy hook implementation (any address — only the PROXY's
         //         address bits matter to PoolManager).
-        hookImpl = new PrediXHookV2(poolManager, address(quoter), DYNAMIC_FEE, TICK_SPACING);
+        hookImpl = new PrediXHookV2(poolManager, address(quoter), DYNAMIC_FEE, TICK_SPACING, 48 hours);
 
         // Step 2: Mine salt for proxy address with required permission bits.
         // PrediXHookProxyV2.getHookPermissions() declares 6 callbacks; the

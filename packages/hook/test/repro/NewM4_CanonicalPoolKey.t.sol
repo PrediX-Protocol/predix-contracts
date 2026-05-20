@@ -83,12 +83,12 @@ contract NewM4_CanonicalPoolKey is Test {
 
     function test_NewM4_ConstructorRejectsZeroFee() public {
         vm.expectRevert(IPrediXHook.Hook_InvalidCanonicalFee.selector);
-        new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0, CANONICAL_TICK_SPACING);
+        new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0, CANONICAL_TICK_SPACING, 48 hours);
     }
 
     function test_NewM4_ConstructorRejectsZeroTickSpacing() public {
         vm.expectRevert(IPrediXHook.Hook_InvalidCanonicalTickSpacing.selector);
-        new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), CANONICAL_FEE, int24(0));
+        new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), CANONICAL_FEE, int24(0), 48 hours);
     }
 
     function test_NewM4_GriefAttack_Blocked() public {

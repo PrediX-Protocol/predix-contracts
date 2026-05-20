@@ -32,7 +32,7 @@ contract A14Repro is Test {
 
     function setUp() public {
         MockDiamond diamond = new MockDiamond();
-        PrediXHookV2 impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
         bytes memory ctorArgs =
             abi.encode(IPoolManager(POOL_MANAGER), address(impl), proxyAdmin, hookAdmin, address(diamond), USDC);
         (address expected, bytes32 salt) =
@@ -76,7 +76,7 @@ contract A14Repro is Test {
         proxy.executeTimelockDuration();
         assertEq(proxy.timelockDuration(), 30 days, "ceiling applied");
 
-        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 newImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(newImpl));
         // No revert — governance flow still functional at the ceiling.

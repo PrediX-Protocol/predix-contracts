@@ -267,6 +267,12 @@ interface IPrediXHook {
     /// @param  max  `MAX_BATCH_UNREGISTER` value at call time.
     error Hook_BatchTooLarge(uint256 size, uint256 max);
 
+    /// @notice Reverts when the impl constructor is called with an
+    ///         `adminRotationDelay_` outside the
+    ///         [`_ADMIN_ROTATION_DELAY_FLOOR`, `_ADMIN_ROTATION_DELAY_CEILING`]
+    ///         window.
+    error Hook_AdminRotationDelayOutOfBounds();
+
     /// @notice Reverts when `acceptAdmin` is called before the 48h
     ///         `ADMIN_ROTATION_DELAY` has elapsed since `setAdmin` proposed
     ///         the new admin. Brings hook admin rotation in line with the

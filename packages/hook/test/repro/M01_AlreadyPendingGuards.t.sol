@@ -49,7 +49,7 @@ contract M01_AlreadyPendingGuards is Test {
         // Spin up a proxy for the proxy-side guards. Compute the proxy's
         // diamond address ONCE before mining so the constructorArgs hash
         // matches between the mining call and the actual deploy.
-        PrediXHookV2 impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 impl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
         MockDiamond proxyDiamond = new MockDiamond();
         bytes memory ctorArgs =
             abi.encode(IPoolManager(POOL_MANAGER), address(impl), proxyAdmin, hookAdmin, address(proxyDiamond), USDC);
@@ -94,8 +94,8 @@ contract M01_AlreadyPendingGuards is Test {
     // ---------- proposeUpgrade ----------
 
     function test_M01_ProposeUpgrade_RePropose_Reverts() public {
-        PrediXHookV2 impl1 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
-        PrediXHookV2 impl2 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 impl1 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
+        PrediXHookV2 impl2 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
 
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(impl1));
@@ -106,8 +106,8 @@ contract M01_AlreadyPendingGuards is Test {
     }
 
     function test_M01_ProposeUpgrade_CancelThenRePropose_Succeeds() public {
-        PrediXHookV2 impl1 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
-        PrediXHookV2 impl2 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60));
+        PrediXHookV2 impl1 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
+        PrediXHookV2 impl2 = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
 
         vm.prank(proxyAdmin);
         proxy.proposeUpgrade(address(impl1));

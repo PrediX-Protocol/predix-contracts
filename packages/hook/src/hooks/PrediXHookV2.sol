@@ -172,11 +172,23 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         across multiple calls.
     uint256 public constant MAX_BATCH_UNREGISTER = 50;
 
-    /// @notice Minimum wait between `setAdmin` and `acceptAdmin`. Mirrors
-    ///         the diamond / trusted-router / unregister cadence so a
+    /// @notice Minimum wait between `setAdmin` and `acceptAdmin`. Bound to
+    ///         the deploy-time `adminRotationDelay_` constructor argument so
+    ///         dev-beta deploys can shorten the rotation window without
+    ///         touching production behaviour. Production deploys MUST set
+    ///         this to 48h to retain the audit-pinned guarantee: a
     ///         compromised admin cannot instant-rotate to a fresh attacker
-    ///         key — legitimate admin has 48h to call `cancelAdminRotation`.
-    uint256 public constant ADMIN_ROTATION_DELAY = 48 hours;
+    ///         key — legitimate admin has the full window to call
+    ///         `cancelAdminRotation`.
+    uint256 public immutable ADMIN_ROTATION_DELAY;
+
+    /// @notice Absolute floor enforced at construction. Below this value the
+    ///         rotation window is too short for any meaningful response.
+    uint256 internal constant _ADMIN_ROTATION_DELAY_FLOOR = 1 hours;
+
+    /// @notice Absolute ceiling enforced at construction. Above this a key
+    ///         loss event becomes operationally unrecoverable.
+    uint256 internal constant _ADMIN_ROTATION_DELAY_CEILING = 30 days;
 
     // ---------------------------------------------------------------------
     // Transient storage namespaces (EIP-1153)
@@ -236,14 +248,23 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     // Constructor
     // ---------------------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, address quoter_, uint24 canonicalLpFee_, int24 canonicalTickSpacing_) {
+    constructor(
+        IPoolManager poolManager_,
+        address quoter_,
+        uint24 canonicalLpFee_,
+        int24 canonicalTickSpacing_,
+        uint256 adminRotationDelay_
+    ) {
         if (quoter_ == address(0)) revert Hook_ZeroAddress();
         if (canonicalLpFee_ == 0) revert Hook_InvalidCanonicalFee();
         if (canonicalTickSpacing_ == 0) revert Hook_InvalidCanonicalTickSpacing();
+        if (adminRotationDelay_ < _ADMIN_ROTATION_DELAY_FLOOR) revert Hook_AdminRotationDelayOutOfBounds();
+        if (adminRotationDelay_ > _ADMIN_ROTATION_DELAY_CEILING) revert Hook_AdminRotationDelayOutOfBounds();
         poolManager = poolManager_;
         quoter = quoter_;
         canonicalLpFee = canonicalLpFee_;
         canonicalTickSpacing = canonicalTickSpacing_;
+        ADMIN_ROTATION_DELAY = adminRotationDelay_;
         // Defense-in-depth: prevent direct initialization of the bare implementation
         // contract. Only the proxy's delegatecall path (which writes to proxy storage,
         // not impl storage) should run initialize(). Without this guard, an attacker

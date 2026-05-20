@@ -48,9 +48,20 @@ contract DeployHook is Script {
         // registerMarketPool is guaranteed to match the Router's own swap path.
         uint24 canonicalLpFee = uint24(vm.envUint("LP_FEE_FLAG"));
         int24 canonicalTickSpacing = int24(vm.envInt("TICK_SPACING"));
+        uint256 adminRotationDelay = vm.envOr("HOOK_ADMIN_ROTATION_DELAY_SECONDS", uint256(48 hours));
 
-        vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        out = _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing);
+        uint256 deployerKey;
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
+        vm.startBroadcast(deployerKey);
+        out = _deploy(
+            poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing,
+            adminRotationDelay
+        );
         vm.stopBroadcast();
 
         console2.log("PrediXHookV2 (impl):", out.implementation);
@@ -67,9 +78,13 @@ contract DeployHook is Script {
         address usdc,
         address quoter,
         uint24 canonicalLpFee,
-        int24 canonicalTickSpacing
+        int24 canonicalTickSpacing,
+        uint256 adminRotationDelay
     ) external returns (Deployed memory) {
-        return _deploy(poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing);
+        return _deploy(
+            poolManager, proxyAdmin, hookAdmin, diamond, usdc, quoter, canonicalLpFee, canonicalTickSpacing,
+            adminRotationDelay
+        );
     }
 
     function _deploy(
@@ -80,9 +95,11 @@ contract DeployHook is Script {
         address usdc,
         address quoter,
         uint24 canonicalLpFee,
-        int24 canonicalTickSpacing
+        int24 canonicalTickSpacing,
+        uint256 adminRotationDelay
     ) internal returns (Deployed memory out) {
-        PrediXHookV2 impl = new PrediXHookV2(poolManager, quoter, canonicalLpFee, canonicalTickSpacing);
+        PrediXHookV2 impl =
+            new PrediXHookV2(poolManager, quoter, canonicalLpFee, canonicalTickSpacing, adminRotationDelay);
         out.implementation = address(impl);
 
         bytes memory constructorArgs = abi.encode(poolManager, address(impl), proxyAdmin, hookAdmin, diamond, usdc);
