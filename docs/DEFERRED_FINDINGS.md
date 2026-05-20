@@ -42,14 +42,14 @@ Post-launch enhancements move `OPEN → DEFERRED` with a target sprint.
 |---|---|---|---|---|---|---|
 | M-01 | Medium | Centralization composition across 4 admin multisigs | ops | 2d | High (pre-mainnet ops) | RESOLVED |
 | L-01 | Low | Exchange USDC `forceApprove(diamond, max)` not revoked on upgrade | src | 30m | Medium | RESOLVED |
-| L-02 | Low | Diamond rotation requires per-market `unregisterMarketPool` | src | 2-3h | Medium | OPEN |
+| L-02 | Low | Diamond rotation requires per-market `unregisterMarketPool` | src | 2-3h | Medium | RESOLVED |
 | L-03 | Low | Sequencer feed `address(0)` silently bypasses on L2 | doc + deploy check | 30m | High (deploy-blocker) | RESOLVED |
 | L-04 | Low | Redeem with only-losing-tokens burns for zero payout (UX trap) | src | 1h | Medium | RESOLVED |
 | L-05 | Low | Cumulative-merge avoids redemption fee (design choice) | doc only | 15m | Low | OPEN |
 | L-06 | Low | `emergencyResolve` lacks bypass-reason event field | src | 1-2h | Medium | RESOLVED |
 | I-01 | Info | `_decimals[marketId]` dead state in ChainlinkOracle | src | 5m | Low | RESOLVED |
 | I-02 | Info | sweep-unclaimed race in final block of GRACE_PERIOD | accept | — | Low | OPEN |
-| I-03 | Info | Verify single global reentrancy slot doesn't block legitimate cross-facet entry | test only | 1h | Medium | OPEN |
+| I-03 | Info | Verify single global reentrancy slot doesn't block legitimate cross-facet entry | test only | 1h | Medium | RESOLVED |
 | I-04 | Info | Per-fill flooring dust to feeRecipient (acceptable) | accept | — | Low | OPEN |
 | I-05 | Info | `_lastSwap` mapping unbounded (post-launch bloom filter) | src (post-launch) | 1d | Low (post-launch) | DEFERRED |
 | I-06 | Info | DiamondInit slot naming inconsistency | src | 5m | Low | OPEN |
@@ -117,13 +117,17 @@ on already-zero allowances.
 
 ### L-02 — Diamond rotation requires per-market `unregisterMarketPool` cleanup
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** Low
-**File:** [`packages/hook/src/hooks/PrediXHookV2.sol:315-349`](../packages/hook/src/hooks/PrediXHookV2.sol#L315)
+**File:** [`packages/hook/src/hooks/PrediXHookV2.sol`](../packages/hook/src/hooks/PrediXHookV2.sol)
 
 **Context:** After `executeDiamondRotation`, each previously-registered pool
 must be individually unregistered (48h timelock per market). For 50 markets,
 that's 100 admin transactions over 48h+.
+
+**Resolution:** Added batch variants `proposeUnregisterMarketPools(uint256[])` / `executeUnregisterMarketPools(uint256[])` / `cancelUnregisterMarketPools(uint256[])`. Capped at `MAX_BATCH_UNREGISTER = 50` to keep worst-case gas predictable; over-cap reverts `Hook_BatchTooLarge(size, max)`. Batches are atomic — any per-marketId failure (already-pending, not-found, delay-not-elapsed) reverts the whole batch so the operator sees a coherent state. The singletons remain for individual operations and share their bodies with the batch via internal helpers, so a regression touching one is observable from the other.
+
+**Regression tests:** [`Audit_PRE_L02_BatchUnregister.t.sol`](../packages/hook/test/repro/Audit_PRE_L02_BatchUnregister.t.sol) — 13 tests covering happy paths, atomicity on each error class, over-cap revert, non-admin revert, and singleton/batch coexistence.
 
 **Recommended fix:**
 
@@ -247,15 +251,10 @@ Document the trade-off.
 
 #### I-03 — Verify single global reentrancy slot doesn't block legitimate cross-facet entry
 
-**Status:** OPEN
+**Status:** RESOLVED
 **File:** [`packages/shared/src/utils/TransientReentrancyGuard.sol`](../packages/shared/src/utils/TransientReentrancyGuard.sol)
 
-**Recommended action:** Write a fuzz test that exhaustively calls every
-external entry point inside every other `nonReentrant` external entry to
-verify there is no legitimate cross-facet code path that gets accidentally
-blocked.
-
-**Effort:** 1 hour test only.
+**Resolution:** [`Audit_I03_ReentrancyCrossFacet.t.sol`](../packages/diamond/test/repro/Audit_I03_ReentrancyCrossFacet.t.sol) pins two properties: (1) the modifier blocks re-entry of any `nonReentrant` function during an in-flight `nonReentrant` call (cross-facet or self-call) via a harness that mirrors the production transient slot, and (2) the slot fully clears between top-level calls within the same transaction so a multicall that invokes several facet entry points sequentially is NOT blocked. Property (2) is verified directly on the diamond via interleaved split / redeem / createEvent flows — the cross-facet legitimate path. Combined with the structural observation that PrediX makes no external calls to user-controlled code from inside any `nonReentrant` function (USDC and OutcomeToken neither have transfer hooks), the cross-facet reentry surface is closed.
 
 #### I-04 — Per-fill flooring micro-dust to feeRecipient
 

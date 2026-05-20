@@ -164,6 +164,14 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
     ///         as the rotation that motivated them.
     uint256 public constant MARKET_UNREGISTER_DELAY = 48 hours;
 
+    /// @notice Maximum number of marketIds a single batch unregister call
+    ///         may process. Caps worst-case gas to keep `proposeUnregisterMarketPools`
+    ///         / `executeUnregisterMarketPools` / `cancelUnregisterMarketPools`
+    ///         within the block gas limit on every supported chain. Operators
+    ///         rotating diamonds against larger market sets split the work
+    ///         across multiple calls.
+    uint256 public constant MAX_BATCH_UNREGISTER = 50;
+
     /// @notice Minimum wait between `setAdmin` and `acceptAdmin`. Mirrors
     ///         the diamond / trusted-router / unregister cadence so a
     ///         compromised admin cannot instant-rotate to a fresh attacker
@@ -313,6 +321,47 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @inheritdoc IPrediXHook
     function proposeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        _proposeUnregisterMarketPool(marketId);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function proposeUnregisterMarketPools(uint256[] calldata marketIds) external override onlyAdmin {
+        uint256 n = marketIds.length;
+        if (n > MAX_BATCH_UNREGISTER) revert Hook_BatchTooLarge(n, MAX_BATCH_UNREGISTER);
+        for (uint256 i; i < n; ++i) {
+            _proposeUnregisterMarketPool(marketIds[i]);
+        }
+    }
+
+    /// @inheritdoc IPrediXHook
+    function executeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        _executeUnregisterMarketPool(marketId);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function executeUnregisterMarketPools(uint256[] calldata marketIds) external override onlyAdmin {
+        uint256 n = marketIds.length;
+        if (n > MAX_BATCH_UNREGISTER) revert Hook_BatchTooLarge(n, MAX_BATCH_UNREGISTER);
+        for (uint256 i; i < n; ++i) {
+            _executeUnregisterMarketPool(marketIds[i]);
+        }
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+        _cancelUnregisterMarketPool(marketId);
+    }
+
+    /// @inheritdoc IPrediXHook
+    function cancelUnregisterMarketPools(uint256[] calldata marketIds) external override onlyAdmin {
+        uint256 n = marketIds.length;
+        if (n > MAX_BATCH_UNREGISTER) revert Hook_BatchTooLarge(n, MAX_BATCH_UNREGISTER);
+        for (uint256 i; i < n; ++i) {
+            _cancelUnregisterMarketPool(marketIds[i]);
+        }
+    }
+
+    function _proposeUnregisterMarketPool(uint256 marketId) internal {
         // Reject re-propose-while-pending. Admin must explicitly cancel first
         // to prevent silent timer extension.
         if (_pendingUnregisterProposedAt[marketId] != 0) revert Hook_AlreadyPendingUnregister();
@@ -321,8 +370,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         emit Hook_MarketUnregisterProposed(marketId, block.timestamp + MARKET_UNREGISTER_DELAY);
     }
 
-    /// @inheritdoc IPrediXHook
-    function executeUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+    function _executeUnregisterMarketPool(uint256 marketId) internal {
         uint256 proposedAt = _pendingUnregisterProposedAt[marketId];
         if (proposedAt == 0) revert Hook_NoPendingUnregister();
         if (block.timestamp < proposedAt + MARKET_UNREGISTER_DELAY) {
@@ -341,8 +389,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         emit Hook_MarketUnregistered(marketId, poolId);
     }
 
-    /// @inheritdoc IPrediXHook
-    function cancelUnregisterMarketPool(uint256 marketId) external override onlyAdmin {
+    function _cancelUnregisterMarketPool(uint256 marketId) internal {
         if (_pendingUnregisterProposedAt[marketId] == 0) revert Hook_NoPendingUnregister();
         delete _pendingUnregisterProposedAt[marketId];
         emit Hook_MarketUnregisterCancelled(marketId);

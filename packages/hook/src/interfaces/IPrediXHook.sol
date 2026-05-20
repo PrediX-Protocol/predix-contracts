@@ -260,6 +260,13 @@ interface IPrediXHook {
     ///         flows share the same no-silent-reset pattern.
     error Hook_AlreadyPendingUnregister();
 
+    /// @notice Reverts when a batch unregister call passes more marketIds than
+    ///         `MAX_BATCH_UNREGISTER`. Caller splits the work across multiple
+    ///         calls.
+    /// @param  size Number of marketIds passed.
+    /// @param  max  `MAX_BATCH_UNREGISTER` value at call time.
+    error Hook_BatchTooLarge(uint256 size, uint256 max);
+
     /// @notice Reverts when `acceptAdmin` is called before the 48h
     ///         `ADMIN_ROTATION_DELAY` has elapsed since `setAdmin` proposed
     ///         the new admin. Brings hook admin rotation in line with the
@@ -370,15 +377,32 @@ interface IPrediXHook {
     ///         for different markets do not interfere.
     function proposeUnregisterMarketPool(uint256 marketId) external;
 
+    /// @notice Batch variant of `proposeUnregisterMarketPool`. Calls the
+    ///         singleton for every marketId in `marketIds`. Reverts at the
+    ///         first per-marketId failure (e.g. already-pending, not-found)
+    ///         so the batch is atomic. Capped at `MAX_BATCH_UNREGISTER` to
+    ///         keep worst-case gas predictable. Admin-gated.
+    function proposeUnregisterMarketPools(uint256[] calldata marketIds) external;
+
     /// @notice Finalize a pending unregister. Clears `_poolBinding[poolId]`
     ///         and `_marketToPoolId[marketId]` so a subsequent
     ///         `registerMarketPool` for the same `marketId` (typically
     ///         post-rotation under a new diamond) succeeds. Admin-gated.
     function executeUnregisterMarketPool(uint256 marketId) external;
 
+    /// @notice Batch variant of `executeUnregisterMarketPool`. Atomic; reverts
+    ///         on the first per-marketId failure. Capped at
+    ///         `MAX_BATCH_UNREGISTER`. Admin-gated.
+    function executeUnregisterMarketPools(uint256[] calldata marketIds) external;
+
     /// @notice Cancel a pending unregister before its timelock elapses.
     ///         Admin-gated.
     function cancelUnregisterMarketPool(uint256 marketId) external;
+
+    /// @notice Batch variant of `cancelUnregisterMarketPool`. Atomic; reverts
+    ///         on the first per-marketId failure. Capped at
+    ///         `MAX_BATCH_UNREGISTER`. Admin-gated.
+    function cancelUnregisterMarketPools(uint256[] calldata marketIds) external;
 
     /// @notice View the pending unregister readyAt for a marketId.
     /// @return readyAt Earliest timestamp at which
