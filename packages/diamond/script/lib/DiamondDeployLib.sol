@@ -158,7 +158,8 @@ library DiamondDeployLib {
         FacetAddresses memory f,
         address multisig,
         address pauser,
-        address timelock
+        address timelock,
+        uint256 minDelay
     ) internal view {
         IAccessControlFacet ac = IAccessControlFacet(diamond);
         if (!ac.hasRole(Roles.DEFAULT_ADMIN_ROLE, multisig)) revert DeployFailed("multisig DEFAULT_ADMIN");
@@ -176,12 +177,14 @@ library DiamondDeployLib {
         if (loupe.facetAddress(IMarketFacet.createMarket.selector) != f.market) revert DeployFailed("market route");
         if (loupe.facetAddress(IEventFacet.createEvent.selector) != f.eventF) revert DeployFailed("event route");
 
-        // Defense-in-depth for NEW-03: the env-level floor in
+        // Defense-in-depth: the env-level floor in
         // `DeployAll._requireTimelockFloor` catches typos in
         // `TIMELOCK_DELAY_SECONDS`, but if a team reuses an existing timelock
-        // contract whose `getMinDelay()` is below 48h (e.g. a dev timelock),
-        // only this post-deploy assertion catches it.
-        if (TimelockController(payable(timelock)).getMinDelay() < 48 hours) {
+        // contract whose `getMinDelay()` is below the operator-supplied
+        // `minDelay`, only this post-deploy assertion catches it. Production
+        // deploys pass 48 hours; dev-beta deploys may pass a smaller value
+        // matching the `MIN_TIMELOCK_DELAY_SECONDS` env override.
+        if (TimelockController(payable(timelock)).getMinDelay() < minDelay) {
             revert DeployFailed("timelock minDelay");
         }
     }

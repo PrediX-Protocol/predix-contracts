@@ -43,7 +43,10 @@ contract DeployDiamond is Script {
 
         vm.stopBroadcast();
 
-        if (finalize) DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock);
+        uint256 minDelay = vm.envOr("MIN_TIMELOCK_DELAY_SECONDS", uint256(48 hours));
+        if (finalize) {
+            DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock, minDelay);
+        }
 
         console2.log("Diamond:", diamond);
         console2.log("  cut facet:", facets.cut);

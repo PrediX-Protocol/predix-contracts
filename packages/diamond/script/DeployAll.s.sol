@@ -191,7 +191,9 @@ contract DeployAll is Script {
         vm.stopBroadcast();
 
         if (env.finalizeGovernance) {
-            DiamondDeployLib.verifyPostDeploy(out.diamond, out.facets, env.multisig, env.pauser, out.timelock);
+            DiamondDeployLib.verifyPostDeploy(
+                out.diamond, out.facets, env.multisig, env.pauser, out.timelock, env.minTimelockDelay
+            );
         }
         _logSummary(env, out);
     }

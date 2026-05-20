@@ -23,9 +23,10 @@ contract VerifyPostDeployWrapper {
         DiamondDeployLib.FacetAddresses memory f,
         address multisig,
         address pauser,
-        address timelock
+        address timelock,
+        uint256 minDelay
     ) external view {
-        DiamondDeployLib.verifyPostDeploy(diamond, f, multisig, pauser, timelock);
+        DiamondDeployLib.verifyPostDeploy(diamond, f, multisig, pauser, timelock, minDelay);
     }
 }
 
@@ -70,7 +71,7 @@ contract DiamondDeployLibTest is Test {
 
         vm.stopPrank();
 
-        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock);
+        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, pauser, timelock, 48 hours);
 
         IAccessControlFacet ac = IAccessControlFacet(diamond);
         assertTrue(ac.hasRole(Roles.DEFAULT_ADMIN_ROLE, multisig), "multisig DEFAULT_ADMIN_ROLE");
@@ -118,7 +119,7 @@ contract DiamondDeployLibTest is Test {
 
         VerifyPostDeployWrapper wrapper = new VerifyPostDeployWrapper();
         vm.expectRevert(abi.encodeWithSelector(DiamondDeployLib.DeployFailed.selector, "timelock minDelay"));
-        wrapper.run(diamond, facets, multisig, pauser, address(shortTimelock));
+        wrapper.run(diamond, facets, multisig, pauser, address(shortTimelock), 48 hours);
     }
 
     /// @notice Single-key model (pauser == multisig) must still pass verification.
@@ -132,7 +133,7 @@ contract DiamondDeployLibTest is Test {
         DiamondDeployLib.transferGovernance(diamond, deployer, multisig, multisig, timelock);
         vm.stopPrank();
 
-        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, multisig, timelock);
+        DiamondDeployLib.verifyPostDeploy(diamond, facets, multisig, multisig, timelock, 48 hours);
 
         IAccessControlFacet ac = IAccessControlFacet(diamond);
         assertTrue(ac.hasRole(Roles.PAUSER_ROLE, multisig), "single-key multisig holds PAUSER");
@@ -161,6 +162,6 @@ contract DiamondDeployLibTest is Test {
                 DiamondDeployLib.DeployFailed.selector, "multisig still holds PAUSER after split"
             )
         );
-        wrapper.run(diamond, facets, multisig, pauser, timelock);
+        wrapper.run(diamond, facets, multisig, pauser, timelock, 48 hours);
     }
 }

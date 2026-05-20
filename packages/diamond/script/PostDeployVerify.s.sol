@@ -222,7 +222,11 @@ contract PostDeployVerify is Script {
 
     function _verifyTimelock(Targets memory t) internal view {
         TimelockController tl = TimelockController(payable(t.timelock));
-        if (tl.getMinDelay() < 48 hours) revert PostDeployVerify_Failed("timelock minDelay below 48h");
+        // Floor matches the deploy-time MIN_TIMELOCK_DELAY_SECONDS env so the
+        // post-deploy check stays consistent with what DeployAll enforced at
+        // boot. Production leaves this at 48h; dev-beta deploys override.
+        uint256 expectedMinDelay = vm.envOr("MIN_TIMELOCK_DELAY_SECONDS", uint256(48 hours));
+        if (tl.getMinDelay() < expectedMinDelay) revert PostDeployVerify_Failed("timelock minDelay below configured floor");
         if (!tl.hasRole(tl.PROPOSER_ROLE(), t.multisig)) {
             revert PostDeployVerify_Failed("multisig missing timelock PROPOSER");
         }
