@@ -5,6 +5,10 @@ on:
     branches: [develop, master]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Nightly fork test run at 02:00 UTC — picks up any state drift in mainnet
+    # canonical contracts that could affect PrediX deployment.
+    - cron: '0 2 * * *'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -45,6 +49,103 @@ jobs:
       - name: forge test (skip fork tests — they need UNICHAIN_RPC_PRIMARY)
         working-directory: packages/${{ matrix.package }}
         run: forge test -vv --no-match-path 'test/fork/*'
+
+  fork-tests-mainnet:
+    name: Fork tests (Unichain mainnet, ${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Skip on draft PRs to save RPC budget. Run on push to develop/master + non-draft PRs.
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        # Diamond hosts the unified MainnetForkFixture-based E2E suite.
+        # The other packages each run their own narrow-scope fork tests
+        # against individual canonical contracts (USDC, PoolManager, Permit2).
+        package: [shared, diamond, exchange, hook, oracle]
+    env:
+      # Required: primary RPC + pin block.
+      UNICHAIN_RPC_PRIMARY: ${{ secrets.UNICHAIN_MAINNET_RPC || 'https://mainnet.unichain.org' }}
+      UNICHAIN_RPC_SECONDARY: ${{ secrets.UNICHAIN_MAINNET_RPC_FALLBACK }}
+      UNICHAIN_MAINNET_PIN_BLOCK: ${{ vars.UNICHAIN_MAINNET_PIN_BLOCK }}
+      # Optional: canonical addresses — defaults in MainnetForkFixture so these
+      # only need to be set if a non-canonical deployment is being tested.
+      USDC_ADDRESS: ${{ vars.USDC_ADDRESS }}
+      POOL_MANAGER_ADDRESS: ${{ vars.POOL_MANAGER_ADDRESS }}
+      V4_QUOTER_ADDRESS: ${{ vars.V4_QUOTER_ADDRESS }}
+      PERMIT2_ADDRESS: ${{ vars.PERMIT2_ADDRESS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Verify required env vars
+        run: |
+          if [[ -z "$UNICHAIN_MAINNET_PIN_BLOCK" ]]; then
+            echo "::error::UNICHAIN_MAINNET_PIN_BLOCK is not set. Add as a GitHub variable."
+            echo "::error::See: scripts/bump-pin-block.sh + docs/TEST_TAXONOMY.md"
+            exit 1
+          fi
+          echo "Pin block: $UNICHAIN_MAINNET_PIN_BLOCK"
+
+      - name: forge test (fork suite)
+        working-directory: packages/${{ matrix.package }}
+        run: forge test -vv --match-path 'test/fork/*'
+
+      - name: forge test (E2E suite, diamond only)
+        if: matrix.package == 'diamond'
+        working-directory: packages/diamond
+        run: forge test -vv --match-path 'test/e2e/*'
+
+      - name: Upload forge snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-snapshots-${{ matrix.package }}-${{ github.sha }}
+          path: packages/${{ matrix.package }}/.forge-snapshots/
+          retention-days: 90
+          if-no-files-found: ignore
+
+  fork-tests-nightly:
+    name: Fork tests nightly (extended invariants)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      UNICHAIN_RPC_PRIMARY: ${{ secrets.UNICHAIN_MAINNET_RPC || 'https://mainnet.unichain.org' }}
+      UNICHAIN_RPC_SECONDARY: ${{ secrets.UNICHAIN_MAINNET_RPC_FALLBACK }}
+      UNICHAIN_MAINNET_PIN_BLOCK: ${{ vars.UNICHAIN_MAINNET_PIN_BLOCK }}
+      # Extended runs for invariant campaigns.
+      FOUNDRY_INVARIANT_RUNS: 512
+      FOUNDRY_INVARIANT_DEPTH: 500
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: forge test fork (diamond)
+        working-directory: packages/diamond
+        run: forge test -vv --match-path 'test/fork/*'
+
+      - name: forge test E2E (diamond)
+        working-directory: packages/diamond
+        run: forge test -vv --match-path 'test/e2e/*'
+
+      - name: forge test invariant (diamond)
+        working-directory: packages/diamond
+        run: forge test -vv --match-path 'test/invariant/*'
 
   slither:
     name: Slither (${{ matrix.package }})
