@@ -21,6 +21,7 @@ import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
 import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 
+import {DeployEnvVerifier} from "./lib/DeployEnvVerifier.sol";
 import {DiamondDeployLib} from "./lib/DiamondDeployLib.sol";
 
 /// @title DeployAll
@@ -219,9 +220,19 @@ contract DeployAll is Script {
 
         if (e.chainlinkEnabled) {
             e.registrar = vm.envAddress("REGISTRAR_ADDRESS");
-            // Legitimate optional (Loại A): pass address(0) on L1 or on testnets without
-            // a Chainlink sequencer feed. Documented in ChainlinkOracle.sol lines 24-27.
+            // Pass address(0) on L1 or on chains without a Chainlink sequencer
+            // feed. Documented in ChainlinkOracle.sol lines 24-27.
             e.chainlinkSequencerFeed = vm.envOr("CHAINLINK_SEQUENCER_UPTIME_FEED", address(0));
+        }
+
+        // Pre-flight: confirm canonical infrastructure addresses match the
+        // target chain before opening a broadcast. Wrong PERMIT2_ADDRESS or a
+        // sequencer feed not deployed on this chain would silently misconfigure
+        // every router and Chainlink resolve until the first user-facing call
+        // reverts.
+        DeployEnvVerifier.verifyPermit2(block.chainid, e.permit2);
+        if (e.chainlinkEnabled) {
+            DeployEnvVerifier.verifySequencerFeed(block.chainid, e.chainlinkSequencerFeed);
         }
     }
 

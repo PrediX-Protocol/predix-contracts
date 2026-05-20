@@ -2,7 +2,7 @@
 
 **Audience:** engineers, security
 **Status:** Active
-**Last reviewed:** 2026-05-19
+**Last reviewed:** 2026-05-20
 **Reference audit report:** [`../AUDIT_REPORT_PRE_MAINNET.md`](../AUDIT_REPORT_PRE_MAINNET.md)
 
 This document tracks audit findings that were **NOT** remediated in the
@@ -40,14 +40,14 @@ Post-launch enhancements move `OPEN → DEFERRED` with a target sprint.
 
 | ID | Severity | Title | Scope | Effort | Priority | Status |
 |---|---|---|---|---|---|---|
-| M-01 | Medium | Centralization composition across 4 admin multisigs | ops | 2d | High (pre-mainnet ops) | OPEN |
-| L-01 | Low | Exchange USDC `forceApprove(diamond, max)` not revoked on upgrade | src | 30m | Medium | OPEN |
+| M-01 | Medium | Centralization composition across 4 admin multisigs | ops | 2d | High (pre-mainnet ops) | RESOLVED |
+| L-01 | Low | Exchange USDC `forceApprove(diamond, max)` not revoked on upgrade | src | 30m | Medium | RESOLVED |
 | L-02 | Low | Diamond rotation requires per-market `unregisterMarketPool` | src | 2-3h | Medium | OPEN |
-| L-03 | Low | Sequencer feed `address(0)` silently bypasses on L2 | doc + deploy check | 30m | High (deploy-blocker) | OPEN |
-| L-04 | Low | Redeem with only-losing-tokens burns for zero payout (UX trap) | src | 1h | Medium | OPEN |
+| L-03 | Low | Sequencer feed `address(0)` silently bypasses on L2 | doc + deploy check | 30m | High (deploy-blocker) | RESOLVED |
+| L-04 | Low | Redeem with only-losing-tokens burns for zero payout (UX trap) | src | 1h | Medium | RESOLVED |
 | L-05 | Low | Cumulative-merge avoids redemption fee (design choice) | doc only | 15m | Low | OPEN |
-| L-06 | Low | `emergencyResolve` lacks bypass-reason event field | src | 1-2h | Medium | OPEN |
-| I-01 | Info | `_decimals[marketId]` dead state in ChainlinkOracle | src | 5m | Low | OPEN |
+| L-06 | Low | `emergencyResolve` lacks bypass-reason event field | src | 1-2h | Medium | RESOLVED |
+| I-01 | Info | `_decimals[marketId]` dead state in ChainlinkOracle | src | 5m | Low | RESOLVED |
 | I-02 | Info | sweep-unclaimed race in final block of GRACE_PERIOD | accept | — | Low | OPEN |
 | I-03 | Info | Verify single global reentrancy slot doesn't block legitimate cross-facet entry | test only | 1h | Medium | OPEN |
 | I-04 | Info | Per-fill flooring dust to feeRecipient (acceptable) | accept | — | Low | OPEN |
@@ -55,13 +55,13 @@ Post-launch enhancements move `OPEN → DEFERRED` with a target sprint.
 | I-06 | Info | DiamondInit slot naming inconsistency | src | 5m | Low | OPEN |
 | I-07 | Info | `_INIT_PRICE_MIN/MAX = ±5%` forces launch near 50¢ | design | — | Low | OPEN |
 | I-08 | Info | Router `_isBannedRecipient` static list (no update on rotation) | design | — | Low | OPEN |
-| I-09 | Info | Permit2 canonical-address check is code-length only | deploy verifier | 30m | High (deploy-blocker) | OPEN |
+| I-09 | Info | Permit2 canonical-address check is code-length only | deploy verifier | 30m | High (deploy-blocker) | RESOLVED |
 
 ---
 
 ### M-01 — Centralization power composition across admin multisigs
 
-**Status:** OPEN
+**Status:** RESOLVED (policy)
 **Severity:** Medium
 **File:** Operational, no source file
 **Scope:** Process / documentation
@@ -72,56 +72,46 @@ trend (Ronin/Multichain/Radiant/Bybit class — 80% of crypto loss value) is
 off-chain key/social compromise. The codebase has 48h timelocks, but the
 ultimate security envelope is defined by those 4 multisig keys.
 
-**Action items:**
+**Resolution:** [`docs/KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md)
+v2.0 codifies the four-Safe separation (Protocol Governance / Upgrade
+Governance / Operations / Incident Response) with explicit overlap rules,
+per-Safe thresholds, the role-to-env-var binding table, and a Safe-loss
+recovery matrix. Deploy env vars (`MULTISIG_ADDRESS`, `HOOK_PROXY_ADMIN`,
+`EXCHANGE_PROXY_ADMIN`, `HOOK_RUNTIME_ADMIN`, `PAYMASTER_OWNER`,
+`PAUSER_ADDRESS`) are already distinct on `DeployAll.s.sol` — the policy
+update locks each to a separate Safe.
 
-- [ ] Document in [`docs/KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md):
-      the 4 keys must be **4 distinct Safe multisigs** with non-overlapping
-      signer sets.
-- [ ] Operational drill: rehearse 48-hour incident response for each of the
-      4 compromise scenarios (admin / hook admin / hook proxy admin /
-      exchange proxy admin compromised).
-- [ ] After 1 week of clean mainnet operation, raise the upgrade timelock
-      floor from 48h to **5-7 days** via the existing
-      `proposeTimelockDuration` flow (which already enforces monotonic
-      increase — see PrediXHookProxyV2.sol:_MAX_TIMELOCK=30d).
-- [ ] Every signer rotation must be a deliberate ceremony, not silent.
+**Still required pre-mainnet** (tracked on the policy checklist, not in code):
+- [ ] Deploy 4 Safes on Unichain mainnet
+- [ ] Operational drill for each Safe-loss scenario per § 5.4
+- [ ] Raise upgrade timelock floor from 48h to 5-7 days after 1 week of clean
+      operation (via the existing `proposeTimelockDuration` flow)
 
 **Dependencies:** None.
 **Effort:** ~2 days ops setup + ongoing.
-**Priority:** **High** — must complete before mainnet deploy.
+**Priority:** **High** — policy resolved; Safe deployment is pre-mainnet ops.
 
 ---
 
 ### L-01 — Exchange USDC `forceApprove` not revoked on impl upgrade
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** Low
-**File:** [`packages/exchange/src/PrediXExchange.sol:90`](../packages/exchange/src/PrediXExchange.sol#L90)
+**File:** [`packages/exchange/src/PrediXExchange.sol`](../packages/exchange/src/PrediXExchange.sol)
 
 **Context:** Exchange grants the diamond `type(uint256).max` USDC allowance at
 init. If the exchange impl is upgraded AND the new impl binds to a different
 diamond, the OLD diamond retains unlimited USDC pull rights.
 
-**Recommended fix:**
+**Resolution:** `PrediXExchange.revokeOldDiamondAllowance(address oldDiamond)`
+zeroes a residual allowance under the current diamond's ADMIN_ROLE guard.
+Refuses `address(0)` (reverts `ZeroAddress`) and the live diamond (reverts
+`Exchange_CannotRevokeCurrentDiamond`) so the synthetic MINT path cannot be
+broken silently. Emits `OldDiamondAllowanceRevoked(oldDiamond)`. Idempotent
+on already-zero allowances.
 
-```solidity
-// Add to PrediXExchange.sol
-function revokeOldDiamond(address oldDiamond) external onlyAdmin {
-    if (oldDiamond == diamond) revert CannotRevokeCurrent();
-    IERC20(usdc).forceApprove(oldDiamond, 0);
-    emit OldDiamondRevoked(oldDiamond);
-}
-```
-
-Plus add the call into the impl-upgrade runbook so any upgrade that rebinds
-the diamond also revokes the old allowance.
-
-**Test required:** regression test deploying exchange, "upgrading" (simulated
-via direct setter or migration impl) to new diamond, asserting old diamond
-allowance == 0.
-
-**Effort:** 30 min code + 30 min test.
-**Priority:** Medium.
+**Regression tests:**
+[`Audit_PRE_L01_RevokeOldDiamond.t.sol`](../packages/exchange/test/repro/Audit_PRE_L01_RevokeOldDiamond.t.sol) — 5 tests covering happy path, idempotency, current-diamond refusal, zero-address refusal, non-admin refusal.
 
 ---
 
@@ -165,52 +155,38 @@ batch-unregistering, verifying state is clean.
 
 ### L-03 — Sequencer feed `address(0)` silently bypasses on L2
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** Low
-**File:** [`packages/oracle/src/adapters/ChainlinkOracle.sol:181-193`](../packages/oracle/src/adapters/ChainlinkOracle.sol#L181)
+**File:** [`packages/oracle/src/adapters/ChainlinkOracle.sol`](../packages/oracle/src/adapters/ChainlinkOracle.sol)
 
 **Context:** If deployer passes `address(0)` for `sequencerUptimeFeed_` on
 an L2 deployment, the entire sequencer-uptime protection is silently skipped.
 
-**Recommended fix (deploy-time, not code):**
+**Resolution:** [`packages/diamond/script/lib/DeployEnvVerifier.sol`](../packages/diamond/script/lib/DeployEnvVerifier.sol) — a shared verifier library — refuses to deploy on chains where a Chainlink sequencer feed is expected unless `CHAINLINK_SEQUENCER_UPTIME_FEED` matches the canonical address for that chain. Known chains: Arbitrum (42161), Optimism (10), Base (8453). For unknown chains (Unichain, L1) the env var must be explicitly set to `0x0`. The verifier additionally probes the feed at deploy time to confirm bytecode is present, `latestRoundData()` does not revert, `updatedAt` is within `MAX_SEQUENCER_STALENESS`, and `answer == 0` (sequencer up). Bound to `DeployAll._loadEnv()` as a mandatory pre-flight; also exposed as a standalone CLI script [`VerifyDeployEnv.s.sol`](../packages/diamond/script/VerifyDeployEnv.s.sol) for ops dry-run.
 
-- [ ] Add to deploy checklist: assert `ChainlinkOracle.sequencerUptimeFeed != address(0)`
-      post-deploy when target chain is L2.
-- [ ] Encode the canonical Unichain sequencer feed (when published by
-      Chainlink) as a deploy-script required arg.
-- [ ] (Optional) emit `SequencerFeedUnconfigured(address)` event from the
-      constructor if `feed == address(0)`, for off-chain monitoring.
-
-**Effort:** 30 min (doc + deploy verifier).
-**Priority:** **High** — deploy-blocker for L2.
+**Regression tests:**
+[`VerifyDeployEnv.t.sol`](../packages/diamond/test/script/VerifyDeployEnv.t.sol) — 15 tests covering the canonical-feed table, expected-but-zero on Arbitrum, mismatch on Arbitrum, no-bytecode, unresponsive, stale `updatedAt`, zero `updatedAt`, sequencer-down, and Arbitrum happy path.
 
 ---
 
 ### L-04 — Redeem with only-losing-tokens burns for zero payout
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** Low
-**File:** [`packages/diamond/src/facets/market/MarketFacet.sol:183-227`](../packages/diamond/src/facets/market/MarketFacet.sol#L183)
+**File:** [`packages/diamond/src/facets/market/MarketFacet.sol`](../packages/diamond/src/facets/market/MarketFacet.sol)
 
 **Context:** Users with only losing tokens call `redeem()` → tokens burned,
 zero USDC payout. Destructive UX trap.
 
-**Recommended fix:**
+**Resolution:** `IMarketFacet.Market_NothingWorthRedeeming` error added.
+`MarketFacet.redeem` reverts before the burn block when `winningBurned == 0`,
+preserving the caller's losing-leg balance instead of silently destroying it.
+Mixed and pure-winning paths unaffected.
 
-```solidity
-// In MarketFacet.redeem, add after balance reads:
-if (winningBurned == 0) revert Market_NothingWorthRedeeming();
-```
+**Regression tests:**
+[`Audit_PRE_L04_NothingWorthRedeeming.t.sol`](../packages/diamond/test/repro/Audit_PRE_L04_NothingWorthRedeeming.t.sol) — 4 tests covering YES- and NO-resolution polarities, winning-leg happy path, and mixed-holdings happy path. Three pre-existing tests in `MarketRedeemRefund.t.sol`, `MarketRedemptionFee.t.sol`, and `EventFacet.t.sol` updated to expect the new revert.
 
-Frontend should reflect this — disable redeem button when winningBalance == 0.
-
-**Alternative (less invasive):** keep the burn behavior, document in user docs
-and SDK that redeem burns ALL outcome tokens regardless of which won.
-
-**Test required:** regression test for the revert path.
-
-**Effort:** 1 hour code + test.
-**Priority:** Medium.
+**Frontend follow-up:** Disable redeem button when caller's winning-leg balance is zero so the user sees a clear "nothing to claim" state rather than a wallet error.
 
 ---
 
@@ -236,50 +212,21 @@ Add one sentence to user docs:
 
 ### L-06 — `emergencyResolve` and `emergencyResolveEvent` lack bypass-reason event field
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** Low
 **Files:**
-- [`packages/diamond/src/facets/market/MarketFacet.sol:147-175`](../packages/diamond/src/facets/market/MarketFacet.sol#L147)
-- [`packages/diamond/src/facets/event/EventFacet.sol:117-141`](../packages/diamond/src/facets/event/EventFacet.sol#L117)
+- [`packages/diamond/src/facets/market/MarketFacet.sol`](../packages/diamond/src/facets/market/MarketFacet.sol)
+- [`packages/diamond/src/facets/event/EventFacet.sol`](../packages/diamond/src/facets/event/EventFacet.sol)
 
 **Context:** Monitoring (Forta/Defender) cannot distinguish legitimate
 oracle-stall emergency-resolves from suspicious-bypass emergency-resolves.
 
-**Recommended fix:**
+**Resolution:** New library [`EmergencyReason`](../packages/shared/src/constants/EmergencyReason.sol) exposes a three-variant enum: `OracleUnreachable` (oracle reverts), `OracleRevoked` (admin removed from approved set), `OracleUnready` (approved + reachable but no answer yet). Both `MarketEmergencyResolved` and `EventEmergencyResolved` events now carry a `EmergencyReason.Reason reason` field. The facet classifies the reason inline based on the same oracle-approval and `try/catch` branches that already gate the bypass.
 
-```solidity
-// Add to IMarketFacet
-enum EmergencyBypassReason { OracleUnreachable, OracleRevoked, NotApprovedOracle }
-event MarketEmergencyResolved(
-    uint256 indexed marketId,
-    bool outcome,
-    address indexed by,
-    EmergencyBypassReason reason  // NEW
-);
+**Indexer impact:** Event signature changed. Off-chain indexers must redeploy with the 4-field signature; the indexed slots (marketId/eventId, resolver) are unchanged.
 
-// In MarketFacet.emergencyResolve:
-EmergencyBypassReason reason;
-if (LibConfigStorage.layout().approvedOracles[m.oracle]) {
-    try IOracle(m.oracle).isResolved(marketId) returns (bool ok) {
-        if (ok) revert Market_OracleResolvedUseResolve();
-        // approved + not ready → unreachable
-        reason = EmergencyBypassReason.OracleUnreachable;
-    } catch {
-        reason = EmergencyBypassReason.OracleUnreachable;
-    }
-} else {
-    reason = EmergencyBypassReason.OracleRevoked;  // or NotApprovedOracle
-}
-
-emit MarketEmergencyResolved(marketId, outcome, msg.sender, reason);
-```
-
-Same pattern for `EventFacet.emergencyResolveEvent`.
-
-**Note:** Event signature change — verify off-chain indexers updated.
-
-**Effort:** 1-2 hours code + test.
-**Priority:** Medium (improves operational visibility).
+**Regression tests:**
+[`Audit_PRE_L06_EmergencyBypassReason.t.sol`](../packages/diamond/test/repro/Audit_PRE_L06_EmergencyBypassReason.t.sol) — 6 tests covering all three reasons across both market and event emergency paths, including a `RevertingOracle` harness to exercise the `OracleUnreachable` branch.
 
 ---
 
@@ -287,13 +234,10 @@ Same pattern for `EventFacet.emergencyResolveEvent`.
 
 #### I-01 — Dead state variable `_decimals` in ChainlinkOracle
 
-**Status:** OPEN — quick win
-**File:** [`packages/oracle/src/adapters/ChainlinkOracle.sol:104`](../packages/oracle/src/adapters/ChainlinkOracle.sol#L104)
+**Status:** RESOLVED
+**File:** [`packages/oracle/src/adapters/ChainlinkOracle.sol`](../packages/oracle/src/adapters/ChainlinkOracle.sol)
 
-**Fix:** remove `mapping(uint256 marketId => uint8) internal _decimals;` and
-the `_decimals[marketId] = dec;` line in `register()`.
-
-**Effort:** 5 min.
+**Resolution:** `mapping(uint256 => uint8) internal _decimals;` removed along with its `register()` writer and `unregister()` deleter, plus the now-unused `feed.decimals()` probe call. Saves one cold-`SSTORE` per market registration and one delete per unregister. All 80 oracle-package tests still pass.
 
 #### I-02 — Sweep-unclaimed race in final block of GRACE_PERIOD
 
@@ -356,20 +300,16 @@ should be redeployed (consistent with router's immutables-only architecture).
 
 #### I-09 — Permit2 canonical-address check is code-length only
 
-**Status:** OPEN
-**File:** [`packages/router/src/PrediXRouter.sol:189`](../packages/router/src/PrediXRouter.sol#L189)
+**Status:** RESOLVED
+**File:** [`packages/router/src/PrediXRouter.sol`](../packages/router/src/PrediXRouter.sol)
 
-**Recommended fix (deploy-time):**
+**Resolution:** [`DeployEnvVerifier`](../packages/diamond/script/lib/DeployEnvVerifier.sol) asserts `PERMIT2_ADDRESS == 0x000000000022D473030F116dDEE9F6B43aC78BA3` (the deterministic CREATE2 address used on every EVM chain) AND `code.length > 0`. The check runs in two places:
+1. Inside `DeployAll._loadEnv()` so every production-deploy invocation enforces it pre-broadcast.
+2. As a standalone CLI ([`VerifyDeployEnv.s.sol`](../packages/diamond/script/VerifyDeployEnv.s.sol)) ops can run against the env vars before opening a broadcast.
 
-- [ ] Deploy verifier script asserts `router.permit2() == CANONICAL_PERMIT2`
-      after deploy.
-- [ ] OR: change constructor to `require(address(_permit2) == CANONICAL_PERMIT2, ...)`
-      — but this would break test fixtures that deploy fresh Permit2.
+The router constructor is left untouched so test fixtures using a fresh Permit2 still work.
 
-Recommend deploy-verifier approach (less invasive).
-
-**Effort:** 30 min deploy script.
-**Priority:** **High** — deploy-blocker.
+**Regression tests:** Covered by [`VerifyDeployEnv.t.sol`](../packages/diamond/test/script/VerifyDeployEnv.t.sol) (15 tests including `test_Permit2_HappyPath`, `test_Revert_Permit2_Mismatch`, `test_Revert_Permit2_NoBytecode`).
 
 ---
 
@@ -437,23 +377,27 @@ permanently eliminated.
 
 ### Sprint 0 — Pre-mainnet (deploy-blockers)
 
-**Goal:** Items that must be resolved before mainnet deploy. ~3 days.
+**Goal:** Items that must be resolved before mainnet deploy.
 
-- [ ] **M-01**: 4 distinct multisigs deployed + signer ceremony + IR drill rehearsed
-- [ ] **L-03**: Sequencer feed check in deploy verifier
-- [ ] **I-09**: Permit2 canonical-address assertion in deploy verifier
-- [ ] **L-01**: Add `revokeOldDiamond` admin function (defense-in-depth for future upgrade)
+Code-level deploy-blockers — **all resolved on this branch**:
+- [x] **L-01**: `revokeOldDiamondAllowance` admin entry point added with 5 regression tests
+- [x] **L-03**: `DeployEnvVerifier` library binds `CHAINLINK_SEQUENCER_UPTIME_FEED` to per-chain canonical addresses; `DeployAll` runs it in-broadcast
+- [x] **L-04**: `Market_NothingWorthRedeeming` early-revert with 4 new + 3 updated regression tests
+- [x] **L-06**: `EmergencyReason` enum + 4-field event signature for both market and event emergency paths
+- [x] **I-01**: Dead `_decimals` state removed from `ChainlinkOracle`
+- [x] **I-09**: `DeployEnvVerifier` enforces canonical Permit2 address with bytecode check
+
+Operational pre-mainnet items — **policy resolved, execution pending**:
+- [x] **M-01 policy**: [`KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md) v2.0 documents the 4-Safe split with overlap policy and Safe-loss recovery matrix
+- [ ] **M-01 execution**: 4 Safes deployed + signer ceremony + IR drill rehearsed
+- [ ] **M-01 follow-up**: Raise upgrade timelock 48h → 5-7d after one clean week
 
 ### Sprint 1 — First week post-mainnet (quick wins)
 
-**Goal:** Code quality and monitoring improvements. ~2 days.
+**Goal:** Code quality and monitoring improvements. ~1 day.
 
-- [ ] **L-06**: Emergency bypass-reason event field (improves monitoring)
-- [ ] **L-04**: Early-revert `Market_NothingWorthRedeeming` (UX safety)
-- [ ] **I-01**: Remove `_decimals` dead state
 - [ ] **L-05**: Documentation update (cumulative-merge fee semantics)
 - [ ] **I-03**: Cross-facet reentrancy fuzz test
-- [ ] **M-01 follow-up**: Raise upgrade timelock 48h → 5-7d after clean week
 
 ### Sprint 2 — Second/third weeks (medium items)
 

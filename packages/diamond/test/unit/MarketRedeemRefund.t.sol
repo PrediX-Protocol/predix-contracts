@@ -55,12 +55,27 @@ contract MarketRedeemRefundTest is MarketFixture {
         assertEq(payout, 100e6);
         assertEq(_yes(id).balanceOf(alice), 0);
         assertEq(_no(id).balanceOf(alice), 0);
+    }
 
-        // Bob has 0 YES + 40 NO. Redeem burns NO only, payout = 0.
+    /// @dev Holders of only the losing leg must revert rather than have their
+    ///      tokens silently burnt for zero payout.
+    function test_Revert_Redeem_OnlyLosingTokens() public {
+        _split(alice, id, 100e6);
+        address noTok = address(_no(id));
+        vm.prank(alice);
+        IOutcomeToken(noTok).transfer(bob, 40e6);
+
+        _resolveYes();
+
+        // Drain alice so only bob remains; bob holds 40 NO (loser) only.
+        vm.prank(alice);
+        market.redeem(id);
+
+        uint256 bobNoBefore = IOutcomeToken(noTok).balanceOf(bob);
         vm.prank(bob);
-        uint256 bobPayout = market.redeem(id);
-        assertEq(bobPayout, 0);
-        assertEq(_no(id).balanceOf(bob), 0);
+        vm.expectRevert(IMarketFacet.Market_NothingWorthRedeeming.selector);
+        market.redeem(id);
+        assertEq(IOutcomeToken(noTok).balanceOf(bob), bobNoBefore);
     }
 
     function test_Revert_Redeem_NotResolved() public {

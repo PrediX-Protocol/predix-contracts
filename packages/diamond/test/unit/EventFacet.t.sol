@@ -445,7 +445,7 @@ contract EventFacetTest is EventFixture {
         assertEq(usdc.balanceOf(alice) - balBefore, 100e6);
     }
 
-    function test_Redeem_OnEventChild_AfterEventResolve_LoserGetsNothing() public {
+    function test_Revert_Redeem_OnEventChild_AfterEventResolve_OnlyLosingLeg() public {
         (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         // alice splits on the losing child, then offloads her NO leg to bob so the
         // remaining YES leg is a pure loser position once the event settles.
@@ -457,9 +457,13 @@ contract EventFacetTest is EventFixture {
         _resolveAt(eventId, 1);
 
         uint256 balBefore = usdc.balanceOf(alice);
+        uint256 aliceYesBefore = IOutcomeToken(m.yesToken).balanceOf(alice);
         vm.prank(alice);
+        vm.expectRevert(IMarketFacet.Market_NothingWorthRedeeming.selector);
         market.redeem(marketIds[0]);
+        // USDC unchanged and losing-leg balance preserved.
         assertEq(usdc.balanceOf(alice), balBefore);
+        assertEq(IOutcomeToken(m.yesToken).balanceOf(alice), aliceYesBefore);
     }
 
     function test_SweepUnclaimed_OnEventChild_AfterGrace_RefusesLiveBacking() public {

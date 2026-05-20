@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
+import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
+
 /// @title IMarketFacet
 /// @notice Public interface of the PrediX market lifecycle facet: create, split, merge,
 ///         resolve, redeem, emergency-resolve, refund-mode, sweep, plus admin config.
@@ -53,7 +55,15 @@ interface IMarketFacet {
     event MarketResolved(uint256 indexed marketId, bool outcome, address indexed resolver);
 
     /// @notice Emitted when an operator force-resolves a stalled market after the cooling-off window.
-    event MarketEmergencyResolved(uint256 indexed marketId, bool outcome, address indexed resolver);
+    /// @param reason Classification of why the oracle was bypassed — enables
+    ///        off-chain monitoring to distinguish routine stall recovery from
+    ///        suspicious operator action.
+    event MarketEmergencyResolved(
+        uint256 indexed marketId,
+        bool outcome,
+        address indexed resolver,
+        EmergencyReason.Reason reason
+    );
 
     /// @notice Emitted when a user redeems their position after resolution. `fee` is the
     ///         protocol redemption fee routed to `feeRecipient` and `payout` is the net
@@ -125,6 +135,13 @@ interface IMarketFacet {
     error Market_ExceedsPerMarketCap();
     error Market_ZeroAmount();
     error Market_NothingToRedeem();
+    /// @notice Reverts when a redemption call would burn losing tokens without any
+    ///         winning tokens to redeem (zero net payout). Prevents the UX trap
+    ///         where a holder of only the losing leg destroys their balance for
+    ///         no compensation. Holders who want to discard losing tokens can do
+    ///         so via the outcome token's own burn surface; redeem requires at
+    ///         least one winning token.
+    error Market_NothingWorthRedeeming();
     error Market_NothingToRefund();
     error Market_OracleAlreadyApproved();
     error Market_ZeroAddress();

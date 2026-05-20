@@ -294,7 +294,7 @@ contract MarketRedemptionFeeTest is MarketFixture {
         assertEq(diamondBefore - usdc.balanceOf(address(diamond)), 333);
     }
 
-    function test_Redeem_OnlyLosingTokens_NoFee() public {
+    function test_Revert_Redeem_OnlyLosingTokens_NoFeeCharged() public {
         // Alice split 100 USDC; bob ends up with 100 NO tokens (loser on YES outcome).
         _split(alice, id, 100e6);
         address noTok = market.getMarket(id).noToken;
@@ -306,10 +306,12 @@ contract MarketRedemptionFeeTest is MarketFixture {
         uint256 bobBefore = usdc.balanceOf(bob);
         uint256 feeRecipBefore = usdc.balanceOf(feeRecipient);
         vm.prank(bob);
-        uint256 payout = market.redeem(id);
-        assertEq(payout, 0);
-        assertEq(usdc.balanceOf(bob) - bobBefore, 0);
-        assertEq(usdc.balanceOf(feeRecipient) - feeRecipBefore, 0);
+        vm.expectRevert(IMarketFacet.Market_NothingWorthRedeeming.selector);
+        market.redeem(id);
+        // Loser balance preserved; no fee skim on the revert path.
+        assertEq(IOutcomeToken(noTok).balanceOf(bob), 100e6);
+        assertEq(usdc.balanceOf(bob), bobBefore);
+        assertEq(usdc.balanceOf(feeRecipient), feeRecipBefore);
     }
 
     function test_Redeem_FeeEvent_FieldsCorrect() public {

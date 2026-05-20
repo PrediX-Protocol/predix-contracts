@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOracle} from "@predix/shared/interfaces/IOracle.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
+import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
 import {Modules} from "@predix/shared/constants/Modules.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
 import {TransientReentrancyGuard} from "@predix/shared/utils/TransientReentrancyGuard.sol";
@@ -153,17 +154,19 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (m.refundModeActive) revert Market_RefundModeActive();
         if (block.timestamp < m.endTime + EMERGENCY_DELAY) revert Market_TooEarlyForEmergency();
 
-        // If the oracle has since produced an answer AND is still in the
-        // approved set, defer to it. Emergency path is for genuine stalls
-        // only, not operator override. Wrapping the try in the approval gate
-        // mirrors `enableRefundMode` so a revoked-but-still-answering oracle
-        // no longer deadlocks the operator: `resolveMarket` rejects on
-        // approval, this path proceeds, and the market can be force-resolved.
-        if (LibConfigStorage.layout().approvedOracles[m.oracle]) {
+        // Classify the bypass reason for off-chain monitoring while applying
+        // the existing oracle deference policy. Emergency path is for genuine
+        // stalls only, not operator override — `resolveMarket` should be used
+        // when the oracle has produced an answer.
+        EmergencyReason.Reason reason;
+        if (!LibConfigStorage.layout().approvedOracles[m.oracle]) {
+            reason = EmergencyReason.Reason.OracleRevoked;
+        } else {
             try IOracle(m.oracle).isResolved(marketId) returns (bool oracleReady) {
                 if (oracleReady) revert Market_OracleResolvedUseResolve();
+                reason = EmergencyReason.Reason.OracleUnready;
             } catch {
-                // Oracle unreachable — emergency bypass intended.
+                reason = EmergencyReason.Reason.OracleUnreachable;
             }
         }
 
@@ -171,7 +174,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         m.outcome = outcome;
         m.resolvedAt = block.timestamp;
 
-        emit MarketEmergencyResolved(marketId, outcome, msg.sender);
+        emit MarketEmergencyResolved(marketId, outcome, msg.sender, reason);
     }
 
     /// @inheritdoc IMarketFacet
@@ -199,6 +202,12 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
             winningBurned = noBal;
             losingBurned = yesBal;
         }
+
+        // Refuse redemptions that would only burn losing tokens. Without this
+        // guard, a holder of the losing leg calling `redeem` would destroy
+        // their balance for zero payout — a destructive UX trap rather than an
+        // intentional cleanup.
+        if (winningBurned == 0) revert Market_NothingWorthRedeeming();
 
         if (yesBal > 0) yes.burn(msg.sender, yesBal);
         if (noBal > 0) no.burn(msg.sender, noBal);

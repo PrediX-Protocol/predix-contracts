@@ -56,7 +56,6 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
 
     mapping(uint256 marketId => Config) internal _configs;
     mapping(uint256 marketId => Resolution) internal _resolutions;
-    mapping(uint256 marketId => uint8) internal _decimals;
 
     /// @notice Deploy the oracle and seat the initial admin.
     /// @param admin                   Address granted `DEFAULT_ADMIN_ROLE`; must be non-zero.
@@ -96,12 +95,10 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         AggregatorV3Interface feed = AggregatorV3Interface(cfg.feed);
         (, int256 probe,, uint256 probeUpdatedAt,) = feed.latestRoundData();
         if (probe <= 0 || probeUpdatedAt == 0) revert ChainlinkOracle_FeedUnhealthy();
-        uint8 dec = feed.decimals();
 
         if (_configs[marketId].feed != address(0)) revert ChainlinkOracle_AlreadyRegistered();
 
         _configs[marketId] = cfg;
-        _decimals[marketId] = dec;
         emit MarketRegistered(marketId, cfg.feed, cfg.threshold, cfg.gte, cfg.snapshotAt);
     }
 
@@ -112,7 +109,6 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
         if (cfg.snapshotAt <= block.timestamp) revert ChainlinkOracle_SnapshotPassed();
 
         delete _configs[marketId];
-        delete _decimals[marketId];
         emit MarketUnregistered(marketId);
     }
 

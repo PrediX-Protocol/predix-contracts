@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
+import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
+
 /// @title IEventFacet
 /// @notice Public interface for the PrediX multi-outcome event coordinator. An event
 ///         groups N binary child markets under a single id, shares their end time,
@@ -43,7 +45,15 @@ interface IEventFacet {
 
     /// @notice Emitted when an operator emergency-resolves an event after the
     ///         oracle stalls past the grace period.
-    event EventEmergencyResolved(uint256 indexed eventId, uint256 winningIndex, address indexed resolver);
+    /// @param reason Classification of why the oracle was bypassed — enables
+    ///        off-chain monitoring to distinguish routine stall recovery from
+    ///        suspicious operator action.
+    event EventEmergencyResolved(
+        uint256 indexed eventId,
+        uint256 winningIndex,
+        address indexed resolver,
+        EmergencyReason.Reason reason
+    );
 
     /// @notice Emitted when an admin enables refund mode for the whole event. One
     ///         `IMarketFacet.RefundModeEnabled` also fires per child in the same tx.

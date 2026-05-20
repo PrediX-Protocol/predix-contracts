@@ -38,11 +38,13 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     error OnlyPauser();
     error OnlyAdmin();
     error Exchange_AlreadyInitialized();
+    error Exchange_CannotRevokeCurrentDiamond();
 
     event Paused(address indexed account);
     event Unpaused(address indexed account);
     event Initialized(address indexed diamond, address indexed usdc, address indexed feeRecipient);
     event FeeRecipientUpdated(address indexed previous, address indexed current);
+    event OldDiamondAllowanceRevoked(address indexed oldDiamond);
 
     modifier whenNotPaused() {
         if (paused) revert ExchangePaused();
@@ -100,6 +102,24 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         address previous = feeRecipient;
         feeRecipient = _feeRecipient;
         emit FeeRecipientUpdated(previous, _feeRecipient);
+    }
+
+    // ======== Admin: stale allowance cleanup ========
+
+    /// @notice Zero the USDC allowance previously granted to a diamond that is no
+    ///         longer the live binding. Gated by the CURRENT diamond's ADMIN_ROLE.
+    /// @dev The exchange grants `type(uint256).max` USDC allowance to its diamond
+    ///      at `initialize`. If a future impl upgrade rebinds the exchange to a
+    ///      new diamond, the prior diamond would retain pull rights to the
+    ///      exchange's USDC balance — this entry point closes that residual.
+    ///      Idempotent on already-zero allowances. Reverts when targeting the
+    ///      live diamond to prevent accidentally breaking the synthetic MINT
+    ///      path.
+    function revokeOldDiamondAllowance(address oldDiamond) external onlyAdmin {
+        if (oldDiamond == address(0)) revert ZeroAddress();
+        if (oldDiamond == diamond) revert Exchange_CannotRevokeCurrentDiamond();
+        IERC20(usdc).forceApprove(oldDiamond, 0);
+        emit OldDiamondAllowanceRevoked(oldDiamond);
     }
 
     // ======== Maker path (gated by Exchange pause) ========

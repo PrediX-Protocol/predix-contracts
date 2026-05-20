@@ -8,6 +8,7 @@ import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
+import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
 import {Modules} from "@predix/shared/constants/Modules.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
 import {TransientReentrancyGuard} from "@predix/shared/utils/TransientReentrancyGuard.sol";
@@ -122,22 +123,27 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         if (e.refundModeActive) revert Event_RefundModeActive();
         if (block.timestamp < e.endTime + EMERGENCY_DELAY) revert Event_TooEarlyForEmergency();
 
-        // Defer to the oracle only if it is still in the approved set —
-        // matches `enableEventRefundMode`'s gate so a revoked-but-still-
-        // answering oracle no longer deadlocks the operator. Without this
-        // gate `resolveEvent` rejects on approval AND `emergencyResolveEvent`
-        // rejects on `oracleReady`, trapping recovery.
-        if (LibConfigStorage.layout().approvedOracles[e.oracle]) {
+        // Classify the bypass reason for off-chain monitoring. Defer to the
+        // oracle only if it is still in the approved set — matches
+        // `enableEventRefundMode`'s gate so a revoked-but-still-answering
+        // oracle no longer deadlocks the operator.
+        EmergencyReason.Reason reason;
+        if (!LibConfigStorage.layout().approvedOracles[e.oracle]) {
+            reason = EmergencyReason.Reason.OracleRevoked;
+        } else {
             try IEventOracle(e.oracle).isEventResolved(eventId) returns (bool oracleReady) {
                 if (oracleReady) revert Event_OracleResolvedUseResolve();
-            } catch {}
+                reason = EmergencyReason.Reason.OracleUnready;
+            } catch {
+                reason = EmergencyReason.Reason.OracleUnreachable;
+            }
         }
 
         uint256 n = e.marketIds.length;
         if (winningIndex >= n) revert Event_InvalidWinningIndex();
 
         _resolveChildren(e, winningIndex);
-        emit EventEmergencyResolved(eventId, winningIndex, msg.sender);
+        emit EventEmergencyResolved(eventId, winningIndex, msg.sender, reason);
     }
 
     /// @inheritdoc IEventFacet
