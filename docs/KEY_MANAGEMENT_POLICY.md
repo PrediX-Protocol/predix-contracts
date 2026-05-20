@@ -156,4 +156,14 @@ All multisig transactions are on-chain and publicly verifiable:
 
 ---
 
+## 8. Related runbooks
+
+This document is the **policy**. The mechanical procedures live in:
+
+- [`SAFE_DEPLOYMENT_RUNBOOK.md`](SAFE_DEPLOYMENT_RUNBOOK.md) — step-by-step ceremony for deploying the four Safes (preparation, key generation, on-chain deployment, verification).
+- [`PAUSER_ONCALL_PLAYBOOK.md`](PAUSER_ONCALL_PLAYBOOK.md) — Safe 4 rotation structure, alert tooling, incident response runbook, drill cadence.
+- [`MAINNET_DEPLOY_REHEARSAL.md`](MAINNET_DEPLOY_REHEARSAL.md) — broader T-48h checklist that includes the four-Safe ceremony as one step.
+
+---
+
 *This policy is reviewed quarterly and updated after any key rotation event or Safe membership change.*

@@ -99,6 +99,8 @@ contract.
       - **Safe 2 — Upgrade Governance** (3-of-5 hardware, distinct signer set) — `HOOK_PROXY_ADMIN`, `EXCHANGE_PROXY_ADMIN`
       - **Safe 3 — Operations** (2-of-4) — `HOOK_RUNTIME_ADMIN`, `PAYMASTER_OWNER`
       - **Safe 4 — Incident Response** (2-of-3 on-call) — `PAUSER_ADDRESS`
+- [ ] Execute the full ceremony per [`SAFE_DEPLOYMENT_RUNBOOK.md`](SAFE_DEPLOYMENT_RUNBOOK.md) — preparation (T-2w), key generation (T-1w), deployment ceremony (T-3d).
+- [ ] Confirm Safe 4 on-call rotation is live per [`PAUSER_ONCALL_PLAYBOOK.md`](PAUSER_ONCALL_PLAYBOOK.md) — three-person rotation across UTC bands, PagerDuty wired, war room channel active.
 - [ ] Each signer:
       - Uses a dedicated hardware wallet (Ledger / Trezor) on latest firmware
       - Is on a dedicated, freshly-imaged machine (no other crypto wallets)

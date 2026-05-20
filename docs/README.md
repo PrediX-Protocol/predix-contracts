@@ -30,8 +30,10 @@ in a header block; the table below is the canonical entry point.
 | Document | Audience | Status | Purpose |
 |---|---|---|---|
 | [`MAINNET_DEPLOY_REHEARSAL.md`](MAINNET_DEPLOY_REHEARSAL.md) | operators, security | Active | T-48h checklist before mainnet deploy: pin block freeze, fork-test consistency, key ceremony, monitoring readiness, sign-off matrix. |
-| [`INCIDENT_RESPONSE_PLAN.md`](INCIDENT_RESPONSE_PLAN.md) | operators, security | Active | Roles, escalation paths, and step-by-step procedures for security incidents. |
-| [`KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md) | operators, security | Active | Multisig key custody, signer rotation, and hardware-wallet procedures. |
+| [`KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md) | operators, security | Active | Four-Safe separation, signer overlap rules, role-to-env binding, Safe-loss recovery matrix. |
+| [`SAFE_DEPLOYMENT_RUNBOOK.md`](SAFE_DEPLOYMENT_RUNBOOK.md) | operators, security | Active | Step-by-step procedure for the four-Safe key ceremony: preparation, key generation, on-chain deployment, verification. |
+| [`PAUSER_ONCALL_PLAYBOOK.md`](PAUSER_ONCALL_PLAYBOOK.md) | operators, security | Active | Safe 4 on-call rotation structure, alert tooling, incident response runbook, drill cadence. |
+| [`INCIDENT_RESPONSE_PLAN.md`](INCIDENT_RESPONSE_PLAN.md) | operators, security | Active | Protocol-wide incident response: roles, escalation paths, step-by-step procedures. |
 | [`BUNDLE_C_CHECKLIST.md`](BUNDLE_C_CHECKLIST.md) | operators | Active | Pre-deploy verification checklist (complements `MAINNET_DEPLOY_REHEARSAL.md`). |
 
 ### Policy — rules of engagement
@@ -79,9 +81,12 @@ in a header block; the table below is the canonical entry point.
        │
        ▼
   BUNDLE_C_CHECKLIST  →  MAINNET_DEPLOY_REHEARSAL  →  Deploy  →  INCIDENT_RESPONSE_PLAN
+                                     │                                  │
+                                     ▼                                  ▼
+                          KEY_MANAGEMENT_POLICY               PAUSER_ONCALL_PLAYBOOK
                                      │
                                      ▼
-                          KEY_MANAGEMENT_POLICY
+                          SAFE_DEPLOYMENT_RUNBOOK
 ```
 
 ## Adding a new document
