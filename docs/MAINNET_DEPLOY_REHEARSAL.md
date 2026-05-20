@@ -2,7 +2,7 @@
 
 **Audience:** operators, security
 **Status:** Active
-**Last reviewed:** 2026-05-19
+**Last reviewed:** 2026-05-20
 
 This document is the operational runbook for the 48-hour window before
 PrediX mainnet deployment. It complements the existing `BUNDLE_C_CHECKLIST.md`
@@ -94,11 +94,11 @@ contract.
 
 ## T-24h: Key ceremony
 
-- [ ] **4 distinct Safe multisigs** ready:
-      - `DEFAULT_ADMIN_ROLE` multisig
-      - Hook admin multisig (separate signer set)
-      - Hook proxy admin multisig (separate signer set)
-      - Exchange proxy admin multisig (separate signer set)
+- [ ] **4 distinct Safes ready** per [`KEY_MANAGEMENT_POLICY.md`](KEY_MANAGEMENT_POLICY.md) v2.0:
+      - **Safe 1 — Protocol Governance** (3-of-5 hardware) — `MULTISIG_ADDRESS`
+      - **Safe 2 — Upgrade Governance** (3-of-5 hardware, distinct signer set) — `HOOK_PROXY_ADMIN`, `EXCHANGE_PROXY_ADMIN`
+      - **Safe 3 — Operations** (2-of-4) — `HOOK_RUNTIME_ADMIN`, `PAYMASTER_OWNER`
+      - **Safe 4 — Incident Response** (2-of-3 on-call) — `PAUSER_ADDRESS`
 - [ ] Each signer:
       - Uses a dedicated hardware wallet (Ledger / Trezor) on latest firmware
       - Is on a dedicated, freshly-imaged machine (no other crypto wallets)
@@ -142,12 +142,46 @@ contract.
 
 ---
 
+## T-2h: Pre-flight env verification
+
+- [ ] Run the standalone canonical-address pre-flight against the configured env:
+      ```
+      forge script VerifyDeployEnv --rpc-url $UNICHAIN_RPC_PRIMARY
+      ```
+      MUST print `VerifyDeployEnv: OK`. A revert here means `PERMIT2_ADDRESS`
+      is not canonical, or `CHAINLINK_SEQUENCER_UPTIME_FEED` does not match
+      the chain's expected feed. Fix env before proceeding.
+
 ## T+0: Deploy
 
-- [ ] Execute deploy script from clean machine.
+- [ ] Execute deploy script from clean machine:
+      ```
+      forge script DeployAll --rpc-url $UNICHAIN_RPC_PRIMARY --sender $DEPLOYER_ADDRESS --broadcast
+      ```
+      The script runs `DeployEnvVerifier` in-broadcast as a second pre-flight
+      and will revert before any state change if canonical addresses drift.
 - [ ] Capture transaction hashes for every deploy step.
 - [ ] Sourcify / Etherscan auto-verify within 1 hour.
 - [ ] Bytecode hash matches T-48h offline computation.
+- [ ] Multisig (`HOOK_RUNTIME_ADMIN`) calls `hook.acceptAdmin()` once the 48h
+      `ADMIN_ROTATION_DELAY` has elapsed since `DeployAll` queued the
+      rotation. Until accepted, the hook still routes runtime-admin calls
+      to the deployer EOA.
+
+## T+0+48h: Post-deploy verification
+
+After the hook admin rotation is accepted, populate the deployed addresses
+in `.env` (`DIAMOND_ADDRESS`, `HOOK_PROXY_ADDRESS`, `EXCHANGE_ADDRESS`,
+`ROUTER_ADDRESS`, `ORACLE_MANUAL_ADDRESS`, `TIMELOCK_ADDRESS`) and run:
+
+- [ ] `forge script PostDeployVerify --rpc-url $UNICHAIN_RPC_PRIMARY`
+      MUST print `PostDeployVerify: OK`. The script reverts with a specific
+      `PostDeployVerify_Failed(string)` on the first wiring discrepancy.
+      Covers: diamond roles + facet routes, timelock delay + roles, hook
+      diamond/admin/proxy admin/trusted routers, exchange diamond/usdc/
+      fee-recipient/proxy admin + USDC allowance to diamond, router every
+      immutable address, oracle approvals + DEFAULT_ADMIN_ROLE handover, and
+      re-asserts canonical Permit2 + sequencer feed.
 
 ## T+1h: Mainnet smoke (Layer 5)
 
@@ -176,3 +210,60 @@ contract.
 | Security | | | |
 | Operations | | | |
 | External audit firm | | | (post-clean audit report) |
+
+---
+
+## Appendix A — Beta launch mode
+
+A beta launch deploys the **same** contracts as production but with a
+conservative parameter set, an explicitly limited user surface, and an
+explicit "beta" UI banner. Use this mode when integrating against real
+Chainlink (when published on the target chain), real Permit2, and real
+Uniswap v4 but before the full external audit has signed off.
+
+### What changes vs production
+
+| Lever | Beta value | Production value |
+|---|---|---|
+| `DEFAULT_PER_MARKET_CAP` | 50,000 USDC | unlimited |
+| `MARKET_CREATION_FEE` | 10 USDC (anti-spam) | per business model |
+| `DEFAULT_REDEMPTION_FEE_BPS` | 100 (1.00%) | per business model |
+| `TIMELOCK_DELAY_SECONDS` | 172800 (48h floor) | 432000–604800 (5–7d) once stable |
+| `CHAINLINK_ENABLED` | `false` on Unichain at launch | `true` once Chainlink publishes Unichain feeds |
+| Deploy starts paused? | Yes (pause MARKET, EVENT modules via PAUSER post-deploy) | No |
+| Market creator role | Whitelisted team EOAs only | Open (per business model) |
+| Bug bounty | Modest pool ($50–100k), public commitment | Full Immunefi listing |
+
+`.env.beta.example` ships the beta `DEFAULT_*` values pre-filled. Use:
+
+```
+cp .env.beta.example .env
+# fill in addresses, then continue with the T-48h … T+0+48h flow above
+```
+
+### Beta-specific T+0 steps
+
+After `DeployAll` lands and `hook.acceptAdmin()` is signed by Safe 3:
+
+- [ ] PAUSER (Safe 4) immediately pauses `MARKET` + `EVENT` modules on
+      diamond. Beta unpauses only after `PostDeployVerify` is clean AND
+      a smoke market completes its full lifecycle (split → trade →
+      resolve → redeem) on T+1h.
+- [ ] CREATOR_ROLE is granted only to the team's market-creator hot wallet
+      (KMS-backed). Public creator role grant happens at graduation.
+
+### Graduation to production
+
+Promote from beta to production after:
+
+1. ≥ 1 week of clean mainnet operation (no PAUSE events, no emergency
+   resolves, no role rotations).
+2. External audit firm sign-off lands.
+3. Bug bounty escalated to full Immunefi listing.
+4. Timelock proposal raises `TIMELOCK_DELAY_SECONDS` from 48h to 5–7d
+   via the existing `proposeTimelockDuration` flow (which already enforces
+   monotonic increase — see `PrediXHookProxyV2._MAX_TIMELOCK = 30d`).
+5. Caps lifted via governance per business plan.
+
+Graduation requires NO new deploy — the same contracts continue running
+with updated parameters.
