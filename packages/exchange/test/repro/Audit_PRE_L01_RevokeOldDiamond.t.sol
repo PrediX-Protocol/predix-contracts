@@ -11,13 +11,14 @@ import {PrediXExchange} from "../../src/PrediXExchange.sol";
 import {ExchangeTestBase} from "../base/ExchangeTestBase.sol";
 
 /// @title Audit_PRE_L01_RevokeOldDiamond
-/// @notice Fix-lock for PRE-L01: the exchange grants the diamond
-///         `type(uint256).max` USDC allowance at initialize for the synthetic
-///         MINT path. If an impl upgrade rebinds the exchange to a new
-///         diamond, the old diamond would retain pull rights unless the
-///         allowance is explicitly revoked. `revokeOldDiamondAllowance` zeroes
-///         the residual allowance under the current diamond's ADMIN_ROLE
-///         guard, and refuses to touch the live binding.
+/// @notice Fix-lock for `revokeOldDiamondAllowance`. The synthetic MINT path now
+///         grants the diamond only an exact, single-use USDC allowance per
+///         `splitPosition` (no standing allowance), but if an impl upgrade ever
+///         rebinds the exchange to a new diamond, a stale residual allowance to
+///         the old diamond must be revocable. This test simulates such a residual
+///         (a manual max approval to a fake old diamond) and asserts
+///         `revokeOldDiamondAllowance` zeroes it under the current diamond's
+///         ADMIN_ROLE guard, and refuses to touch the live binding.
 contract Audit_PRE_L01_RevokeOldDiamond is ExchangeTestBase {
     address internal admin = makeAddr("admin");
     address internal nonAdmin = makeAddr("nonAdmin");

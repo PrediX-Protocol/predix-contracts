@@ -269,10 +269,14 @@ contract PostDeployVerify is Script {
         if (ex.usdc() != t.usdc) revert PostDeployVerify_Failed("exchange.usdc != USDC_ADDRESS");
         if (ex.feeRecipient() != t.feeRecipient) revert PostDeployVerify_Failed("exchange.feeRecipient mismatch");
 
-        // The exchange must have its max USDC allowance to the current
-        // diamond intact, otherwise the synthetic MINT path is broken.
-        if (IERC20(t.usdc).allowance(t.exchange, t.diamond) != type(uint256).max) {
-            revert PostDeployVerify_Failed("exchange USDC allowance to diamond is not max");
+        // Scoped-MINT approval: the exchange grants the diamond only an exact,
+        // single-use USDC allowance immediately before each synthetic-MINT
+        // splitPosition (consumed back to zero by the split). No standing
+        // allowance is held, so when idle (post-deploy) the allowance MUST be
+        // zero — a non-zero idle allowance would mean a leftover standing grant
+        // that a malicious diamond upgrade could use to drain CLOB deposits.
+        if (IERC20(t.usdc).allowance(t.exchange, t.diamond) != 0) {
+            revert PostDeployVerify_Failed("exchange USDC allowance to diamond must be zero (scoped per-MINT)");
         }
 
         address proxyAdmin = IExchangeProxyAdminRead(t.exchange).admin();
