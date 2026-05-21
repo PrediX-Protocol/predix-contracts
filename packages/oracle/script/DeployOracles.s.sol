@@ -24,7 +24,15 @@ contract DeployOracles is Script {
     }
 
     function run() external returns (Deployed memory out) {
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        // Deployer key resolution mirrors DeployAll / DeployMarketFactory:
+        // MNEMONIC (BIP-44 index 0) takes precedence over DEPLOYER_PRIVATE_KEY.
+        uint256 deployerKey;
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
         address deployer = vm.addr(deployerKey);
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
         address diamond = vm.envAddress("DIAMOND_ADDRESS");

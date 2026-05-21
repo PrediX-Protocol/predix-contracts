@@ -10,7 +10,8 @@ import {PrediXPaymaster} from "../src/PrediXPaymaster.sol";
 /// @notice One-shot deploy + funding + staking of PrediXPaymaster.
 /// @dev Reads required env (fail-loud via vm.envAddress / vm.envUint — no defaults):
 ///        ENTRY_POINT_V07, PAYMASTER_OWNER, PAYMASTER_INITIAL_SIGNER,
-///        DEPLOYER_PRIVATE_KEY, PAYMASTER_STAKE_WEI, PAYMASTER_UNSTAKE_DELAY_SEC.
+///        MNEMONIC or DEPLOYER_PRIVATE_KEY, PAYMASTER_STAKE_WEI,
+///        PAYMASTER_UNSTAKE_DELAY_SEC.
 ///      Staking is MANDATORY: `_validatePaymasterUserOp` reads the paymaster's
 ///      own storage (signer / paused / allowlist), which ERC-7562 only permits
 ///      for a STAKED entity. An unstaked paymaster is rejected by every
@@ -20,7 +21,15 @@ contract DeployPaymaster is Script {
         address entryPoint = vm.envAddress("ENTRY_POINT_V07");
         address ownerAddr = vm.envAddress("PAYMASTER_OWNER");
         address signerAddr = vm.envAddress("PAYMASTER_INITIAL_SIGNER");
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        // Deployer key resolution mirrors DeployAll / DeployMarketFactory:
+        // MNEMONIC (BIP-44 index 0) takes precedence over DEPLOYER_PRIVATE_KEY.
+        uint256 deployerKey;
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
         uint256 stakeWei = vm.envUint("PAYMASTER_STAKE_WEI");
         uint256 unstakeDelaySec = vm.envUint("PAYMASTER_UNSTAKE_DELAY_SEC");
 
