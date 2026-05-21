@@ -37,10 +37,6 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     ///         last confirmed up before `resolve` is allowed to proceed.
     uint256 public constant SEQUENCER_GRACE_PERIOD = 1 hours;
 
-    /// @notice Maximum age (in seconds) of the sequencer uptime feed's
-    ///         `updatedAt` before the feed is considered stale.
-    uint256 public constant MAX_SEQUENCER_STALENESS = 1 hours;
-
     /// @inheritdoc IChainlinkOracle
     address public immutable override sequencerUptimeFeed;
 
@@ -206,18 +202,20 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     }
 
     /// @dev L2 sequencer health check. No-op if `sequencerUptimeFeed == address(0)`.
-    ///      Chainlink convention: answer `0` = sequencer up, `1` = down. `startedAt`
-    ///      is the timestamp at which the current status round started, so
+    ///      Follows the canonical Chainlink L2 pattern: answer `0` = sequencer up,
+    ///      `1` = down; `startedAt` is when the current status round started, so
     ///      `block.timestamp - startedAt` is how long the sequencer has held its
-    ///      current state.
+    ///      current state. `updatedAt` is intentionally not range-checked — a
+    ///      sequencer uptime feed only writes a new round on a status flip (or an
+    ///      infrequent heartbeat), so an old `updatedAt` reflects a stably-up
+    ///      sequencer, not a stale feed. The `answer` + grace-period checks are
+    ///      the freshness guarantee; price-round freshness is enforced separately
+    ///      in `resolve` via the `snapshotAt` bracket.
     function _checkSequencer() private view {
         address feed = sequencerUptimeFeed;
         if (feed == address(0)) return;
-        (, int256 answer, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(feed).latestRoundData();
+        (, int256 answer, uint256 startedAt,,) = AggregatorV3Interface(feed).latestRoundData();
         if (startedAt == 0) revert ChainlinkOracle_SequencerRoundInvalid();
-        if (updatedAt == 0 || block.timestamp - updatedAt > MAX_SEQUENCER_STALENESS) {
-            revert ChainlinkOracle_SequencerStale();
-        }
         if (answer != 0) revert ChainlinkOracle_SequencerDown();
         if (block.timestamp - startedAt < SEQUENCER_GRACE_PERIOD) {
             revert ChainlinkOracle_SequencerGracePeriodNotOver();

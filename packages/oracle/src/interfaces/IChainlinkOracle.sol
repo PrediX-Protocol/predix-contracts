@@ -144,11 +144,6 @@ interface IChainlinkOracle is IOracle {
     ///         timestamp-bracket check relies on.
     error ChainlinkOracle_NonAdjacentRound();
 
-    /// @notice Reverts when the sequencer uptime feed's `updatedAt` is zero
-    ///         or older than `MAX_SEQUENCER_STALENESS`, indicating the feed
-    ///         itself may be stale and its "up" answer unreliable.
-    error ChainlinkOracle_SequencerStale();
-
     /// @notice Reverts when a revoke/renounce would remove the final
     ///         `DEFAULT_ADMIN_ROLE` holder. An empty admin set is irrecoverable:
     ///         no `REGISTRAR_ROLE` could ever be granted again.
