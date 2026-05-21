@@ -8,6 +8,8 @@ import {UserOperationLib} from "@account-abstraction/contracts/core/UserOperatio
 import {_packValidationData} from "@account-abstraction/contracts/core/Helpers.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 import {IPrediXPaymaster} from "./interfaces/IPrediXPaymaster.sol";
 
@@ -21,7 +23,11 @@ import {IPrediXPaymaster} from "./interfaces/IPrediXPaymaster.sol";
 ///      (c) on-chain target allowlist (audit PM-NEW-01) — even a compromised
 ///          signer cannot direct sponsored UserOps at destinations the owner
 ///          has not explicitly authorized.
-contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
+///      (d) two-step, non-renounceable ownership (`Ownable2Step`) so a
+///          mistyped `transferOwnership` is recoverable (the nominee must
+///          accept) and the paymaster can never be left ownerless with its
+///          EntryPoint deposit/stake stranded.
+contract PrediXPaymaster is BasePaymaster, Ownable2Step, IPrediXPaymaster {
     using UserOperationLib for PackedUserOperation;
 
     /// @dev paymasterAndData offsets per EntryPoint v0.7 spec.
@@ -58,6 +64,27 @@ contract PrediXPaymaster is BasePaymaster, IPrediXPaymaster {
         }
         signer = signer_;
         emit SignerChanged(address(0), signer_);
+    }
+
+    // ======== Ownership (two-step, non-renounceable) ========
+
+    /// @dev Nominates `newOwner`; the transfer only takes effect once the
+    ///      nominee calls `acceptOwnership`. Owner-only check is enforced by the
+    ///      resolved `Ownable2Step.transferOwnership`. Resolves the
+    ///      diamond-inherited definition explicitly.
+    function transferOwnership(address newOwner) public override(Ownable, Ownable2Step) {
+        super.transferOwnership(newOwner);
+    }
+
+    /// @dev Clears any pending nominee then assigns the owner (Ownable2Step).
+    function _transferOwnership(address newOwner) internal override(Ownable, Ownable2Step) {
+        super._transferOwnership(newOwner);
+    }
+
+    /// @dev Disabled: the paymaster must always retain an owner so the signer,
+    ///      pause flag, and EntryPoint deposit/stake stay controllable.
+    function renounceOwnership() public pure override {
+        revert OwnershipRenounceDisabled();
     }
 
     /// @inheritdoc IPrediXPaymaster

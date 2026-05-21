@@ -43,6 +43,11 @@ interface IPrediXPaymaster {
     ///         EntryPoint). Sponsoring UserOps that target these would let a
     ///         compromised signer drain the EntryPoint deposit.
     error CriticalTargetBlocked();
+    /// @notice Reverts on `renounceOwnership`. The paymaster must always retain
+    ///         an owner to rotate the signer, pause, and manage the EntryPoint
+    ///         deposit/stake; an ownerless paymaster would strand those funds.
+    ///         Ownership transfer is two-step (`Ownable2Step`) instead.
+    error OwnershipRenounceDisabled();
 
     function signer() external view returns (address);
 
