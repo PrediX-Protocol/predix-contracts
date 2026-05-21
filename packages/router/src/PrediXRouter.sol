@@ -924,22 +924,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     // CLOB price caps — fee-adjusted AMM spot
     // =========================================================================
 
-    /// @notice Fee-adjusted AMM spot price for buying YES, in USDC/YES with 1e6 precision.
-    /// @dev Returns 0 when the pool is uninitialized or empty so callers fall back to a
-    ///      permissive CLOB cap rather than reverting.
-    function _ammSpotPriceForBuy(address yesToken) internal returns (uint256 usdcPerYes) {
-        if (!_hasPool(yesToken)) return 0;
-        _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(PRICE_PRECISION), hookData: ""
-        });
-        (uint256 yesOut,) = quoter.quoteExactInputSingle(params);
-        if (yesOut == 0) return 0;
-        usdcPerYes = (PRICE_PRECISION * PRICE_PRECISION) / yesOut;
-    }
-
     /// @notice Fee-adjusted AMM spot price when selling YES, in USDC/YES with 1e6 precision.
+    /// @dev Spot probe (exactAmount = 1e6) used to bootstrap the virtual-NO mint
+    ///      estimate in `_clobBuyNoLimit` and Pass 1 of `_computeBuyNoMintAmount`.
     function _ammSpotPriceForSell(address yesToken) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken)) return 0;
         _preCommitForQuoter(yesToken);
@@ -1115,8 +1102,19 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         // permissive cap) does NOT short-circuit — that is precisely the
         // over-take case convergence must correct, because a tighter cap can
         // route the marginal tail to a cheaper AMM remainder.
-        (, uint256 gateCost) = IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this));
+        //
+        // The preview is wrapped in try/catch so a preview revert degrades to
+        // the Level-1 cap rather than failing the trade, preserving the CLOB
+        // graceful-fallback contract that `_tryClobBuy` / `_tryClobSell`
+        // provide on the execute leg.
+        uint256 gateCost;
+        try IPrediXExchangeView(exchange)
+            .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this))
+        returns (uint256, uint256 gc) {
+            gateCost = gc;
+        } catch {
+            return cap;
+        }
         if (gateCost == 0) return cap;
 
         // Meaningful split → converge from the spot-sized effective (the
@@ -1125,8 +1123,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         bool isBuy = (kind == CapKind.BUY_YES || kind == CapKind.BUY_NO);
         uint256 conv = _capFor(kind, yesToken, MIN_TRADE_AMOUNT);
         for (uint256 r; r < CLOB_CAP_CONVERGE_ROUNDS; ++r) {
-            (, uint256 clobCost) = IPrediXExchangeView(exchange)
-                .previewFillMarketOrder(marketId, side, conv, amountIn, maxFills, address(this));
+            uint256 clobCost;
+            try IPrediXExchangeView(exchange)
+                .previewFillMarketOrder(marketId, side, conv, amountIn, maxFills, address(this))
+            returns (uint256, uint256 cc) {
+                clobCost = cc;
+            } catch {
+                break;
+            }
             uint256 remainder = amountIn > clobCost ? amountIn - clobCost : 0;
             if (remainder < MIN_TRADE_AMOUNT) break;
             uint256 newCap = _capFor(kind, yesToken, remainder);
