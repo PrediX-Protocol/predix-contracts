@@ -187,6 +187,15 @@ abstract contract ExchangeStorage {
         if (IPausableFacet(diamond).isModulePaused(Modules.MARKET)) revert IPrediXExchange.MarketPaused();
     }
 
+    /// @notice Whether `marketId` has reached a terminal state (resolved, in refund
+    ///         mode, or past its end time) — the point past which a resting order can
+    ///         no longer be filled. Lets the batch-cancel keeper path return resting
+    ///         escrow to owners. Mirrors the inline guard in `MakerPath._cancelOrder`.
+    function _isMarketTerminal(uint256 marketId) internal view returns (bool) {
+        IMarketFacet.MarketView memory mkt = _loadMarket(marketId);
+        return mkt.isResolved || mkt.refundModeActive || block.timestamp >= mkt.endTime;
+    }
+
     // ======== Dust force-clean ========
 
     /// @dev Force-clean a dust maker order whose remaining capacity is too small

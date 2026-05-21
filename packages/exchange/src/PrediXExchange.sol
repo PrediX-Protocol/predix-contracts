@@ -144,7 +144,10 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     /// @inheritdoc IPrediXExchange
     /// @dev Bypass pause (user exit guarantee). Partial success — skips orders that
-    ///      don't belong to caller, are already cancelled, or fully filled.
+    ///      are already cancelled, fully filled, or that the caller may not cancel
+    ///      (not the owner, and the market is not terminal). On terminal markets a
+    ///      keeper may batch-cancel others' orders; `_cancelOrder` refunds the locked
+    ///      deposit to the order owner, never to the caller.
     function cancelOrders(bytes32[] calldata orderIds) external override nonReentrant returns (uint256 cancelledCount) {
         uint256 len = orderIds.length;
         if (len == 0) revert Exchange_EmptyArray();
@@ -158,14 +161,18 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         }
     }
 
-    /// @dev Attempt to cancel a single order owned by msg.sender. Returns false
-    ///      (no revert) if the order is invalid, not owned, or already terminal.
+    /// @dev Attempt to cancel a single order. Returns false (no revert) if the
+    ///      order is invalid, already terminal, or the caller is neither the owner
+    ///      nor a keeper acting on a terminal market. Mirrors `cancelOrder`'s
+    ///      authorization so a keeper can batch-return resting escrow once a market
+    ///      closes; `_cancelOrder` always refunds to `order.owner`, so a keeper
+    ///      cannot divert funds.
     function _tryCancel(bytes32 orderId) internal returns (bool) {
         Order storage order = orders[orderId];
         if (order.owner == address(0)) return false;
-        if (order.owner != msg.sender) return false;
         if (order.cancelled) return false;
         if (order.filled >= order.amount) return false;
+        if (order.owner != msg.sender && !_isMarketTerminal(order.marketId)) return false;
 
         _cancelOrder(orderId);
         return true;

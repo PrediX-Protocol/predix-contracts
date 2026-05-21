@@ -139,7 +139,11 @@ interface IPrediXExchange {
     function cancelOrder(bytes32 orderId) external;
 
     /// @notice Cancel multiple orders in a single transaction. Partial success —
-    ///         skips invalid/non-owned/already-cancelled orders without reverting.
+    ///         skips invalid / already-cancelled / fully-filled orders, and orders
+    ///         the caller may not cancel, without reverting. The owner may cancel
+    ///         their own orders any time; on a terminal market (resolved / refund /
+    ///         expired) a keeper may cancel anyone's orders. Refunds always go to
+    ///         the order owner.
     /// @param orderIds Array of order IDs to cancel. Max 50 per batch.
     /// @return cancelledCount Number of orders successfully cancelled.
     function cancelOrders(bytes32[] calldata orderIds) external returns (uint256 cancelledCount);
