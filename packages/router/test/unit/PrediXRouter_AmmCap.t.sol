@@ -81,14 +81,15 @@ contract PrediXRouter_AmmCap is RouterFixture {
         uint256 usdcIn = 40e6;
         bool zfoBuyYes = address(usdc) < address(yes1);
         bool zfoSellYes = !zfoBuyYes;
-        // Path D: 4 sell-dir calls per buyNo (clobBuyNoLimit spot + Pass 1
-        // spot + iter-1 quote + final safety quote). Buy direction stays
-        // single-shot — used only by `_clobBuyYesLimit` here.
-        uint256[] memory sellSequence = new uint256[](4);
-        sellSequence[0] = 500_000;
-        sellSequence[1] = 500_000;
-        sellSequence[2] = 40_000_000; // iter 1 at 80e6
-        sellSequence[3] = 39_800_000; // final safety at 79.6e6 (linear)
+        // Effective-cap Path D: 5 sell-dir calls per buyNo (clobBuyNoLimit spot
+        // probe + clobBuyNoLimit effective at mintEstimate + Pass 1 spot +
+        // iter-1 quote + final safety quote). Buy direction stays single-shot.
+        uint256[] memory sellSequence = new uint256[](5);
+        sellSequence[0] = 500_000; // clobBuyNoLimit spot probe ($1 in)
+        sellSequence[1] = 40_000_000; // clobBuyNoLimit effective at 80e6 mintEstimate
+        sellSequence[2] = 500_000; // compute Pass 1 spot
+        sellSequence[3] = 40_000_000; // iter 1 at 80e6
+        sellSequence[4] = 39_800_000; // final safety at 79.6e6 (linear)
         quoter.setExactInSequence(zfoSellYes, sellSequence);
         quoter.setExactInResult(zfoBuyYes, 2_000_000);
 
@@ -103,7 +104,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
-        assertEq(exchange.lastLimitPrice(), 500_000, "cap = 1 - yesSellSpot = 0.50");
+        assertEq(exchange.lastLimitPrice(), 500_000, "cap = 1 - yesSellEffective = 0.50");
     }
 
     // -----------------------------------------------------------------

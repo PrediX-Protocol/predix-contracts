@@ -42,11 +42,17 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         uint256 finalSafety
     ) internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
-        uint256[] memory sequence = new uint256[](4);
+        // 5 entries: [clobCap spot probe, clobCap effective at mintEstimate,
+        // Pass 1 spot, iter 1, final safety]. For these tests the clobCap
+        // effective is at the same nominal target as iter 1 (mintEstimate
+        // = usdcIn / (1 - spot) which equals the Pass 1 estimatedTarget),
+        // so the two values are identical in no-impact runs.
+        uint256[] memory sequence = new uint256[](5);
         sequence[0] = clobSpot;
-        sequence[1] = computeSpot;
-        sequence[2] = iter1;
-        sequence[3] = finalSafety;
+        sequence[1] = iter1; // clobCap effective at mintEstimate
+        sequence[2] = computeSpot;
+        sequence[3] = iter1;
+        sequence[4] = finalSafety;
         quoter.setExactInSequence(sellIsZeroForOne, sequence);
     }
 
@@ -61,12 +67,16 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         uint256 finalSafety
     ) internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
-        uint256[] memory sequence = new uint256[](5);
+        // 6 entries: [clobCap spot probe, clobCap effective, Pass 1 spot,
+        // iter 1, iter 2, final safety]. ClobCap effective at mintEstimate
+        // sees the same impact curve as iter 1 (same nominal size).
+        uint256[] memory sequence = new uint256[](6);
         sequence[0] = clobSpot;
-        sequence[1] = computeSpot;
-        sequence[2] = iter1;
-        sequence[3] = iter2;
-        sequence[4] = finalSafety;
+        sequence[1] = iter1; // clobCap effective
+        sequence[2] = computeSpot;
+        sequence[3] = iter1;
+        sequence[4] = iter2;
+        sequence[5] = finalSafety;
         quoter.setExactInSequence(sellIsZeroForOne, sequence);
     }
 

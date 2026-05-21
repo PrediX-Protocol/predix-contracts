@@ -372,7 +372,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || usdcIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobBuyYesLimit(yesToken);
+        uint256 clobLimit = _clobBuyYesLimit(yesToken, usdcIn);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, address(0));
@@ -399,7 +399,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || yesIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobSellYesLimit(yesToken);
+        uint256 clobLimit = _clobSellYesLimit(yesToken, yesIn);
         uint256 sharesFilled;
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, address(0));
@@ -426,7 +426,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || usdcIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobBuyNoLimit(yesToken);
+        uint256 clobLimit = _clobBuyNoLimit(yesToken, usdcIn);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, address(0));
@@ -447,7 +447,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || noIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobSellNoLimit(yesToken);
+        uint256 clobLimit = _clobSellNoLimit(yesToken, noIn);
         uint256 sharesFilled;
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, address(0));
@@ -940,33 +940,102 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return yesPrice >= PRICE_PRECISION ? 0 : PRICE_PRECISION - yesPrice;
     }
 
-    /// @notice CLOB BUY cap for `BUY_YES`. Falls back to `PRICE_PRECISION` (permissive) on an
-    ///         empty pool so the CLOB is free to fill when there is no AMM competition.
-    function _clobBuyYesLimit(address yesToken) internal returns (uint256) {
-        uint256 spot = _ammSpotPriceForBuy(yesToken);
-        return spot == 0 ? PRICE_PRECISION : spot;
+    /// @notice Fee-adjusted AMM effective price for buying YES at `usdcSize` USDC in.
+    /// @dev Quotes `quoteExactInputSingle(usdcSize)` and divides input by output to get the
+    ///      blended USDC-per-YES the swap would pay across the full trade. Used to size the
+    ///      CLOB cap so the orderbook is not forced to undercut spot when the actual
+    ///      AMM-effective price is higher under slippage. Returns 0 if the pool is empty.
+    function _ammEffectivePriceForBuy(address yesToken, uint128 usdcSize)
+        internal
+        returns (uint256 usdcPerYes)
+    {
+        if (!_hasPool(yesToken) || usdcSize == 0) return 0;
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: usdcSize, hookData: ""
+        });
+        (uint256 yesOut,) = quoter.quoteExactInputSingle(params);
+        if (yesOut == 0) return 0;
+        usdcPerYes = (uint256(usdcSize) * PRICE_PRECISION) / yesOut;
     }
 
-    /// @notice CLOB SELL min-price for `SELL_YES`. Spot is already USDC received per YES, so
-    ///         there is no fall-back transformation — an empty pool yields 0 which is the
-    ///         permissive min.
-    function _clobSellYesLimit(address yesToken) internal returns (uint256) {
-        return _ammSpotPriceForSell(yesToken);
+    /// @notice Fee-adjusted AMM effective price when selling `yesSize` YES at the pool.
+    /// @dev Symmetric to {_ammEffectivePriceForBuy}. Returns 0 on empty pool / zero size.
+    function _ammEffectivePriceForSell(address yesToken, uint128 yesSize)
+        internal
+        returns (uint256 usdcPerYes)
+    {
+        if (!_hasPool(yesToken) || yesSize == 0) return 0;
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key, zeroForOne: yesToken < usdc, exactAmount: yesSize, hookData: ""
+        });
+        (uint256 usdcOut,) = quoter.quoteExactInputSingle(params);
+        if (usdcOut == 0) return 0;
+        usdcPerYes = (usdcOut * PRICE_PRECISION) / uint256(yesSize);
     }
 
-    /// @notice CLOB BUY cap for `BUY_NO`. Virtual NO buy price = 1 - yesSellSpot.
-    function _clobBuyNoLimit(address yesToken) internal returns (uint256) {
-        uint256 yesSell = _ammSpotPriceForSell(yesToken);
-        if (yesSell == 0) return PRICE_PRECISION;
-        uint256 complement = _complementPrice(yesSell);
-        return complement == 0 ? PRICE_PRECISION : complement;
+    /// @notice Fee-adjusted AMM effective cost-per-YES for an exact-out buy of `yesOut` YES.
+    /// @dev Used by the SELL_NO cap derivation, where the virtual-NO callback flash-buys
+    ///      `noIn` YES exact-out. Returns 0 on empty pool / zero size.
+    function _ammEffectivePriceForBuyExactOut(address yesToken, uint128 yesOut)
+        internal
+        returns (uint256 usdcPerYes)
+    {
+        if (!_hasPool(yesToken) || yesOut == 0) return 0;
+        _preCommitForQuoter(yesToken);
+        PoolKey memory key = _buildPoolKey(yesToken);
+        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
+            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: yesOut, hookData: ""
+        });
+        (uint256 usdcInQuote,) = quoter.quoteExactOutputSingle(params);
+        if (usdcInQuote == 0) return 0;
+        usdcPerYes = (usdcInQuote * PRICE_PRECISION) / uint256(yesOut);
     }
 
-    /// @notice CLOB SELL min-price for `SELL_NO`. Virtual NO sell price = 1 - yesBuySpot.
-    function _clobSellNoLimit(address yesToken) internal returns (uint256) {
-        uint256 yesBuy = _ammSpotPriceForBuy(yesToken);
-        if (yesBuy == 0) return 0;
-        return _complementPrice(yesBuy);
+    /// @notice CLOB BUY cap for `BUY_YES`, set to the AMM's effective per-YES price at
+    ///         `usdcIn` USDC in. Falls back to `PRICE_PRECISION` (permissive) on an empty
+    ///         pool or when effective price saturates above $1.00 so the CLOB stays
+    ///         routable.
+    /// @dev Sizing the cap at the actual trade size — instead of at $1 (spot) — lets the
+    ///      orderbook fill at prices between AMM-spot and AMM-effective, which is profit
+    ///      strictly preserved for the taker (the AMM would have charged the same or more
+    ///      for the same units).
+    function _clobBuyYesLimit(address yesToken, uint256 usdcIn) internal returns (uint256) {
+        uint256 effective = _ammEffectivePriceForBuy(yesToken, uint128(usdcIn));
+        if (effective == 0 || effective >= PRICE_PRECISION) return PRICE_PRECISION;
+        return effective;
+    }
+
+    /// @notice CLOB SELL min-price for `SELL_YES`, set to the AMM's effective per-YES sell
+    ///         price at `yesIn`. Empty pool yields 0 (permissive min).
+    function _clobSellYesLimit(address yesToken, uint256 yesIn) internal returns (uint256) {
+        return _ammEffectivePriceForSell(yesToken, uint128(yesIn));
+    }
+
+    /// @notice CLOB BUY cap for `BUY_NO`. Virtual NO buy price = 1 - YES sell effective at
+    ///         the mint-amount the virtual path would flash-sell. A spot probe bootstraps
+    ///         the mint estimate linearly; the second quote gets the impact-aware effective
+    ///         at that estimate. Returns `PRICE_PRECISION` (permissive) when the pool is
+    ///         empty / saturates.
+    function _clobBuyNoLimit(address yesToken, uint256 usdcIn) internal returns (uint256) {
+        uint256 yesSellSpot = _ammSpotPriceForSell(yesToken);
+        if (yesSellSpot == 0 || yesSellSpot >= PRICE_PRECISION) return PRICE_PRECISION;
+        uint256 mintEstimate = (usdcIn * PRICE_PRECISION) / (PRICE_PRECISION - yesSellSpot);
+        if (mintEstimate == 0) return PRICE_PRECISION;
+        uint256 yesSellEffective = _ammEffectivePriceForSell(yesToken, uint128(mintEstimate));
+        if (yesSellEffective == 0 || yesSellEffective >= PRICE_PRECISION) return PRICE_PRECISION;
+        return PRICE_PRECISION - yesSellEffective;
+    }
+
+    /// @notice CLOB SELL min-price for `SELL_NO`. Virtual NO sell price = 1 - YES buy
+    ///         effective for an exact-out flash-buy of `noIn` YES.
+    function _clobSellNoLimit(address yesToken, uint256 noIn) internal returns (uint256) {
+        uint256 yesBuyEffective = _ammEffectivePriceForBuyExactOut(yesToken, uint128(noIn));
+        if (yesBuyEffective == 0 || yesBuyEffective >= PRICE_PRECISION) return 0;
+        return PRICE_PRECISION - yesBuyEffective;
     }
 
     /// @notice Compute `mintAmount` for `buyNo` via iterative fixed-point sizing.
@@ -1184,7 +1253,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _clobBuyYesLimit(yesToken);
+        uint256 clobLimit = _clobBuyYesLimit(yesToken, usdcIn);
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline);
@@ -1218,7 +1287,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(yesToken, exchange);
 
-        uint256 clobLimit = _clobSellYesLimit(yesToken);
+        uint256 clobLimit = _clobSellYesLimit(yesToken, yesIn);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 yesRemaining;
         (, yesRemaining) =
@@ -1250,7 +1319,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _clobBuyNoLimit(yesToken);
+        uint256 clobLimit = _clobBuyNoLimit(yesToken, usdcIn);
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline);
@@ -1282,7 +1351,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(noToken, exchange);
 
-        uint256 clobLimit = _clobSellNoLimit(yesToken);
+        uint256 clobLimit = _clobSellNoLimit(yesToken, noIn);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 noRemaining;
         (, noRemaining) = _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline);

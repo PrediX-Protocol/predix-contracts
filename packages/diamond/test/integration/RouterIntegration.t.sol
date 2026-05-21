@@ -404,17 +404,18 @@ contract RouterIntegrationTest is MarketFixture {
     function test_BuyNo_VirtualPath_FullStack() public {
         (uint256 marketId, address yesToken, address noToken,) = _createMarketWithPool();
 
-        // Path D: `_computeBuyNoMintAmount` hits the sell-direction quoter 4
-        // times per buyNo in the no-impact case — `_clobBuyNoLimit` spot,
-        // Pass 1 spot, iter-1 quote at 80e6, and the final safety quote at
-        // candidate 79.6e6. Linear-no-impact pool: iter-1 returns 40e6
-        // (= 80e6 × 0.5); final safety at 79.6e6 returns 39.8e6. Both pass
-        // the budget invariant → mintAmount = candidate = 80e6 × 0.995.
-        uint256[] memory sellSeq = new uint256[](4);
-        sellSeq[0] = 500_000;
-        sellSeq[1] = 500_000;
-        sellSeq[2] = 40_000_000; // iter 1 at 80e6
-        sellSeq[3] = 39_800_000; // final safety at 79.6e6 (linear)
+        // Effective-cap Path D: 5 sell-dir quoter calls per buyNo (no-impact
+        // case) — clobBuyNoLimit spot probe, clobBuyNoLimit effective at
+        // mintEstimate=80e6, compute Pass 1 spot, iter-1 quote at 80e6, and
+        // the final safety quote at candidate 79.6e6. Linear-no-impact pool:
+        // iter-1 returns 40e6 (= 80e6 × 0.5); final safety at 79.6e6 returns
+        // 39.8e6. Both pass the budget invariant → mintAmount = 80e6 × 0.995.
+        uint256[] memory sellSeq = new uint256[](5);
+        sellSeq[0] = 500_000; // clobBuyNoLimit spot probe
+        sellSeq[1] = 40_000_000; // clobBuyNoLimit effective at mintEstimate=80e6
+        sellSeq[2] = 500_000; // Pass 1 spot
+        sellSeq[3] = 40_000_000; // iter 1 at 80e6
+        sellSeq[4] = 39_800_000; // final safety at 79.6e6 (linear)
         quoter.setExactInSequence(sellSeq);
 
         uint256 usdcIn = 40e6;

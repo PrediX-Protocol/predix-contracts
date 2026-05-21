@@ -54,11 +54,12 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
     ///      Total quoter calls: clobSpot + computeSpot + iter1 + finalSafety = 4.
     function test_PathD_DeepPool_ConvergesInOneIter() public {
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](4);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 40_000_000; // iter 1 at 80e6
-        seq[3] = 39_800_000; // final safety at 79.6e6 (linear)
+        uint256[] memory seq = new uint256[](5);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 40_000_000; // clobCap effective at mintEstimate=80e6 (linear)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 40_000_000; // iter 1 at 80e6
+        seq[4] = 39_800_000; // final safety at 79.6e6 (linear)
         _queueSellSequence(seq);
 
         uint256 expectedMint = (80_000_000 * 9950) / 10_000; // 79_600_000
@@ -80,12 +81,13 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         // Final safety quote at candidate = 44.775e6: returns 22.3875e6
         // (linear at smaller-still size). 22.3875 + 40 = 62.3875 ≥ 44.775 → pass.
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](5);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 5_000_000; // iter 1 at 80e6
-        seq[3] = 22_500_000; // iter 2 at 45e6
-        seq[4] = 22_387_500; // final safety at 44.775e6
+        uint256[] memory seq = new uint256[](6);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 5_000_000; // clobCap effective at mintEstimate=80e6 (thin pool)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 5_000_000; // iter 1 at 80e6
+        seq[4] = 22_500_000; // iter 2 at 45e6
+        seq[5] = 22_387_500; // final safety at 44.775e6
         _queueSellSequence(seq);
 
         uint256 expectedMint = (45_000_000 * 9950) / 10_000; // 44_775_000
@@ -126,14 +128,15 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         // pool yields 0.45 × 72_496_070 = 32_623_232. Budget = 72_623_232 ≥
         // mintAmount ✓. Trade succeeds.
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](7);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 36_000_000; // main loop iter 1 at 80e6
-        seq[3] = 34_200_000; // main loop iter 2 at 76e6
-        seq[4] = 33_390_000; // main loop iter 3 at 74.2e6
-        seq[5] = 32_860_372; // safety iter 1 at candidate_0 = 73_023_050
-        seq[6] = 32_623_232; // safety iter 2 at candidate_1 = 72_496_070 (converges)
+        uint256[] memory seq = new uint256[](8);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 36_000_000; // clobCap effective at mintEstimate=80e6 (linear 0.45)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 36_000_000; // main loop iter 1 at 80e6
+        seq[4] = 34_200_000; // main loop iter 2 at 76e6
+        seq[5] = 33_390_000; // main loop iter 3 at 74.2e6 (MAX_ITER exhausted)
+        seq[6] = 32_860_372; // safety iter 1 at candidate_0 = 73_023_050
+        seq[7] = 32_623_232; // safety iter 2 at candidate_1 = 72_496_070 (converges)
         _queueSellSequence(seq);
 
         uint256 expectedMint = 72_496_070;
@@ -153,11 +156,12 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
     ///      stays at 0.5% under deep-pool conditions.
     function test_PathD_HiddenCost_DeepPool_AtMostHalfPercent() public {
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](4);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 40_000_000; // iter 1
-        seq[3] = 39_800_000; // final safety
+        uint256[] memory seq = new uint256[](5);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 40_000_000; // clobCap effective at mintEstimate=80e6 (linear)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 40_000_000; // iter 1
+        seq[4] = 39_800_000; // final safety
         _queueSellSequence(seq);
 
         uint256 expectedMint = (80_000_000 * 9950) / 10_000;
@@ -181,11 +185,12 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
     ///      than under the historical 1% and 3% cushions.
     function test_PathD_StrictlyBetterThan_PreviousCushions() public {
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](4);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 40_000_000;
-        seq[3] = 39_800_000; // final safety
+        uint256[] memory seq = new uint256[](5);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 40_000_000; // clobCap effective at mintEstimate=80e6 (linear)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 40_000_000; // iter 1
+        seq[4] = 39_800_000; // final safety
         _queueSellSequence(seq);
 
         uint256 expectedMint = (80_000_000 * 9950) / 10_000;
@@ -221,12 +226,13 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         //   797.49 → use candidate.
         // mintAmount = 797_492_500.
         uint256 usdcIn = 240e6;
-        uint256[] memory seq = new uint256[](5);
-        seq[0] = 710_000; // clobBuyNoLimit (YES sell spot ≈ 0.71)
-        seq[1] = 710_000; // compute Pass 1 spot
-        seq[2] = 561_500_000; // iter 1 at 827.586e6 (heavy impact)
-        seq[3] = 561_500_000; // iter 2 at 801.5e6 (converges)
-        seq[4] = 558_244_750; // final safety at 797.4925e6 (linear at smaller size)
+        uint256[] memory seq = new uint256[](6);
+        seq[0] = 710_000; // clobCap spot probe (YES sell spot ≈ 0.71)
+        seq[1] = 561_500_000; // clobCap effective at mintEstimate=827.586e6 (same impact as iter 1)
+        seq[2] = 710_000; // compute Pass 1 spot
+        seq[3] = 561_500_000; // iter 1 at 827.586e6 (heavy impact)
+        seq[4] = 561_500_000; // iter 2 at 801.5e6 (converges)
+        seq[5] = 558_244_750; // final safety at 797.4925e6 (linear at smaller size)
         _queueSellSequence(seq);
 
         uint256 sizeAfterIter = 801_500_000;
@@ -289,12 +295,13 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         //   linear scaling 1_124_137_931 × 1_616_017_241 / 1_624_137_931 ≈ 1_118_516_241.
         //   1_118_516_241 + 500e6 = 1_618_516_241 ≥ 1_616_017_241 → use candidate.
         uint256 usdcIn = 500e6;
-        uint256[] memory seq = new uint256[](5);
-        seq[0] = 710_000;
-        seq[1] = 710_000;
-        seq[2] = 1_124_137_931; // iter 1 at 1.724e9
-        seq[3] = 1_124_137_931; // iter 2 at 1.624e9 (converges)
-        seq[4] = 1_118_516_241; // final safety at 1.616e9 (linear from iter 2)
+        uint256[] memory seq = new uint256[](6);
+        seq[0] = 710_000; // clobCap spot probe
+        seq[1] = 1_124_137_931; // clobCap effective at mintEstimate=1.724e9 (same as iter 1)
+        seq[2] = 710_000; // Pass 1 spot
+        seq[3] = 1_124_137_931; // iter 1 at 1.724e9
+        seq[4] = 1_124_137_931; // iter 2 at 1.624e9 (converges)
+        seq[5] = 1_118_516_241; // final safety at 1.616e9 (linear from iter 2)
         _queueSellSequence(seq);
 
         uint256 sizeAfterIter = 1_624_137_931;
@@ -320,12 +327,13 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         //   linear scaling 6_744_827_586 × 9_696_103_448 / 9_744_827_586 = 6_711_103_448.
         //   6_711_103_448 + 3000e6 = 9_711_103_448 ≥ 9_696_103_448 → use candidate.
         uint256 usdcIn = 3000e6;
-        uint256[] memory seq = new uint256[](5);
-        seq[0] = 710_000;
-        seq[1] = 710_000;
-        seq[2] = 6_744_827_586; // iter 1
-        seq[3] = 6_744_827_586; // iter 2 (converges)
-        seq[4] = 6_711_103_448; // final safety at 9.696e9 (linear at smaller)
+        uint256[] memory seq = new uint256[](6);
+        seq[0] = 710_000; // clobCap spot probe
+        seq[1] = 6_744_827_586; // clobCap effective at mintEstimate (same impact as iter 1)
+        seq[2] = 710_000; // Pass 1 spot
+        seq[3] = 6_744_827_586; // iter 1
+        seq[4] = 6_744_827_586; // iter 2 (converges)
+        seq[5] = 6_711_103_448; // final safety at 9.696e9 (linear at smaller)
         _queueSellSequence(seq);
 
         uint256 sizeAfterIter = 9_744_827_586;
@@ -355,12 +363,13 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         // mintAmount = 995. Flash swap 995 YES gets 0 USDC. Balance = 1000.
         // 1000 ≥ 995 → invariant holds, mint 995 NO succeeds.
         uint256 usdcIn = 1000;
-        uint256[] memory seq = new uint256[](5);
-        seq[0] = 500_000;
-        seq[1] = 500_000;
-        seq[2] = 0; // iter 1 returns 0
-        seq[3] = 0; // iter 2 returns 0
-        seq[4] = 0; // final safety returns 0
+        uint256[] memory seq = new uint256[](6);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 0; // clobCap effective at mintEstimate=2000 (empty pool returns 0)
+        seq[2] = 500_000; // Pass 1 spot
+        seq[3] = 0; // iter 1 returns 0
+        seq[4] = 0; // iter 2 returns 0
+        seq[5] = 0; // final safety returns 0
         _queueSellSequence(seq);
         _queueFlashSell(995, 0); // flash returns 0 proceeds
 

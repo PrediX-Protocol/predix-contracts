@@ -388,14 +388,23 @@ deploy-blockers but each tightens the fairness or coverage posture.
 
 | Item | Effort | Priority | Status | Notes |
 |---|---|---|---|---|
+| Path E — close strict-cap algebraic hole | 0.5d | — | RESOLVED | Strict cap replaced with iterative safety-convergence loop; linear-pool fixed point holds the invariant (`PathD_StrictCapHole.t.sol`) |
+| Effective-price CLOB cap (profit optimization) | 0.5d | — | RESOLVED | Cap sized at AMM-effective-at-trade-size, not $1 spot; captures CLOB depth in (spot, effective] (`EffectiveCap_Routing.t.sol`) |
 | Cushion benchmark on live V4Quoter | 0.5d | Medium (post-launch) | DEFERRED | Reduce 0.5% → 0.25% if drift data supports |
-| Path E — refine `mintAmount` after strict-cap fallback | 0.5d | Low (post-launch) | DEFERRED | One extra quote round when MAX_ITER doesn't converge |
 | Cap-aware sizing loop (early termination) | 0.5d | Low (post-launch) | DEFERRED | Pass `perMarketCap` into the iter loop |
 | Token-ordering reverse coverage for router PathD tests | 0.3d | Low (post-launch) | DEFERRED | Existing tests deterministically use `yes > usdc` |
 | Live Sepolia $238+ regression replay | 0.3d | Medium (pre-mainnet) | DEFERRED | Re-execute pre-fix failure tx against post-fix router |
 
-**Total deferred effort:** ~2 engineering days, all post-mainnet
+**Total deferred effort:** ~1.5 engineering days, all post-mainnet
 except the Sepolia replay which is a pre-deploy sanity check.
+
+**Resolved on this branch (Path D continuation):**
+- Strict-cap algebraic hole closed (safety-convergence loop).
+- Effective-price CLOB cap landed — the orderbook now competes against the
+  AMM at the price the trade would actually pay, not the no-impact spot. In
+  thin pools this routes more volume to resting CLOB liquidity priced between
+  spot and effective, raising taker profit at zero added quoter-call count for
+  YES paths (+1 quote for the virtual-NO mint-estimate probe).
 
 ### Path D coverage that IS in this branch
 

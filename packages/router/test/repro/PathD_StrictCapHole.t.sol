@@ -60,14 +60,15 @@ contract PathD_StrictCapHole is RouterFixture {
     ///      Trade succeeds — the previously-failing strict-cap path is closed.
     function test_PathD_StrictCap_LinearPool_DoesNotRevert() public {
         uint256 usdcIn = 40e6;
-        uint256[] memory seq = new uint256[](7);
-        seq[0] = 500_000; // clobBuyNoLimit spot
-        seq[1] = 500_000; // compute Pass 1 spot
-        seq[2] = 36_000_000; // main loop iter 1 at 80e6 (0.45 per-unit)
-        seq[3] = 34_200_000; // main loop iter 2 at 76e6
-        seq[4] = 33_390_000; // main loop iter 3 at 74.2e6 (MAX_ITER exhausted)
-        seq[5] = 32_860_372; // safety loop iter 1 at candidate_0 = 73_023_050
-        seq[6] = 32_623_232; // safety loop iter 2 at candidate_1 = 72_496_070 (converges)
+        uint256[] memory seq = new uint256[](8);
+        seq[0] = 500_000; // clobCap spot probe
+        seq[1] = 36_000_000; // clobCap effective at mintEstimate=80e6 (0.45 linear)
+        seq[2] = 500_000; // compute Pass 1 spot
+        seq[3] = 36_000_000; // main loop iter 1 at 80e6 (0.45 per-unit)
+        seq[4] = 34_200_000; // main loop iter 2 at 76e6
+        seq[5] = 33_390_000; // main loop iter 3 at 74.2e6 (MAX_ITER exhausted)
+        seq[6] = 32_860_372; // safety loop iter 1 at candidate_0 = 73_023_050
+        seq[7] = 32_623_232; // safety loop iter 2 at candidate_1 = 72_496_070 (converges)
         _queueSellSequence(seq);
 
         uint256 expectedMint = 72_496_070;

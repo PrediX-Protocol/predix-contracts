@@ -55,6 +55,12 @@ contract MockV4Quoter is IV4Quoter {
         _exactOut = Canned({amountOut: 0, amountIn: amountIn, set: true});
     }
 
+    /// @dev Resolution order for a non-sequence query:
+    ///        1. Per-direction sequence (FIFO, absolute values)
+    ///        2. Per-direction or global canned, interpreted as "output for an input of
+    ///           `PRICE_PRECISION` (1e6)" and scaled linearly with `params.exactAmount`.
+    ///      Linear scaling models a no-impact pool (spot price independent of size). Tests
+    ///      that need impact use the sequence API to provide specific values per call.
     function quoteExactInputSingle(QuoteExactSingleParams memory params)
         external
         override
@@ -68,7 +74,11 @@ contract MockV4Quoter is IV4Quoter {
         } else {
             Canned memory c = _exactInByDir[params.zeroForOne];
             if (!c.set) c = _exactIn;
-            amountOut = c.amountOut;
+            // Scale canned (= output for 1e6 input) by the actual input size.
+            // Pure-multiplicative model: matches real V4 quoter on infinite-depth pools
+            // and keeps existing test fixtures that set canned via `setExactInResult`
+            // size-invariant under the new effective-cap derivation in router.
+            amountOut = (uint256(params.exactAmount) * c.amountOut) / 1e6;
         }
         gasEstimate = 0;
         callCount += 1;

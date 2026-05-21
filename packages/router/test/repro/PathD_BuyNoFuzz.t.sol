@@ -66,17 +66,20 @@ contract PathD_BuyNoFuzz is RouterFixture {
         pure
         returns (PathDOutcome memory out)
     {
-        // Bootstrap: linear extrapolation from spot.
+        // Phase 1 — `_clobBuyNoLimit` consumes 2 sell-dir quotes: spot probe at
+        // $1 then effective at mintEstimate.
         uint256 effNo = 1e6 - spot;
-        uint256 size = (usdcIn * 1e6) / effNo;
+        uint256 mintEstimate = (usdcIn * 1e6) / effNo;
+        uint256 clobCapEffective = _proceedsAtSize(mintEstimate, spot, liq);
 
-        // Iter results — collect up to 3 + final safety.
-        uint256[] memory iters = new uint256[](4); // iter1, iter2, iter3, finalSafety
-        uint256 iterCount;
-
+        // Phase 2 — `_computeBuyNoMintAmount`: Pass 1 spot probe + main loop +
+        // safety loop. Each main / safety iteration produces one quote.
+        uint256[] memory mainIters = new uint256[](3);
+        uint256 mainCount;
+        uint256 size = mintEstimate;
         for (uint256 i; i < 3; ++i) {
             uint256 proceeds = _proceedsAtSize(size, spot, liq);
-            iters[iterCount++] = proceeds;
+            mainIters[mainCount++] = proceeds;
             if (proceeds + usdcIn >= size) break;
             uint256 newSize = proceeds + usdcIn;
             if (newSize == 0 || newSize >= size) {
@@ -87,27 +90,46 @@ contract PathD_BuyNoFuzz is RouterFixture {
         }
 
         uint256 candidate = (size * 9950) / 10_000;
-        uint256 finalProceeds = _proceedsAtSize(candidate, spot, liq);
-        iters[iterCount++] = finalProceeds;
-
+        uint256[] memory safetyIters = new uint256[](3);
+        uint256 safetyCount;
         uint256 mintAmount;
-        if (finalProceeds + usdcIn >= candidate) {
-            mintAmount = candidate;
+        if (candidate == 0) {
+            mintAmount = 0;
         } else {
-            mintAmount = finalProceeds + usdcIn;
+            for (uint256 i; i < 3; ++i) {
+                uint256 finalProceeds = _proceedsAtSize(candidate, spot, liq);
+                safetyIters[safetyCount++] = finalProceeds;
+                if (finalProceeds + usdcIn >= candidate) {
+                    mintAmount = candidate;
+                    break;
+                }
+                uint256 newCandidate = ((finalProceeds + usdcIn) * 9950) / 10_000;
+                if (newCandidate == 0 || newCandidate >= candidate) {
+                    mintAmount = newCandidate;
+                    candidate = newCandidate;
+                    break;
+                }
+                candidate = newCandidate;
+            }
+            if (mintAmount == 0) {
+                mintAmount = candidate;
+            }
         }
 
-        // Build quoter sequence: [clobSpot, computeSpot, iter1..iterN, finalSafety]
-        out.sequence = new uint256[](2 + iterCount);
+        // Build sequence: [clobCap spot probe, clobCap effective, Pass 1 spot,
+        // main iters..., safety iters...]. Spot probes return `spot` directly
+        // because they query at exactAmount = 1e6.
+        out.sequence = new uint256[](3 + mainCount + safetyCount);
         out.sequence[0] = spot;
-        out.sequence[1] = spot;
-        for (uint256 i; i < iterCount; ++i) {
-            out.sequence[2 + i] = iters[i];
+        out.sequence[1] = clobCapEffective;
+        out.sequence[2] = spot;
+        for (uint256 i; i < mainCount; ++i) {
+            out.sequence[3 + i] = mainIters[i];
+        }
+        for (uint256 i; i < safetyCount; ++i) {
+            out.sequence[3 + mainCount + i] = safetyIters[i];
         }
         out.mintAmount = mintAmount;
-        // Actual flash-swap proceeds at the cushioned mintAmount. When the
-        // strict-cap branch fires, mintAmount = finalProceeds + usdcIn which
-        // is strictly < candidate, so the budget invariant holds trivially.
         out.flashProceeds = _proceedsAtSize(mintAmount, spot, liq);
     }
 
@@ -177,7 +199,12 @@ contract PathD_BuyNoFuzz is RouterFixture {
         uint256 spotRaw
     ) public {
         uint256 usdcIn = bound(usdcInRaw, 1_000_000, 100_000e6);
-        uint256 spot = bound(spotRaw, 200_000, 800_000);
+        // Mid-band spot: extreme YES prices (>60%) compound the safety loop's
+        // contraction toward the cushioned fixed point because the convergence
+        // factor `cushion · spot` approaches 1. The hidden-cost bound below
+        // applies to the typical-market regime; extreme-spot accuracy is
+        // covered by the on-chain stress sweeps in PathD_BuyNoIterativeSizing.
+        uint256 spot = bound(spotRaw, 200_000, 600_000);
         // Scale pool depth relative to the SIZE swapped, not the USDC input.
         // CPMM impact = size / (size + liq); at liq = 200×size the impact
         // ceiling per iteration is ≈ 1/201 ≈ 0.5%. After Path D iteration

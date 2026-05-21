@@ -27,11 +27,16 @@ contract Fairness_YesVsNo is RouterFixture {
 
     function _queueSellSeqForBuyNo(uint256 spot, uint256 iter1Proceeds, uint256 finalSafetyProceeds) internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
-        uint256[] memory seq = new uint256[](4);
+        // 5-entry sequence: [clobCap spot probe, clobCap effective at mintEstimate,
+        // Pass 1 spot, iter 1, final safety]. For no-impact tests the effective
+        // entry equals iter1Proceeds since both quote the same linear curve at
+        // the same target size (mintEstimate ≈ estimatedTarget).
+        uint256[] memory seq = new uint256[](5);
         seq[0] = spot;
-        seq[1] = spot;
-        seq[2] = iter1Proceeds;
-        seq[3] = finalSafetyProceeds;
+        seq[1] = iter1Proceeds;
+        seq[2] = spot;
+        seq[3] = iter1Proceeds;
+        seq[4] = finalSafetyProceeds;
         quoter.setExactInSequence(sellIsZeroForOne, seq);
     }
 
