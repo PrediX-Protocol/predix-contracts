@@ -101,6 +101,17 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         predictable.
     uint256 internal constant BUY_NO_SIZING_MAX_ITER = 3;
 
+    /// @notice Maximum re-quote rounds when converging the CLOB cap toward the
+    ///         AMM effective price at the orderbook-adjusted remainder. Each
+    ///         round is one `previewFillMarketOrder` + one effective-price
+    ///         quote. The cap walks from the spot-sized effective toward the
+    ///         fixed point where the marginal CLOB order equals the AMM
+    ///         effective for the leftover size — the optimal CLOB/AMM split.
+    ///         Bounded to keep gas predictable; trades whose CLOB depth spans
+    ///         more than this many price tranches converge approximately and
+    ///         fall back to the last (slightly permissive) cap for the tail.
+    uint256 internal constant CLOB_CAP_CONVERGE_ROUNDS = 3;
+
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
     // Expected exchange error selectors — graceful fallback to AMM when the
@@ -372,7 +383,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || usdcIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobBuyYesLimit(yesToken, usdcIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, address(0));
@@ -399,7 +411,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || yesIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobSellYesLimit(yesToken, yesIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_YES, CapKind.SELL_YES, yesToken, yesIn, maxFills);
         uint256 sharesFilled;
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, address(0));
@@ -426,7 +439,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || usdcIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobBuyNoLimit(yesToken, usdcIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills);
         uint256 clobCost;
         (clobPortion, clobCost) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, address(0));
@@ -447,7 +461,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         (address yesToken,,,,) = _quoteMarketStatus(marketId);
         if (yesToken == address(0) || noIn < MIN_TRADE_AMOUNT) return (0, 0, 0);
 
-        uint256 clobLimit = _clobSellNoLimit(yesToken, noIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_NO, CapKind.SELL_NO, yesToken, noIn, maxFills);
         uint256 sharesFilled;
         (clobPortion, sharesFilled) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, address(0));
@@ -1038,6 +1053,85 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return PRICE_PRECISION - yesBuyEffective;
     }
 
+    /// @notice The four cap-derivation kinds, one per trade side.
+    enum CapKind {
+        BUY_YES,
+        SELL_YES,
+        BUY_NO,
+        SELL_NO
+    }
+
+    /// @notice Re-quote dispatch: AMM effective-price cap for `size` on the given side.
+    function _capFor(CapKind kind, address yesToken, uint256 size) internal returns (uint256) {
+        if (kind == CapKind.BUY_YES) return _clobBuyYesLimit(yesToken, size);
+        if (kind == CapKind.SELL_YES) return _clobSellYesLimit(yesToken, size);
+        if (kind == CapKind.BUY_NO) return _clobBuyNoLimit(yesToken, size);
+        return _clobSellNoLimit(yesToken, size);
+    }
+
+    /// @notice Converge the CLOB cap toward the AMM effective price at the
+    ///         remainder the orderbook would actually leave (Level-2 routing).
+    /// @dev Seeds the cap at the spot-sized effective (a tiny probe), which is
+    ///      the SELECTIVE end for both directions, then expands it round by
+    ///      round:
+    ///        - BUY: spot is the low end; effective rises with size, so the cap
+    ///          walks UP until it stops rising.
+    ///        - SELL: spot is the high end; effective falls with size, so the
+    ///          cap walks DOWN until it stops falling.
+    ///      Each round previews the CLOB fill at the current cap (view, no
+    ///      transfers), then re-quotes the AMM effective at the resulting
+    ///      remainder. The fixed point is the price where the marginal CLOB
+    ///      order equals the AMM effective for the leftover size — the optimal
+    ///      CLOB/AMM split boundary. Seeding at the selective end avoids the
+    ///      over-consumption that makes a naive descending fixed-point oscillate
+    ///      when a single large maker order can absorb the whole budget.
+    ///
+    ///      Only the cap NUMBER is produced here; the caller's execution path
+    ///      (one `fillMarketOrder` + one AMM leg) is unchanged from the single
+    ///      cap design, so no new settlement / balance risk is introduced.
+    ///      `amountIn` is USDC for buys and shares for sells; `preview`'s
+    ///      `cost` is in the same unit, so the remainder math is uniform.
+    function _convergeCap(
+        uint256 marketId,
+        IPrediXExchangeView.Side side,
+        CapKind kind,
+        address yesToken,
+        uint256 amountIn,
+        uint256 maxFills
+    ) internal returns (uint256 cap) {
+        // Level-1 cap: AMM effective at the full trade size. Identical quoter
+        // profile to the non-convergence path.
+        cap = _capFor(kind, yesToken, amountIn);
+        if (!_hasPool(yesToken)) return cap;
+
+        // Gate: a single preview at the Level-1 cap. If the CLOB has no eligible
+        // depth, or already absorbs the whole trade, the Level-1 cap is optimal
+        // and no refinement (no extra quotes) is performed. This keeps the
+        // common pure-AMM / CLOB-only paths on the Level-1 quoter profile; only
+        // a genuine CLOB+AMM split pays for convergence. `preview` calls the
+        // exchange, not the quoter, so it never perturbs Path-D sequences.
+        (, uint256 gateCost) = IPrediXExchangeView(exchange)
+            .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this));
+        uint256 gateRemainder = amountIn > gateCost ? amountIn - gateCost : 0;
+        if (gateCost == 0 || gateRemainder < MIN_TRADE_AMOUNT) return cap;
+
+        // Meaningful split → converge from the spot-sized effective (the
+        // selective end) toward the fixed point. BUY walks the cap UP (effective
+        // rises with size); SELL walks it DOWN (effective falls with size).
+        bool isBuy = (kind == CapKind.BUY_YES || kind == CapKind.BUY_NO);
+        uint256 conv = _capFor(kind, yesToken, MIN_TRADE_AMOUNT);
+        for (uint256 r; r < CLOB_CAP_CONVERGE_ROUNDS; ++r) {
+            (, uint256 clobCost) = IPrediXExchangeView(exchange)
+                .previewFillMarketOrder(marketId, side, conv, amountIn, maxFills, address(this));
+            uint256 remainder = amountIn > clobCost ? amountIn - clobCost : 0;
+            if (remainder < MIN_TRADE_AMOUNT) break;
+            uint256 newCap = _capFor(kind, yesToken, remainder);
+            if (isBuy ? newCap <= conv : newCap >= conv) break;
+            conv = newCap;
+        }
+        cap = conv;
+    }
+
     /// @notice Compute `mintAmount` for `buyNo` via iterative fixed-point sizing.
     /// @dev The callback flash-SELLS `mintAmount` YES (USDC ← YES) and uses the
     ///      proceeds plus the user's `usdcIn` to fund `diamond.splitPosition(mintAmount)`.
@@ -1253,7 +1347,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _clobBuyYesLimit(yesToken, usdcIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills);
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline);
@@ -1287,7 +1382,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(yesToken, exchange);
 
-        uint256 clobLimit = _clobSellYesLimit(yesToken, yesIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_YES, CapKind.SELL_YES, yesToken, yesIn, maxFills);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 yesRemaining;
         (, yesRemaining) =
@@ -1319,7 +1415,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _clobBuyNoLimit(yesToken, usdcIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills);
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline);
@@ -1351,7 +1448,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(noToken, exchange);
 
-        uint256 clobLimit = _clobSellNoLimit(yesToken, noIn);
+        uint256 clobLimit =
+            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_NO, CapKind.SELL_NO, yesToken, noIn, maxFills);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 noRemaining;
         (, noRemaining) = _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline);

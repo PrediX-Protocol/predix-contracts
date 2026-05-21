@@ -57,7 +57,8 @@ contract PrediXRouter_Quotes is RouterFixture {
         // SELL_NO: filled = USDC out, cost = NO in. Coverage for quoteSellNo
         // CLOB+AMM composition under the fixed tuple binding.
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_NO, 40e6, 50e6);
-        quoter.setExactOutResult(30e6);
+        // Scaling mock: rate 600_000 = $0.60/YES → exact-out at 50e6 noLeft = 30e6.
+        quoter.setExactOutResult(600_000);
         (uint256 total, uint256 clob, uint256 amm) = router.quoteSellNo(MARKET_ID, 100e6, 5);
         // noIn=100, cost(sharesFilled)=50 → noLeft = 50.
         // maxCost = 30e6 * 10000/9950 ≈ 30_150_754 → amm = 50_000_000 - 30_150_754 = 19_849_246
@@ -91,7 +92,7 @@ contract PrediXRouter_Quotes is RouterFixture {
     }
 
     function test_QuoteSellNo_AmmOnly() public {
-        quoter.setExactOutResult(50e6); // cost 50, noIn 100 → usdcOut = 100 - maxCost
+        quoter.setExactOutResult(500_000); // rate $0.50/YES → exact-out at 100e6 noIn = 50e6
         (uint256 total, uint256 clob, uint256 amm) = router.quoteSellNo(MARKET_ID, 100e6, 5);
         assertEq(clob, 0);
         // maxCost = 50e6 * 10000 / 9950 ≈ 50_251_256 → noIn - maxCost ≈ 49_748_744

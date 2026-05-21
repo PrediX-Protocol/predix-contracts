@@ -116,7 +116,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
         bool zfoBuyYes = address(usdc) < address(yes1);
         quoter.setExactInResult(zfoBuyYes, 2_000_000);
 
-        quoter.setExactOutResult(50e6);
+        quoter.setExactOutResult(500_000); // rate $0.50/YES → exact-out at 100e6 = 50e6
         if (zfoBuyYes) {
             poolManager.queueSwapResult(-int128(50e6), int128(int256(noIn)));
         } else {

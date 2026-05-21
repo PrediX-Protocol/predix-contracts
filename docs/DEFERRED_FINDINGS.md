@@ -389,22 +389,31 @@ deploy-blockers but each tightens the fairness or coverage posture.
 | Item | Effort | Priority | Status | Notes |
 |---|---|---|---|---|
 | Path E — close strict-cap algebraic hole | 0.5d | — | RESOLVED | Strict cap replaced with iterative safety-convergence loop; linear-pool fixed point holds the invariant (`PathD_StrictCapHole.t.sol`) |
-| Effective-price CLOB cap (profit optimization) | 0.5d | — | RESOLVED | Cap sized at AMM-effective-at-trade-size, not $1 spot; captures CLOB depth in (spot, effective] (`EffectiveCap_Routing.t.sol`) |
+| Effective-price CLOB cap (Level 1 routing) | 0.5d | — | RESOLVED | Cap sized at AMM-effective-at-trade-size, not $1 spot; captures CLOB depth in (spot, effective] (`EffectiveCap_Routing.t.sol`) |
+| Re-quote convergence (Level 2 routing) | 1d | — | RESOLVED | Cap converges to the AMM-effective at the orderbook-adjusted remainder via gated preview + re-quote; optimal CLOB/AMM split boundary (`_convergeCap`, `EffectiveCap_Routing.t.sol`) |
 | Cushion benchmark on live V4Quoter | 0.5d | Medium (post-launch) | DEFERRED | Reduce 0.5% → 0.25% if drift data supports |
 | Cap-aware sizing loop (early termination) | 0.5d | Low (post-launch) | DEFERRED | Pass `perMarketCap` into the iter loop |
 | Token-ordering reverse coverage for router PathD tests | 0.3d | Low (post-launch) | DEFERRED | Existing tests deterministically use `yes > usdc` |
 | Live Sepolia $238+ regression replay | 0.3d | Medium (pre-mainnet) | DEFERRED | Re-execute pre-fix failure tx against post-fix router |
+| Level 3 fully-interleaved (per-tick) routing | 2d | Low (not recommended) | ACCEPTED | Cost/benefit poor: ~3-4x gas (quoter per tick) for ~0.2% residual over Level 2 — documented in routing analysis |
 
 **Total deferred effort:** ~1.5 engineering days, all post-mainnet
 except the Sepolia replay which is a pre-deploy sanity check.
 
 **Resolved on this branch (Path D continuation):**
 - Strict-cap algebraic hole closed (safety-convergence loop).
-- Effective-price CLOB cap landed — the orderbook now competes against the
-  AMM at the price the trade would actually pay, not the no-impact spot. In
-  thin pools this routes more volume to resting CLOB liquidity priced between
-  spot and effective, raising taker profit at zero added quoter-call count for
-  YES paths (+1 quote for the virtual-NO mint-estimate probe).
+- Level 1 effective-price CLOB cap: cap sized at AMM-effective for the trade
+  size instead of the no-impact spot, so the orderbook competes at the price
+  the trade would actually pay.
+- Level 2 re-quote convergence: a gated convergence loop walks the cap from
+  the spot-sized effective toward the fixed point where the marginal CLOB
+  order equals the AMM effective for the leftover size — the optimal CLOB/AMM
+  split. The gate previews once at the Level-1 cap and skips convergence
+  entirely when there is no genuine CLOB+AMM split, so pure-AMM and CLOB-only
+  trades keep the Level-1 quoter profile. Only a real split pays the
+  convergence quotes (bounded by `CLOB_CAP_CONVERGE_ROUNDS = 3`). The
+  convergence produces only the cap NUMBER; the execution path (one fill +
+  one AMM leg) is unchanged, so no new settlement risk is introduced.
 
 ### Path D coverage that IS in this branch
 

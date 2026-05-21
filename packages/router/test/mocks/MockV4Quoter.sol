@@ -88,12 +88,16 @@ contract MockV4Quoter is IV4Quoter {
         revert("not used");
     }
 
-    function quoteExactOutputSingle(QuoteExactSingleParams memory)
+    /// @dev Canned `_exactOut.amountIn` is interpreted as "input cost for an
+    ///      output of 1e6" and scaled linearly with `params.exactAmount`. Mirrors
+    ///      the exact-in scaling so size-aware cap derivation (effective price at
+    ///      the actual trade size) is consistent across both quote directions.
+    function quoteExactOutputSingle(QuoteExactSingleParams memory params)
         external
         override
         returns (uint256 amountIn, uint256 gasEstimate)
     {
-        amountIn = _exactOut.amountIn;
+        amountIn = (uint256(params.exactAmount) * _exactOut.amountIn) / 1e6;
         gasEstimate = 0;
         callCount += 1;
     }

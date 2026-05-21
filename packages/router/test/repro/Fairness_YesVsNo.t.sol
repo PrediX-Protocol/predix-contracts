@@ -97,7 +97,7 @@ contract Fairness_YesVsNo is RouterFixture {
         //         = 100e6 - 50.251e6 ≈ 49.749e6.
         // Hidden cost vs theoretical (100 - 50 = 50e6) = ~0.5%.
         uint256 noIn = 100e6;
-        quoter.setExactOutResult(50e6);
+        quoter.setExactOutResult(500_000); // rate $0.50/YES → exact-out at 100e6 = 50e6
         bool zfoSellNo = address(usdc) < address(yes1);
         quoter.setExactInResult(zfoSellNo, 500_000);
 

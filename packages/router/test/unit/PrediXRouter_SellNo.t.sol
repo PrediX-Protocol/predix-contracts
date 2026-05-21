@@ -25,10 +25,11 @@ contract PrediXRouter_SellNo is RouterFixture {
     }
 
     function test_VirtualPath_SellNo_AmmOnly_Quoter() public {
-        // quoter exact-output: cost to get noIn YES = 50_000_000 (0.5 USDC per YES spot)
+        // quoter exact-output: cost to get noIn YES = 50_000_000 (0.5 USDC per YES spot).
+        // Mock scales canned linearly with size, so set the per-1e6-YES rate.
         uint256 noIn = 100e6;
         uint256 costQuote = 50e6;
-        quoter.setExactOutResult(costQuote);
+        quoter.setExactOutResult((costQuote * 1e6) / noIn); // 500_000 rate = $0.50/YES
 
         // Swap exact-out: pay costQuote USDC, receive noIn YES
         // zeroForOne = usdc < yes1 → buy YES
@@ -49,7 +50,7 @@ contract PrediXRouter_SellNo is RouterFixture {
     function test_Revert_SellNo_QuoteOutsideSafetyMargin() public {
         uint256 noIn = 100e6;
         uint256 costQuote = 50e6;
-        quoter.setExactOutResult(costQuote);
+        quoter.setExactOutResult((costQuote * 1e6) / noIn); // 500_000 rate = $0.50/YES
         // Actual cost far exceeds maxCost = costQuote / 0.97
         uint256 actualCost = 80e6; // > 50e6 / 0.97 ≈ 51.5e6
         if (address(usdc) < address(yes1)) {
