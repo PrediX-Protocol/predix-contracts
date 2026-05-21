@@ -196,6 +196,19 @@ abstract contract ExchangeStorage {
         return mkt.isResolved || mkt.refundModeActive || block.timestamp >= mkt.endTime;
     }
 
+    // ======== Synthetic MINT approval (scoped) ========
+
+    /// @dev Grant the diamond an EXACT, single-use USDC allowance for the very
+    ///      next `splitPosition` on the synthetic MINT path. The split's
+    ///      `transferFrom(exchange, ..., amount)` consumes the allowance straight
+    ///      back to zero, so the exchange never carries a standing allowance that
+    ///      a malicious diamond upgrade could use to pull idle CLOB deposits.
+    ///      Callers MUST invoke this immediately before `splitPosition` with the
+    ///      same amount.
+    function _approveSplit(uint256 amount) internal {
+        IERC20(usdc).forceApprove(diamond, amount);
+    }
+
     // ======== Dust force-clean ========
 
     /// @dev Force-clean a dust maker order whose remaining capacity is too small

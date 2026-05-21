@@ -77,8 +77,11 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
     /// @notice One-shot bootstrap. Binds the exchange to its diamond, USDC,
     ///         and initial fee recipient. MUST be called exactly once via the
     ///         proxy constructor's delegatecall.
-    /// @dev Pre-approves diamond for max USDC (synthetic MINT path needs
-    ///      diamond to pull USDC for `splitPosition`).
+    /// @dev No standing diamond allowance is granted. The synthetic MINT path
+    ///      approves the diamond an exact, single-use amount immediately before
+    ///      each `splitPosition` (see `_approveSplit`); the split consumes it
+    ///      back to zero, so an idle exchange balance is never exposed to the
+    ///      diamond's `transferFrom` right.
     function initialize(address _diamond, address _usdc, address _feeRecipient) external {
         if (_initialized) revert Exchange_AlreadyInitialized();
         if (_diamond == address(0) || _usdc == address(0) || _feeRecipient == address(0)) {
@@ -89,7 +92,6 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         feeRecipient = _feeRecipient;
         _initialized = true;
 
-        IERC20(_usdc).forceApprove(_diamond, type(uint256).max);
         emit Initialized(_diamond, _usdc, _feeRecipient);
     }
 
@@ -106,15 +108,15 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
     // ======== Admin: stale allowance cleanup ========
 
-    /// @notice Zero the USDC allowance previously granted to a diamond that is no
-    ///         longer the live binding. Gated by the CURRENT diamond's ADMIN_ROLE.
-    /// @dev The exchange grants `type(uint256).max` USDC allowance to its diamond
-    ///      at `initialize`. If a future impl upgrade rebinds the exchange to a
-    ///      new diamond, the prior diamond would retain pull rights to the
-    ///      exchange's USDC balance — this entry point closes that residual.
-    ///      Idempotent on already-zero allowances. Reverts when targeting the
-    ///      live diamond to prevent accidentally breaking the synthetic MINT
-    ///      path.
+    /// @notice Zero any USDC allowance still held by a diamond that is no longer
+    ///         the live binding. Gated by the CURRENT diamond's ADMIN_ROLE.
+    /// @dev The synthetic MINT path grants only an exact, single-use allowance
+    ///      per `splitPosition` (consumed back to zero by the split), so no
+    ///      standing allowance is expected under normal operation. This remains
+    ///      a defensive cleanup: if an impl upgrade rebinds the exchange to a new
+    ///      diamond, or any residual is ever left behind, this zeroes the stale
+    ///      grant. Idempotent on already-zero allowances. Reverts when targeting
+    ///      the live diamond.
     function revokeOldDiamondAllowance(address oldDiamond) external onlyAdmin {
         if (oldDiamond == address(0)) revert ZeroAddress();
         if (oldDiamond == diamond) revert Exchange_CannotRevokeCurrentDiamond();

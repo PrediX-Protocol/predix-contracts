@@ -470,6 +470,7 @@ abstract contract MakerPath is ExchangeStorage {
         uint256 usdcAvailable = IERC20(usdc).balanceOf(address(this));
         if (usdcAvailable < fillAmt) revert IPrediXExchange.Exchange_InsufficientBalanceForMint();
 
+        _approveSplit(fillAmt);
         IMarketFacet(diamond).splitPosition(taker.marketId, fillAmt);
 
         bool takerIsBuyYes = taker.side == IPrediXExchange.Side.BUY_YES;

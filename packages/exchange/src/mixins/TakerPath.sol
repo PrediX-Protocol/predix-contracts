@@ -329,6 +329,7 @@ abstract contract TakerPath is ExchangeStorage {
             makerOrder.depositLocked -= uint128(makerUsdc);
             fullyFilled = makerOrder.filled >= makerOrder.amount;
 
+            _approveSplit(matchAmount);
             IMarketFacet(diamond).splitPosition(ctx.marketId, matchAmount);
 
             (, address makerOut) = ctx.takerSide == IPrediXExchange.Side.BUY_YES
