@@ -24,6 +24,7 @@ in a header block; the table below is the canonical entry point.
 | [`TEST_TAXONOMY.md`](TEST_TAXONOMY.md) | engineers, auditors | Reference | The 5-layer test strategy (unit, integration, fork, staging smoke, mainnet smoke). What lives where and how each layer is run. |
 | [`STATIC_ANALYSIS_STATUS.md`](STATIC_ANALYSIS_STATUS.md) | engineers, auditors | Active | Current state of static-analysis tooling integration (Slither, Aderyn) and known limitations. |
 | [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) | engineers | Active | Local development setup, build/test commands, contribution flow. |
+| [`TRADING_FLOW_AND_QUOTING.md`](TRADING_FLOW_AND_QUOTING.md) | frontend, integration | Active | How a user's funds move through each trade, how routing picks the cheapest venue (cap convergence), YES-vs-NO differences, and how to estimate amount received + which price to show in the UI. |
 
 ### Operations — runbooks for deploy and incident response
 
