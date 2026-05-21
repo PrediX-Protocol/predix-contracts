@@ -30,7 +30,7 @@ contract NEW_02_ChainlinkDiamondBinding is Test {
         vm.warp(SNAPSHOT_AT - 1 days);
 
         diamondMock = new MockDiamondMarket();
-        diamondMock.setMarket(KNOWN_MARKET, true);
+        diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT);
 
         oracleContract = new ChainlinkOracle(admin, address(0), address(diamondMock));
         bytes32 registrarRole = oracleContract.REGISTRAR_ROLE();
@@ -70,14 +70,14 @@ contract NEW_02_ChainlinkDiamondBinding is Test {
     }
 
     // -------------------------------------------------------------------
-    // NEW-02 defense-in-depth: snapshot-after-endTime guard
+    // snapshot must equal endTime guard
     // -------------------------------------------------------------------
 
     function test_Revert_NEW_02_registerRejectsSnapshotAfterEndTime() public {
-        // Market endTime one second BEFORE snapshotAt — config can never resolve.
+        // Market endTime one second BEFORE snapshotAt — snapshot != endTime.
         diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT - 1);
         vm.prank(registrar);
-        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotAfterMarketEnd.selector);
+        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotNotMarketEnd.selector);
         oracleContract.register(
             KNOWN_MARKET,
             IChainlinkOracle.Config({feed: address(feed), threshold: THRESHOLD, gte: true, snapshotAt: SNAPSHOT_AT})
@@ -95,14 +95,15 @@ contract NEW_02_ChainlinkDiamondBinding is Test {
         assertEq(oracleContract.getConfig(KNOWN_MARKET).snapshotAt, SNAPSHOT_AT);
     }
 
-    function test_NEW_02_registerAcceptsSnapshotBeforeEndTime() public {
-        // Happy path — snapshotAt strictly before endTime.
+    function test_Revert_NEW_02_registerRejectsSnapshotBeforeEndTime() public {
+        // snapshotAt strictly before endTime is rejected: it would fix the
+        // outcome while the market still trades.
         diamondMock.setMarketWithEndTime(KNOWN_MARKET, true, SNAPSHOT_AT + 1 days);
         vm.prank(registrar);
+        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotNotMarketEnd.selector);
         oracleContract.register(
             KNOWN_MARKET,
             IChainlinkOracle.Config({feed: address(feed), threshold: THRESHOLD, gte: true, snapshotAt: SNAPSHOT_AT})
         );
-        assertEq(oracleContract.getConfig(KNOWN_MARKET).feed, address(feed));
     }
 }

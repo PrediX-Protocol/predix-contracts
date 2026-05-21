@@ -31,7 +31,7 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         MockChainlinkAggregator sequencer = new MockChainlinkAggregator(0, "L2 Sequencer");
 
         MockDiamondMarket diamondMock = new MockDiamondMarket();
-        diamondMock.setMarket(MARKET_ID, true);
+        diamondMock.setMarketWithEndTime(MARKET_ID, true, SNAPSHOT_AT);
         ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer), address(diamondMock));
         bytes32 registrarRole = l2Oracle.REGISTRAR_ROLE();
         vm.prank(admin);
@@ -63,7 +63,7 @@ contract NEW_M8_SequencerRoundInvalid is Test {
         sequencer.setAnswer(0, block.timestamp - 2 hours); // up for 2h, past 1h grace
 
         MockDiamondMarket diamondMock = new MockDiamondMarket();
-        diamondMock.setMarket(MARKET_ID, true);
+        diamondMock.setMarketWithEndTime(MARKET_ID, true, SNAPSHOT_AT);
         ChainlinkOracle l2Oracle = new ChainlinkOracle(admin, address(sequencer), address(diamondMock));
         bytes32 registrarRole = l2Oracle.REGISTRAR_ROLE();
         vm.prank(admin);

@@ -20,6 +20,7 @@ contract FinalH08_RegisterHardening is Test {
     ChainlinkOracle internal oracleContract;
     MockChainlinkAggregator internal healthyFeed;
     MockChainlinkAggregator internal unhealthyFeed;
+    MockDiamondMarket internal diamondMock;
 
     address internal admin = makeAddr("admin");
     address internal registrar = makeAddr("registrar");
@@ -32,8 +33,8 @@ contract FinalH08_RegisterHardening is Test {
     function setUp() public {
         vm.warp(SNAPSHOT_AT - 1 days);
 
-        MockDiamondMarket diamondMock = new MockDiamondMarket();
-        diamondMock.setMarket(MARKET_ID, true);
+        diamondMock = new MockDiamondMarket();
+        diamondMock.setMarketWithEndTime(MARKET_ID, true, SNAPSHOT_AT);
 
         oracleContract = new ChainlinkOracle(admin, address(0), address(diamondMock));
         bytes32 registrarRole = oracleContract.REGISTRAR_ROLE();
@@ -83,6 +84,7 @@ contract FinalH08_RegisterHardening is Test {
 
     function test_Register_SnapshotAtMaxBoundary_OK() public {
         uint64 ok = uint64(block.timestamp + oracleContract.MAX_SNAPSHOT_FUTURE());
+        diamondMock.setMarketWithEndTime(MARKET_ID, true, ok);
         vm.prank(registrar);
         oracleContract.register(
             MARKET_ID,

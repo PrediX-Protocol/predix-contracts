@@ -32,7 +32,7 @@ contract Fin02_ChainlinkAdjacency is Test {
         vm.warp(SNAPSHOT_AT - 1 days);
 
         diamondMock = new MockDiamondMarket();
-        diamondMock.setMarket(MARKET_ID, true);
+        diamondMock.setMarketWithEndTime(MARKET_ID, true, SNAPSHOT_AT);
 
         oracleContract = new ChainlinkOracle(admin, address(0), address(diamondMock));
         bytes32 registrarRole = oracleContract.REGISTRAR_ROLE();

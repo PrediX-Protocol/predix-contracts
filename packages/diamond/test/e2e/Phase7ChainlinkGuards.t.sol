@@ -45,21 +45,21 @@ contract Phase7ChainlinkGuards is Phase7ForkBase {
     }
 
     // =================================================================
-    // NEW-02 defensive — snapshotAt > market.endTime rejected at register
+    // Register — snapshotAt != market.endTime rejected
     // =================================================================
 
-    function test_NEW_02_Register_SnapshotAfterMarketEnd_Reverts() public {
+    function test_Register_SnapshotNotMarketEnd_Reverts() public {
         ChainlinkOracle oracle = _deployOracle(address(0));
         uint256 marketId = _createLiveMarket(1 hours);
 
-        // snapshotAt = endTime + 1 — brickable config the defensive check rejects.
+        // snapshotAt = endTime + 1 — not equal to endTime, rejected.
         IMarketFacet.MarketView memory mkt = market.getMarket(marketId);
         MockE2EAggregator feed = new MockE2EAggregator(8, 1000e8, block.timestamp);
 
         IChainlinkOracle.Config memory cfg = _baseConfig(address(feed), uint64(mkt.endTime) + 1);
 
         vm.prank(registrar);
-        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotAfterMarketEnd.selector);
+        vm.expectRevert(IChainlinkOracle.ChainlinkOracle_SnapshotNotMarketEnd.selector);
         oracle.register(marketId, cfg);
     }
 
@@ -72,7 +72,7 @@ contract Phase7ChainlinkGuards is Phase7ForkBase {
         uint256 marketId = _createLiveMarket(1 hours);
 
         MockE2EAggregator feed = new MockE2EAggregator(8, 1000e8, block.timestamp);
-        uint64 snapshotAt = uint64(block.timestamp + 10 minutes);
+        uint64 snapshotAt = uint64(market.getMarket(marketId).endTime);
 
         vm.prank(registrar);
         oracle.register(marketId, _baseConfig(address(feed), snapshotAt));
@@ -95,7 +95,7 @@ contract Phase7ChainlinkGuards is Phase7ForkBase {
         uint256 marketId = _createLiveMarket(1 hours);
 
         MockE2EAggregator feed = new MockE2EAggregator(8, 1000e8, block.timestamp);
-        uint64 snapshotAt = uint64(block.timestamp + 10 minutes);
+        uint64 snapshotAt = uint64(market.getMarket(marketId).endTime);
 
         vm.prank(registrar);
         oracle.register(marketId, _baseConfig(address(feed), snapshotAt));
@@ -124,7 +124,7 @@ contract Phase7ChainlinkGuards is Phase7ForkBase {
         uint256 marketId = _createLiveMarket(1 hours);
 
         MockE2EAggregator feed = new MockE2EAggregator(8, 1000e8, block.timestamp);
-        uint64 snapshotAt = uint64(block.timestamp + 10 minutes);
+        uint64 snapshotAt = uint64(market.getMarket(marketId).endTime);
 
         vm.prank(registrar);
         oracle.register(marketId, _baseConfig(address(feed), snapshotAt));
