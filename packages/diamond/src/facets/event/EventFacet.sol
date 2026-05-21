@@ -210,6 +210,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
 
             uint256 amount = m.totalCollateral - outstanding;
             m.totalCollateral -= amount;
+            ms.totalCollateralLocked -= amount;
             total += amount;
             emit EventChildSwept(eventId, childId, amount);
         }

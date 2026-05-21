@@ -494,7 +494,7 @@ abstract contract MainnetForkFixture is DiamondFixture {
     // =========================================================================
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](27);
+        s = new bytes4[](29);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -522,6 +522,8 @@ abstract contract MainnetForkFixture is DiamondFixture {
         s[24] = IMarketFacet.clearPerMarketRedemptionFee.selector;
         s[25] = IMarketFacet.defaultRedemptionFeeBps.selector;
         s[26] = IMarketFacet.effectiveRedemptionFeeBps.selector;
+        s[27] = IMarketFacet.rescueSurplus.selector;
+        s[28] = IMarketFacet.totalCollateralLocked.selector;
     }
 
     function _eventSelectors() internal pure returns (bytes4[] memory s) {

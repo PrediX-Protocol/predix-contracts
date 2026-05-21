@@ -93,8 +93,15 @@ interface IMarketFacet {
         uint256 indexed marketId, address indexed user, uint256 yesBurned, uint256 noBurned, uint256 payout
     );
 
-    /// @notice Emitted when an admin sweeps leftover collateral after the grace period.
+    /// @notice Emitted when an admin sweeps a market's residual after the grace period.
+    /// @dev `amount` is `totalCollateral - outstanding winning supply`, which is 0 while
+    ///      any live position still backs the market — the sweep never seizes claimable
+    ///      funds. Use `rescueSurplus` to recover collateral sent outside the split flow.
     event UnclaimedSwept(uint256 indexed marketId, address indexed recipient, uint256 amount);
+
+    /// @notice Emitted when an admin recovers collateral that reached the diamond outside
+    ///         the split flow (`balanceOf(diamond) - totalCollateralLocked`).
+    event SurplusRescued(address indexed recipient, uint256 amount);
 
     /// @notice Emitted when an admin adds an oracle to the approved set.
     event OracleApproved(address indexed oracle);
@@ -224,10 +231,23 @@ interface IMarketFacet {
     /// @return payout Amount of USDC transferred to the caller; equals `min(yesAmount, noAmount)`.
     function refund(uint256 marketId, uint256 yesAmount, uint256 noAmount) external returns (uint256 payout);
 
-    /// @notice After `GRACE_PERIOD` (365 days) post-finalization, sweep any leftover
-    ///         collateral to `feeRecipient`. Restricted to `ADMIN_ROLE`. Bypasses pause.
-    /// @return amount Amount swept.
+    /// @notice After `GRACE_PERIOD` (365 days) post-finalization, sweep a market's
+    ///         residual (`totalCollateral - outstanding winning supply`) to `feeRecipient`.
+    ///         Restricted to `ADMIN_ROLE`. Bypasses pause.
+    /// @dev By the `INV-1` lockstep this residual is 0 whenever a live position still
+    ///      backs the market, so the call never seizes claimable funds; it is primarily
+    ///      an accounting tripwire (reverts `Market_AccountingBroken` on undercollateral).
+    /// @return amount Amount swept (typically 0).
     function sweepUnclaimed(uint256 marketId) external returns (uint256 amount);
+
+    /// @notice Recover collateral that reached the diamond outside the split flow
+    ///         (a direct transfer / airdrop), computed as
+    ///         `collateralToken.balanceOf(diamond) - totalCollateralLocked`. Restricted
+    ///         to `ADMIN_ROLE`. Bypasses pause.
+    /// @dev Never reduces `totalCollateralLocked`, so it cannot touch collateral backing
+    ///      any market position — it only forwards genuine surplus to `feeRecipient`.
+    /// @return surplus Amount forwarded to `feeRecipient` (0 when there is no surplus).
+    function rescueSurplus() external returns (uint256 surplus);
 
     // ---------------------------------------------------------------------
     // Admin config
@@ -300,6 +320,11 @@ interface IMarketFacet {
 
     /// @notice Total number of markets ever created. Latest id == this value.
     function marketCount() external view returns (uint256);
+
+    /// @notice Running sum of every market's `totalCollateral`. Equals the collateral the
+    ///         diamond must hold to back all live positions; `collateralToken.balanceOf`
+    ///         at or above this value is the protocol-wide solvency condition.
+    function totalCollateralLocked() external view returns (uint256);
 
     /// @notice Global default redemption fee, in basis points (10000 = 100%).
     function defaultRedemptionFeeBps() external view returns (uint256);

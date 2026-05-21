@@ -80,6 +80,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (cap > 0 && m.totalCollateral + amount > cap) revert Market_ExceedsPerMarketCap();
 
         m.totalCollateral += amount;
+        LibMarketStorage.layout().totalCollateralLocked += amount;
         LibConfigStorage.layout().collateralToken.safeTransferFrom(msg.sender, address(this), amount);
 
         IOutcomeToken(m.yesToken).mint(msg.sender, amount);
@@ -100,6 +101,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         IOutcomeToken(m.yesToken).burn(msg.sender, amount);
         IOutcomeToken(m.noToken).burn(msg.sender, amount);
         m.totalCollateral -= amount;
+        LibMarketStorage.layout().totalCollateralLocked -= amount;
 
         LibConfigStorage.layout().collateralToken.safeTransfer(msg.sender, amount);
         emit PositionMerged(marketId, msg.sender, amount);
@@ -221,6 +223,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
             // Effects: decrement collateral by the FULL winning amount so fee + payout
             // sum exactly to `winningBurned` (integer math is exact by construction).
             m.totalCollateral -= winningBurned;
+            LibMarketStorage.layout().totalCollateralLocked -= winningBurned;
 
             // Interactions
             LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
@@ -286,6 +289,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         IOutcomeToken(m.noToken).burn(msg.sender, refundable);
 
         m.totalCollateral -= payout;
+        LibMarketStorage.layout().totalCollateralLocked -= payout;
         LibConfigStorage.layout().collateralToken.safeTransfer(msg.sender, payout);
 
         emit MarketRefunded(marketId, msg.sender, refundable, refundable, payout);
@@ -313,10 +317,33 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         amount = m.totalCollateral - outstanding;
         if (amount == 0) return 0;
         m.totalCollateral -= amount;
+        LibMarketStorage.layout().totalCollateralLocked -= amount;
 
         LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
         cfg.collateralToken.safeTransfer(cfg.feeRecipient, amount);
         emit UnclaimedSwept(marketId, cfg.feeRecipient, amount);
+    }
+
+    /// @inheritdoc IMarketFacet
+    /// @dev Recovers collateral that reached the diamond OUTSIDE the split flow
+    ///      (e.g. a direct transfer / airdrop), defined as
+    ///      `collateralToken.balanceOf(this) - totalCollateralLocked`. Because
+    ///      `totalCollateralLocked` is the lockstep sum of every market's backing,
+    ///      this can never seize collateral owed to a live or unredeemed position —
+    ///      that distinguishes it from the per-market `sweepUnclaimed`, which is a
+    ///      no-op while live supply exists. Bypasses the pause guard like the other
+    ///      admin recovery paths. Returns 0 when there is no surplus.
+    function rescueSurplus() external override nonReentrant returns (uint256 surplus) {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        uint256 locked = LibMarketStorage.layout().totalCollateralLocked;
+        uint256 balance = cfg.collateralToken.balanceOf(address(this));
+        if (balance <= locked) return 0;
+
+        surplus = balance - locked;
+        cfg.collateralToken.safeTransfer(cfg.feeRecipient, surplus);
+        emit SurplusRescued(cfg.feeRecipient, surplus);
     }
 
     // -----------------------------------------------------------------------
@@ -476,6 +503,11 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     /// @inheritdoc IMarketFacet
     function marketCount() external view override returns (uint256) {
         return LibMarketStorage.layout().marketCount;
+    }
+
+    /// @inheritdoc IMarketFacet
+    function totalCollateralLocked() external view override returns (uint256) {
+        return LibMarketStorage.layout().totalCollateralLocked;
     }
 
     /// @inheritdoc IMarketFacet

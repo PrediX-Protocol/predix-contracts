@@ -40,6 +40,14 @@ library LibMarketStorage {
     struct Layout {
         uint256 marketCount;
         mapping(uint256 => MarketData) markets;
+        /// @dev Append-only field added in v1.5. Running sum of every market's
+        ///      `totalCollateral`, maintained in lockstep with split / merge /
+        ///      redeem / refund / sweep. Lets `rescueSurplus` recover only
+        ///      collateral sent to the diamond OUTSIDE the split flow
+        ///      (`balanceOf(diamond) - totalCollateralLocked`) without ever
+        ///      touching backing for live outcome-token supply. Also doubles as a
+        ///      protocol-wide solvency reference (`balance >= totalCollateralLocked`).
+        uint256 totalCollateralLocked;
     }
 
     function layout() internal pure returns (Layout storage l) {
