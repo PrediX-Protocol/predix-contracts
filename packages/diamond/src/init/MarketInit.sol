@@ -5,16 +5,19 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
+import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 
 import {LibConfigStorage} from "@predix/diamond/libraries/LibConfigStorage.sol";
 import {LibDiamondStorage} from "@predix/diamond/libraries/LibDiamondStorage.sol";
 
 /// @title MarketInit
 /// @notice One-shot bootstrap for the market facet: stores collateral token, fee
-///         recipient, fee level, default per-market cap, and registers `IMarketFacet`
-///         in the ERC-165 supported-interfaces map.
-/// @dev Designed to be delegatecalled from a `diamondCut` that adds `MarketFacet`.
-///      Re-runs are blocked by a guard on its own dedicated storage slot.
+///         recipient, fee level, default per-market cap, and registers
+///         `IMarketFacet` + `IEventFacet` in the ERC-165 supported-interfaces map.
+/// @dev Designed to be delegatecalled from the `diamondCut` that adds `MarketFacet`
+///      and `EventFacet` together (see `DiamondDeployLib.wireMarketAndEvent`), so
+///      both interface ids are advertised the moment their selectors become
+///      routable. Re-runs are blocked by a guard on its own dedicated storage slot.
 contract MarketInit {
     error MarketInit_AlreadyInitialized();
     error MarketInit_ZeroCollateral();
@@ -47,7 +50,9 @@ contract MarketInit {
         cfg.marketCreationFee = args.marketCreationFee;
         cfg.defaultPerMarketCap = args.defaultPerMarketCap;
 
-        LibDiamondStorage.layout().supportedInterfaces[type(IMarketFacet).interfaceId] = true;
+        LibDiamondStorage.Layout storage ds = LibDiamondStorage.layout();
+        ds.supportedInterfaces[type(IMarketFacet).interfaceId] = true;
+        ds.supportedInterfaces[type(IEventFacet).interfaceId] = true;
     }
 
     function _isInitialized() private view returns (bool flag) {
