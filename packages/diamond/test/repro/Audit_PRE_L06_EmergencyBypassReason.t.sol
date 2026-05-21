@@ -7,13 +7,21 @@ import {IOracle} from "@predix/shared/interfaces/IOracle.sol";
 import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
 import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {EventFixture} from "../utils/EventFixture.sol";
 
 /// @dev Minimal oracle that always reverts on isResolved — used to exercise
 ///      the `OracleUnreachable` path on both market and event emergency flows.
-contract RevertingOracle is IOracle, IEventOracle {
+contract RevertingOracle is IOracle, IEventOracle, IERC165 {
     error AlwaysReverts();
+
+    // Advertises IEventOracle so it clears createEvent's capability gate; the
+    // resolution calls still revert, modeling an oracle that breaks AFTER an
+    // event is bound to it (the realistic OracleUnreachable path).
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IEventOracle).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
 
     function isResolved(uint256) external pure returns (bool) {
         revert AlwaysReverts();

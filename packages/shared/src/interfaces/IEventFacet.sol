@@ -79,6 +79,11 @@ interface IEventFacet {
     error Event_NotCreator();
     error Event_ZeroOracle();
     error Event_OracleNotApproved();
+    /// @notice Reverts when the oracle passed to `createEvent` does not advertise
+    ///         `IEventOracle` via ERC-165. An event bound to a binary-only oracle
+    ///         could never settle through `resolveEvent`, leaving it stuck until
+    ///         emergency resolution.
+    error Event_OracleNotEventCapable();
     error Event_OracleNotResolved();
     error Event_TooEarlyForEmergency();
     error Event_OracleResolvedUseResolve();

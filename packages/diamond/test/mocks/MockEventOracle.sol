@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
 
-contract MockEventOracle is IEventOracle {
+contract MockEventOracle is IEventOracle, IERC165 {
     error MockEventOracle_NotResolved();
 
     mapping(uint256 => bool) internal _resolved;
@@ -21,5 +23,9 @@ contract MockEventOracle is IEventOracle {
     function eventOutcome(uint256 eventId) external view override returns (uint256) {
         if (!_resolved[eventId]) revert MockEventOracle_NotResolved();
         return _outcome[eventId];
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IEventOracle).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

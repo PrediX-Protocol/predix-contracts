@@ -3,6 +3,7 @@ pragma solidity 0.8.34;
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IEventOracle} from "@predix/shared/interfaces/IEventOracle.sol";
@@ -64,6 +65,12 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         if (endTime <= block.timestamp) revert Event_InvalidEndTime();
         if (oracle == address(0)) revert Event_ZeroOracle();
         if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Event_OracleNotApproved();
+        // The oracle must resolve multi-outcome events: bind only to one that
+        // advertises IEventOracle. A binary-only oracle would leave the event
+        // unresolvable via resolveEvent (stuck until emergency).
+        if (!ERC165Checker.supportsInterface(oracle, type(IEventOracle).interfaceId)) {
+            revert Event_OracleNotEventCapable();
+        }
 
         uint256 n = candidateQuestions.length;
         if (n < MIN_CANDIDATES) revert Event_TooFewCandidates();

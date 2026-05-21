@@ -55,6 +55,13 @@ contract ManualOracle is IManualOracle, AccessControl {
         diamond = diamond_;
     }
 
+    /// @notice ERC-165 support. Advertises `IEventOracle` so the diamond's
+    ///         `createEvent` capability check recognizes this oracle as
+    ///         event-resolvable, alongside the AccessControl interfaces.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IEventOracle).interfaceId || super.supportsInterface(interfaceId);
+    }
+
     /// @inheritdoc IManualOracle
     function report(uint256 marketId, bool outcome_) external onlyRole(REPORTER_ROLE) {
         Resolution storage r = _resolutions[marketId];
