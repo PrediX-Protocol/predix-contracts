@@ -21,4 +21,20 @@ contract MockDiamondStatus {
     {
         return (address(0), address(0), endTimeOf[marketId], false, false);
     }
+
+    mapping(uint256 => uint256) public eventEndTimeOf;
+    mapping(uint256 => uint256) public eventCandidateCountOf;
+
+    function setEventStatus(uint256 eventId, uint256 endTime, uint256 candidateCount) external {
+        eventEndTimeOf[eventId] = endTime;
+        eventCandidateCountOf[eventId] = candidateCount;
+    }
+
+    function getEventStatus(uint256 eventId)
+        external
+        view
+        returns (uint256 endTime, uint256 candidateCount, bool isResolved, bool refundModeActive)
+    {
+        return (eventEndTimeOf[eventId], eventCandidateCountOf[eventId], false, false);
+    }
 }
