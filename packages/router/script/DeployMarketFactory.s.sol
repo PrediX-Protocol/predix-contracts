@@ -35,7 +35,18 @@ contract DeployMarketFactory is Script {
         uint24 lpFeeFlag = uint24(vm.envUint("LP_FEE_FLAG"));
         int24 tickSpacing = int24(vm.envInt("TICK_SPACING"));
 
-        vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        // Deployer key resolution mirrors DeployAll / DeployTestUSDC: MNEMONIC
+        // (BIP-44 index 0) takes precedence over DEPLOYER_PRIVATE_KEY so the
+        // factory is deployed by the same operator account as the rest of the stack.
+        uint256 deployerKey;
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        if (bytes(mnemonic).length > 0) {
+            deployerKey = vm.deriveKey(mnemonic, 0);
+        } else {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
+
+        vm.startBroadcast(deployerKey);
         factory = address(new PrediXMarketFactory(poolManager, diamond, usdc, hook, lpFeeFlag, tickSpacing));
         vm.stopBroadcast();
 
