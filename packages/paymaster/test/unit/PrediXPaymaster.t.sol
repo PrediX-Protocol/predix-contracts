@@ -379,4 +379,40 @@ contract PrediXPaymasterTest is Test {
         vm.expectRevert(IPrediXPaymaster.CallDataTooShort.selector);
         paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
     }
+
+    /// @notice A non-`execute` selector (e.g. `executeBatch`) whose callData is
+    ///         long enough to decode an address-shaped word must still be
+    ///         rejected — otherwise it would bypass the target allowlist by
+    ///         decoding the ABI offset pointer as a destination. (P-01 / P-05)
+    function test_Revert_PM_ValidatePaymasterUserOp_UnsupportedSelector() public {
+        uint48 validUntil = uint48(block.timestamp + 300);
+        uint48 validAfter = uint48(block.timestamp);
+        PackedUserOperation memory userOp = _buildUserOp(validUntil, validAfter, signerKey);
+
+        // executeBatch(address[],uint256[],bytes[]) — wrong selector, well over
+        // the 100-byte minimum, so the selector guard (not the length guard) trips.
+        bytes4 batchSel = bytes4(keccak256("executeBatch(address[],uint256[],bytes[])"));
+        userOp.callData = abi.encodeWithSelector(batchSel, new address[](1), new uint256[](1), new bytes[](1));
+
+        vm.prank(address(entryPoint));
+        vm.expectRevert(IPrediXPaymaster.UnsupportedExecuteSelector.selector);
+        paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0);
+    }
+
+    /// @notice The owner cannot allowlist the paymaster itself — sponsoring a
+    ///         UserOp that re-enters the paymaster could drain the deposit. (P-02)
+    function test_Revert_PM_SetAllowedTarget_CriticalTarget_Self() public {
+        vm.prank(owner);
+        vm.expectRevert(IPrediXPaymaster.CriticalTargetBlocked.selector);
+        paymaster.setAllowedTarget(address(paymaster), true);
+    }
+
+    /// @notice The owner cannot allowlist the EntryPoint — sponsoring a UserOp
+    ///         that calls the EntryPoint (e.g. withdrawTo) could drain the
+    ///         deposit. (P-02)
+    function test_Revert_PM_SetAllowedTarget_CriticalTarget_EntryPoint() public {
+        vm.prank(owner);
+        vm.expectRevert(IPrediXPaymaster.CriticalTargetBlocked.selector);
+        paymaster.setAllowedTarget(address(entryPoint), true);
+    }
 }
