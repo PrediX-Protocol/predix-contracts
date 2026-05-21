@@ -1104,16 +1104,20 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         cap = _capFor(kind, yesToken, amountIn);
         if (!_hasPool(yesToken)) return cap;
 
-        // Gate: a single preview at the Level-1 cap. If the CLOB has no eligible
-        // depth, or already absorbs the whole trade, the Level-1 cap is optimal
-        // and no refinement (no extra quotes) is performed. This keeps the
-        // common pure-AMM / CLOB-only paths on the Level-1 quoter profile; only
-        // a genuine CLOB+AMM split pays for convergence. `preview` calls the
-        // exchange, not the quoter, so it never perturbs Path-D sequences.
+        // Gate: a single preview at the Level-1 (most permissive) cap. If the
+        // CLOB has NO eligible depth at all, there is no split to optimise — the
+        // AMM takes everything and the cap is irrelevant, so return the Level-1
+        // cap on the same quoter profile as the non-convergence path. `preview`
+        // calls the exchange, not the quoter, so it never perturbs Path-D
+        // sequences.
+        //
+        // Note: a `gateCost == amountIn` (CLOB absorbs the whole budget at the
+        // permissive cap) does NOT short-circuit — that is precisely the
+        // over-take case convergence must correct, because a tighter cap can
+        // route the marginal tail to a cheaper AMM remainder.
         (, uint256 gateCost) = IPrediXExchangeView(exchange)
             .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this));
-        uint256 gateRemainder = amountIn > gateCost ? amountIn - gateCost : 0;
-        if (gateCost == 0 || gateRemainder < MIN_TRADE_AMOUNT) return cap;
+        if (gateCost == 0) return cap;
 
         // Meaningful split → converge from the spot-sized effective (the
         // selective end) toward the fixed point. BUY walks the cap UP (effective

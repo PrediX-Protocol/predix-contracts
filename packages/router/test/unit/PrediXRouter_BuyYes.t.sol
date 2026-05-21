@@ -33,7 +33,10 @@ contract PrediXRouter_BuyYes is RouterFixture {
         assertEq(yes1.balanceOf(alice), 1_000_000e6 + 200e6, "alice yes");
         assertEq(usdc.balanceOf(address(router)), 0, "router usdc zero");
         assertEq(yes1.balanceOf(address(router)), 0, "router yes zero");
-        assertEq(hook.commitCount(), 1, "CLOB cap probe commits for quoter");
+        // Level-2 convergence runs once CLOB depth is detected: Level-1 cap
+        // quote + convergence seed quote = 2 commits. No AMM leg (CLOB took
+        // the whole budget) so no swap commit.
+        assertEq(hook.commitCount(), 2, "Level-1 cap + convergence seed quote");
     }
 
     function test_HappyPath_AmmOnly() public {
