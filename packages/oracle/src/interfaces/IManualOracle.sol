@@ -38,6 +38,11 @@ interface IManualOracle is IOracle, IEventOracle {
     /// @notice Reverts when `reopenReport`/`reopenEventReport` is called outside an
     ///         active report's challenge window (not reported, or already finalized).
     error ManualOracle_ChallengeWindowClosed();
+    /// @notice Reverts when a revoke/renounce would remove the final
+    ///         `DEFAULT_ADMIN_ROLE` holder. An empty admin set is irrecoverable:
+    ///         no `REPORTER_ROLE` could ever be rotated and `setChallengeDelay`
+    ///         would freeze permanently.
+    error ManualOracle_LastAdmin();
 
     // -- Event events/errors --
 

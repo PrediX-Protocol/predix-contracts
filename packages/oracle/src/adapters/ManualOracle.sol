@@ -85,6 +85,41 @@ contract ManualOracle is IManualOracle, AccessControl {
         return interfaceId == type(IEventOracle).interfaceId || super.supportsInterface(interfaceId);
     }
 
+    // -----------------------------------------------------------------------
+    // Admin lockout protection
+    // -----------------------------------------------------------------------
+
+    /// @dev Live count of `DEFAULT_ADMIN_ROLE` holders. OZ `AccessControl` does
+    ///      not track membership counts, so maintain one here to back the
+    ///      last-admin guard below.
+    uint256 private _defaultAdminCount;
+
+    /// @dev Keep `_defaultAdminCount` in step with admin grants. Both the
+    ///      constructor grant and `grantRole` funnel through here.
+    function _grantRole(bytes32 role, address account) internal override returns (bool granted) {
+        granted = super._grantRole(role, account);
+        if (granted && role == DEFAULT_ADMIN_ROLE) {
+            unchecked {
+                ++_defaultAdminCount;
+            }
+        }
+    }
+
+    /// @dev Block any revoke/renounce that would empty the admin set. Both
+    ///      `revokeRole` and `renounceRole` funnel through `_revokeRole`, so a
+    ///      single guard here covers both paths.
+    function _revokeRole(bytes32 role, address account) internal override returns (bool revoked) {
+        if (role == DEFAULT_ADMIN_ROLE && _defaultAdminCount <= 1 && hasRole(role, account)) {
+            revert ManualOracle_LastAdmin();
+        }
+        revoked = super._revokeRole(role, account);
+        if (revoked && role == DEFAULT_ADMIN_ROLE) {
+            unchecked {
+                --_defaultAdminCount;
+            }
+        }
+    }
+
     /// @inheritdoc IManualOracle
     function setChallengeDelay(uint256 newDelay) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newDelay > MAX_CHALLENGE_DELAY) revert ManualOracle_DelayTooLong();

@@ -149,6 +149,11 @@ interface IChainlinkOracle is IOracle {
     ///         itself may be stale and its "up" answer unreliable.
     error ChainlinkOracle_SequencerStale();
 
+    /// @notice Reverts when a revoke/renounce would remove the final
+    ///         `DEFAULT_ADMIN_ROLE` holder. An empty admin set is irrecoverable:
+    ///         no `REGISTRAR_ROLE` could ever be granted again.
+    error ChainlinkOracle_LastAdmin();
+
     /// @notice The configured L2 sequencer uptime feed, or `address(0)` on L1 deployments.
     function sequencerUptimeFeed() external view returns (address);
 
