@@ -62,6 +62,10 @@ interface IEventFacet {
     /// @notice Emitted per-child when `sweepUnclaimedEvent` recovers residual collateral.
     event EventChildSwept(uint256 indexed eventId, uint256 indexed childMarketId, uint256 amount);
 
+    /// @notice Emitted when a new outcome (child market) is appended to a live event.
+    ///         The child also emits its own `IMarketFacet.MarketCreated` in the same tx.
+    event EventOutcomeAdded(uint256 indexed eventId, uint256 indexed marketId, string question);
+
     // ---------------------------------------------------------------------
     // Errors
     // ---------------------------------------------------------------------
@@ -87,6 +91,10 @@ interface IEventFacet {
     error Event_OracleNotResolved();
     error Event_TooEarlyForEmergency();
     error Event_OracleResolvedUseResolve();
+    /// @notice Reverts when `addEventOutcome` is called on an event whose `endTime`
+    ///         has already passed. Outcomes may only be appended while the event is
+    ///         still live so every child shares an identical, future deadline.
+    error Event_Ended();
 
     // ---------------------------------------------------------------------
     // Lifecycle
@@ -108,6 +116,20 @@ interface IEventFacet {
     function createEvent(string calldata name, string[] calldata candidateQuestions, uint256 endTime, address oracle)
         external
         returns (uint256 eventId, uint256[] memory marketIds);
+
+    /// @notice Append one outcome (child market) to an existing live event. The new
+    ///         child inherits the event's `endTime`, its collective oracle
+    ///         (`oracle = address(0)`, resolved via the event), and `eventId`, so it
+    ///         stays consistent with the existing candidates. Restricted to
+    ///         `CREATOR_ROLE`. Charges `marketCreationFee` like any market creation.
+    /// @dev    Callable only while the event is live: not resolved, not in refund
+    ///         mode, and `block.timestamp < endTime`. Bounded by `MAX_CANDIDATES`.
+    ///         Adding a candidate mid-event dilutes the implied probability of
+    ///         existing positions — an intentional property of "open" events.
+    /// @param eventId  Target event.
+    /// @param question The new candidate's question (non-empty).
+    /// @return marketId The newly created child market id (appended to the event).
+    function addEventOutcome(uint256 eventId, string calldata question) external returns (uint256 marketId);
 
     /// @notice Resolve an event atomically by reading the outcome from its oracle.
     ///         Permissionless — anyone may call once the oracle has reported.

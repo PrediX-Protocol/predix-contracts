@@ -99,6 +99,42 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IEventFacet
+    function addEventOutcome(uint256 eventId, string calldata question)
+        external
+        override
+        nonReentrant
+        returns (uint256 marketId)
+    {
+        LibPausable.enforceNotPaused(Modules.MARKET);
+        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
+        if (bytes(question).length == 0) revert IMarketFacet.Market_EmptyQuestion();
+
+        LibEventStorage.EventData storage e = _event(eventId);
+        if (e.isResolved) revert Event_AlreadyResolved();
+        if (e.refundModeActive) revert Event_RefundModeActive();
+        if (block.timestamp >= e.endTime) revert Event_Ended();
+        if (e.marketIds.length >= MAX_CANDIDATES) revert Event_TooManyCandidates();
+
+        // The new child inherits the event's endTime + collective oracle (address(0))
+        // so its lifecycle stays identical to its siblings; resolution still flows
+        // through the event's oracle in resolveEvent.
+        marketId = LibMarket.create(question, e.endTime, address(0), eventId);
+
+        // Match the redemption-fee snapshot of the existing children so a late-added
+        // outcome never settles on a different fee than its siblings if the global
+        // default changed after the event was created. marketIds[0] always exists —
+        // createEvent enforces MIN_CANDIDATES.
+        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
+        ms.markets[marketId].snapshottedDefaultRedemptionFeeBps =
+            ms.markets[e.marketIds[0]].snapshottedDefaultRedemptionFeeBps;
+
+        e.marketIds.push(marketId);
+        LibEventStorage.layout().marketToEvent[marketId] = eventId;
+
+        emit EventOutcomeAdded(eventId, marketId, question);
+    }
+
+    /// @inheritdoc IEventFacet
     function resolveEvent(uint256 eventId) external override nonReentrant {
         LibPausable.enforceNotPaused(Modules.MARKET);
 
