@@ -13,6 +13,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 interface IPoolModifyLiquidityTest {
     function modifyLiquidity(PoolKey memory key, ModifyLiquidityParams memory params, bytes memory hookData)
@@ -93,6 +96,18 @@ contract Phase7BootstrapChildPool is Script {
 
         vm.startBroadcast(i.pk);
 
+        // Resolve the v4 modify-liquidity router. Prefer LP_MODIFY_ROUTER, fall
+        // back to the hardcoded constant; if neither has code on this chain
+        // (e.g. mainnet, where the test router isn't predeployed) deploy a fresh
+        // instance so the seed stays self-contained.
+        address router = vm.envOr("LP_MODIFY_ROUTER", POOL_MODIFY_LIQUIDITY_TEST);
+        if (router.code.length == 0) {
+            router = address(new PoolModifyLiquidityTest(IPoolManager(i.poolManager)));
+            console2.log("Deployed fresh PoolModifyLiquidityTest at:", router);
+        } else {
+            console2.log("Using PoolModifyLiquidityTest at:", router);
+        }
+
         // Auto-mint USDC shortfall (TestUSDC open faucet — same rationale as
         // the create scripts). 3×LP_USDC_AMOUNT covers 2× split + 1× LP, plus
         // slack for v4 full-range dust.
@@ -104,20 +119,28 @@ contract Phase7BootstrapChildPool is Script {
             ITestUSDC(i.usdc).mint(deployer, shortfall);
         }
 
-        // Register pool on hook. Idempotent — hook guards duplicate binding.
-        try IPrediXHook(i.hook).registerMarketPool(i.marketId, key) {
+        // PoolId for the state guards below.
+        PoolId pid = PoolIdLibrary.toId(key);
+
+        // Register pool on hook only if not already bound. State-guarded (vs
+        // try/catch) so a caught revert can't break forge's on-chain broadcast
+        // simulation when re-running on an existing pool.
+        if (IPrediXHook(i.hook).poolMarketId(pid) == 0) {
+            IPrediXHook(i.hook).registerMarketPool(i.marketId, key);
             console2.log("Pool registered on hook");
-        } catch {
+        } else {
             console2.log("Pool already registered on hook - continuing");
         }
 
-        // Initialize v4 pool at midpoint. Wrapped in try/catch so re-runs on
-        // an already-initialized pool don't abort; we just append liquidity
-        // at the current price in that case.
+        // Initialize v4 pool at midpoint only if not already initialized. Same
+        // rationale: skip rather than try/catch so the broadcast sim stays clean
+        // and we just append liquidity at the current price.
         uint160 sqrtPriceX96 = yesIsCurrency0 ? SQRT_PRICE_MID_YES_CURRENCY0 : SQRT_PRICE_MID_YES_CURRENCY1;
-        try IPoolManager(i.poolManager).initialize(key, sqrtPriceX96) {
+        (uint160 existingSqrtPrice,,,) = StateLibrary.getSlot0(IPoolManager(i.poolManager), pid);
+        if (existingSqrtPrice == 0) {
+            IPoolManager(i.poolManager).initialize(key, sqrtPriceX96);
             console2.log("Pool initialized at sqrtPriceX96 =", sqrtPriceX96);
-        } catch {
+        } else {
             console2.log("Pool already initialized - appending liquidity at current price");
         }
 
@@ -132,8 +155,8 @@ contract Phase7BootstrapChildPool is Script {
         // Approve tokens to PoolModifyLiquidityTest. Max avoids v4 "round
         // against LP" dust reverting on an off-by-one allowance at
         // full-range seeds.
-        IERC20(mkt.yesToken).approve(POOL_MODIFY_LIQUIDITY_TEST, type(uint256).max);
-        IERC20(i.usdc).approve(POOL_MODIFY_LIQUIDITY_TEST, type(uint256).max);
+        IERC20(mkt.yesToken).approve(router, type(uint256).max);
+        IERC20(i.usdc).approve(router, type(uint256).max);
 
         // Resolve ticks.
         int24 tickLower;
@@ -150,7 +173,7 @@ contract Phase7BootstrapChildPool is Script {
         ModifyLiquidityParams memory params = ModifyLiquidityParams({
             tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: int256(i.lpLiquidityDelta), salt: bytes32(0)
         });
-        IPoolModifyLiquidityTest(POOL_MODIFY_LIQUIDITY_TEST).modifyLiquidity(key, params, "");
+        IPoolModifyLiquidityTest(router).modifyLiquidity(key, params, "");
 
         vm.stopBroadcast();
 
@@ -187,7 +210,8 @@ contract Phase7BootstrapChildPool is Script {
     }
 
     function _loadInputs() internal view returns (Inputs memory i) {
-        i.pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        string memory mnemonic = vm.envOr("MNEMONIC", string(""));
+        i.pk = bytes(mnemonic).length > 0 ? vm.deriveKey(mnemonic, 0) : vm.envUint("DEPLOYER_PRIVATE_KEY");
         i.diamond = vm.envAddress("NEW_DIAMOND");
         i.hook = vm.envAddress("NEW_HOOK_PROXY");
         i.poolManager = vm.envAddress("POOL_MANAGER_ADDRESS");
