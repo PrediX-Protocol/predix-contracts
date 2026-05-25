@@ -23,6 +23,10 @@ contract PrediXPaymasterTest is Test {
     ///      `_buildUserOp`. Allowlisted in `setUp` so existing flow tests
     ///      pass after PM-NEW-01 introduced the on-chain allowlist gate.
     address internal allowedDest = makeAddr("allowedDest");
+    /// @dev Stand-in collateral token, intentionally NOT allowlisted, used by the
+    ///      ERC-7579 approve-policy tests (approve sponsorable only when the
+    ///      spender is allowlisted, never the token itself).
+    address internal usdcLike = makeAddr("usdcLike");
 
     uint256 internal signerKey;
     address internal signerAddr;
@@ -414,5 +418,180 @@ contract PrediXPaymasterTest is Test {
         vm.prank(owner);
         vm.expectRevert(IPrediXPaymaster.CriticalTargetBlocked.selector);
         paymaster.setAllowedTarget(address(entryPoint), true);
+    }
+
+    // ───────────────── keyti-54j: ERC-7579 (Kernel v3) execute support ─────────────────
+    //
+    // Root cause: pre-fix the paymaster only decoded SimpleAccount
+    // `execute(address,uint256,bytes)` (0xb61d27f6); Kernel v3 sends ERC-7579
+    // `execute(bytes32,bytes)` (0xe9ae5c53) → `UnsupportedExecuteSelector` (AA33,
+    // revert data 0x08e8bc91). These tests are the reproduction lock + the
+    // single/batch/approve-policy/delegatecall matrix. Policy A: an `approve` is
+    // sponsorable only when its spender is allowlisted.
+
+    bytes4 internal constant SEL_7579 = bytes4(0xe9ae5c53); // execute(bytes32,bytes)
+    bytes4 internal constant SEL_APPROVE = bytes4(0x095ea7b3); // approve(address,uint256)
+
+    /// @dev Sign + assemble a UserOp around arbitrary `callData` (generalises
+    ///      `_buildUserOpFor`, which is fixed to the legacy 0xb61d27f6 shape).
+    function _buildUserOpRaw(uint48 validUntil, uint48 validAfter, uint256 signingKey, bytes memory callData)
+        internal
+        view
+        returns (PackedUserOperation memory userOp)
+    {
+        userOp = PackedUserOperation({
+            sender: userAccount,
+            nonce: 0,
+            initCode: hex"",
+            callData: callData,
+            accountGasLimits: bytes32((uint256(100000) << 128) | uint256(100000)),
+            preVerificationGas: 50000,
+            gasFees: bytes32((uint256(1 gwei) << 128) | uint256(1 gwei)),
+            paymasterAndData: hex"",
+            signature: hex""
+        });
+        userOp.paymasterAndData = abi.encodePacked(
+            address(paymaster), uint128(100000), uint128(50000), abi.encode(validUntil, validAfter), new bytes(65)
+        );
+        bytes32 ethSignedHash = paymaster.getHash(userOp, validUntil, validAfter).toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signingKey, ethSignedHash);
+        userOp.paymasterAndData = abi.encodePacked(
+            address(paymaster), uint128(100000), uint128(50000), abi.encode(validUntil, validAfter), abi.encodePacked(r, s, v)
+        );
+    }
+
+    /// @dev ERC-7579 single: `execute(bytes32 mode, packed(target|value|data))`, callType 0x00.
+    function _exec7579Single(address target, uint256 value, bytes memory innerData)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(SEL_7579, bytes32(0), abi.encodePacked(target, value, innerData));
+    }
+
+    /// @dev ERC-7579 batch: `execute(bytes32 mode, abi.encode(Execution[]))`, callType 0x01 (high byte).
+    function _exec7579Batch(PrediXPaymaster.Execution[] memory execs) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(SEL_7579, bytes32(uint256(1) << 248), abi.encode(execs));
+    }
+
+    /// @dev ERC-7579 delegatecall: callType 0xff (high byte); layout packed(target|data).
+    function _exec7579Delegate(address target, bytes memory innerData) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(SEL_7579, bytes32(uint256(0xff) << 248), abi.encodePacked(target, innerData));
+    }
+
+    function _approveCalldata(address spender, uint256 amount) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(SEL_APPROVE, spender, amount);
+    }
+
+    function _assertSponsored(bytes memory callData) internal {
+        PackedUserOperation memory op =
+            _buildUserOpRaw(uint48(block.timestamp + 300), uint48(block.timestamp), signerKey, callData);
+        vm.prank(address(entryPoint));
+        (bytes memory ctx, uint256 validationData) = paymaster.validatePaymasterUserOp(op, bytes32(0), 0);
+        assertEq(ctx.length, 0, "context empty");
+        assertEq(validationData & uint256(type(uint160).max), 0, "target sponsorable -> signature must verify");
+    }
+
+    function _expectValidationRevert(bytes memory callData, bytes memory expectedRevert) internal {
+        PackedUserOperation memory op =
+            _buildUserOpRaw(uint48(block.timestamp + 300), uint48(block.timestamp), signerKey, callData);
+        vm.prank(address(entryPoint));
+        vm.expectRevert(expectedRevert);
+        paymaster.validatePaymasterUserOp(op, bytes32(0), 0);
+    }
+
+    /// @notice Reproduction lock + happy path: a Kernel v3 single `execute` to an
+    ///         allowlisted target now validates (pre-fix it reverted
+    ///         UnsupportedExecuteSelector / AA33).
+    function test_7579_Single_AllowedTarget_Validates() public {
+        _assertSponsored(_exec7579Single(allowedDest, 0, hex"deadbeef"));
+    }
+
+    /// @notice Single split/merge/redeem-shaped call to a non-allowlisted target rejects.
+    function test_Revert_7579_Single_TargetNotAllowed() public {
+        address notAllowed = makeAddr("na7579");
+        _expectValidationRevert(
+            _exec7579Single(notAllowed, 0, hex""),
+            abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, notAllowed)
+        );
+    }
+
+    /// @notice Policy A: approve on a NON-allowlisted token is sponsorable when
+    ///         the spender (here Router-like allowedDest) IS allowlisted.
+    function test_7579_Single_ApproveToAllowedSpender_Validates() public {
+        _assertSponsored(_exec7579Single(usdcLike, 0, _approveCalldata(allowedDest, 25e6)));
+    }
+
+    /// @notice Policy A: approve granting allowance to a non-allowlisted spender
+    ///         is rejected even though it is an approve (no attacker grant).
+    function test_Revert_7579_Single_ApproveToNonAllowedSpender() public {
+        _expectValidationRevert(
+            _exec7579Single(usdcLike, 0, _approveCalldata(attackerAddr, 25e6)),
+            abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, usdcLike)
+        );
+    }
+
+    /// @notice The exact first-trade flow: batch [USDC.approve(Router), Router.trade].
+    function test_7579_Batch_ApproveThenTrade_Validates() public {
+        PrediXPaymaster.Execution[] memory execs = new PrediXPaymaster.Execution[](2);
+        execs[0] = PrediXPaymaster.Execution({target: usdcLike, value: 0, callData: _approveCalldata(allowedDest, 25e6)});
+        execs[1] = PrediXPaymaster.Execution({target: allowedDest, value: 0, callData: hex"12345678"});
+        _assertSponsored(_exec7579Batch(execs));
+    }
+
+    /// @notice A batch where any element targets a disallowed contract rejects the whole op.
+    function test_Revert_7579_Batch_BadTargetInBatch() public {
+        PrediXPaymaster.Execution[] memory execs = new PrediXPaymaster.Execution[](2);
+        execs[0] = PrediXPaymaster.Execution({target: usdcLike, value: 0, callData: _approveCalldata(allowedDest, 25e6)});
+        execs[1] = PrediXPaymaster.Execution({target: attackerAddr, value: 0, callData: hex""});
+        _expectValidationRevert(
+            _exec7579Batch(execs), abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, attackerAddr)
+        );
+    }
+
+    /// @notice Oversized batch fails loud with BatchTooLarge (not OOG).
+    function test_Revert_7579_Batch_TooLarge() public {
+        PrediXPaymaster.Execution[] memory execs = new PrediXPaymaster.Execution[](17);
+        for (uint256 i; i < 17; ++i) {
+            execs[i] = PrediXPaymaster.Execution({target: allowedDest, value: 0, callData: hex""});
+        }
+        _expectValidationRevert(
+            _exec7579Batch(execs), abi.encodeWithSelector(IPrediXPaymaster.BatchTooLarge.selector, uint256(17))
+        );
+    }
+
+    /// @notice Empty batch is rejected (BatchTooLarge(0)).
+    function test_Revert_7579_Batch_Empty() public {
+        PrediXPaymaster.Execution[] memory execs = new PrediXPaymaster.Execution[](0);
+        _expectValidationRevert(
+            _exec7579Batch(execs), abi.encodeWithSelector(IPrediXPaymaster.BatchTooLarge.selector, uint256(0))
+        );
+    }
+
+    /// @notice Delegatecall call type (0xff) is never sponsorable.
+    function test_Revert_7579_DelegateCall() public {
+        _expectValidationRevert(
+            _exec7579Delegate(allowedDest, hex""),
+            abi.encodeWithSelector(IPrediXPaymaster.UnsupportedCallType.selector, bytes1(0xff))
+        );
+    }
+
+    /// @notice Any non-allowlisted target (non-approve inner) is rejected — the
+    ///         allowlist gate holds across the address space.
+    function testFuzz_7579_Single_NonAllowlistedTarget_Reverts(address target) public {
+        vm.assume(target != allowedDest);
+        _expectValidationRevert(
+            _exec7579Single(target, 0, hex""),
+            abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, target)
+        );
+    }
+
+    /// @notice Approve to any non-allowlisted spender is always rejected (Policy A holds for all spenders).
+    function testFuzz_7579_Single_ApproveSpenderGate(address spender) public {
+        vm.assume(spender != allowedDest);
+        _expectValidationRevert(
+            _exec7579Single(usdcLike, 0, _approveCalldata(spender, 1e6)),
+            abi.encodeWithSelector(IPrediXPaymaster.TargetNotAllowed.selector, usdcLike)
+        );
     }
 }

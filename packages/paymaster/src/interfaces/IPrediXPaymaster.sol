@@ -43,6 +43,16 @@ interface IPrediXPaymaster {
     ///         EntryPoint). Sponsoring UserOps that target these would let a
     ///         compromised signer drain the EntryPoint deposit.
     error CriticalTargetBlocked();
+    /// @notice Reverts when an ERC-7579 `execute(bytes32,bytes)` UserOp uses an
+    ///         unsupported call type. Only single (`0x00`) and batch (`0x01`)
+    ///         are sponsorable; delegatecall (`0xff`) and any other type are
+    ///         rejected — a sponsored delegatecall could run arbitrary code in
+    ///         the account's own context.
+    error UnsupportedCallType(bytes1 callType);
+    /// @notice Reverts when an ERC-7579 batch holds zero calls or more than
+    ///         `MAX_BATCH_CALLS`. Bounds the validation-gas fan-out so an
+    ///         oversized batch fails loud instead of exhausting the budget.
+    error BatchTooLarge(uint256 count);
     /// @notice Reverts on `renounceOwnership`. The paymaster must always retain
     ///         an owner to rotate the signer, pause, and manage the EntryPoint
     ///         deposit/stake; an ownerless paymaster would strand those funds.
