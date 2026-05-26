@@ -3,22 +3,30 @@ pragma solidity 0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IPausableFacet} from "@predix/shared/interfaces/IPausableFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
-import {OutcomeToken} from "@predix/shared/tokens/OutcomeToken.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 /// @title MockDiamond
 /// @notice Minimal Diamond stand-in for Exchange smoke tests.
 /// @dev Implements only the surface Exchange touches: getMarket / splitPosition /
-///      mergePositions / isModulePaused / hasRole. Real OutcomeToken instances are
-///      deployed with this contract as `factory` so the onlyFactory invariant matches
-///      production behaviour.
+///      mergePositions / isModulePaused / hasRole. Mirrors the production v1.3 path:
+///      a single `OutcomeTokenClone` master deployed in the constructor, then per-market
+///      EIP-1167 clones spawned in `createMarket`. The clones DELEGATECALL into master
+///      so they inherit `factory == address(this)` automatically — same `onlyFactory`
+///      surface as production.
 contract MockDiamond {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable usdc;
+
+    /// @notice Shared OutcomeToken master; each market spawns two minimal-proxy
+    ///         clones. `factory` is baked in via constructor immutable, so all clones
+    ///         report this contract as factory through DELEGATECALL.
+    address public immutable outcomeTokenImpl;
 
     mapping(uint256 => IMarketFacet.MarketView) private _markets;
     mapping(bytes32 => bool) private _modulePaused;
@@ -27,20 +35,21 @@ contract MockDiamond {
 
     constructor(address usdc_) {
         usdc = IERC20(usdc_);
+        outcomeTokenImpl = address(new OutcomeTokenClone(address(this)));
     }
 
     // ======== Test helpers ========
 
-    /// @notice Create a market backed by real `OutcomeToken` instances. Returns the
-    ///         deployed yes / no addresses so the test can mint / approve.
+    /// @notice Create a market backed by real `OutcomeTokenClone` proxy instances.
+    ///         Returns the deployed yes / no addresses so the test can mint / approve.
     function createMarket(uint256 marketId, uint256 endTime, address creator)
         external
         returns (address yesToken, address noToken)
     {
-        OutcomeToken yes = new OutcomeToken(address(this), marketId, true, "YES", "YES");
-        OutcomeToken no = new OutcomeToken(address(this), marketId, false, "NO", "NO");
-        yesToken = address(yes);
-        noToken = address(no);
+        yesToken = Clones.clone(outcomeTokenImpl);
+        noToken = Clones.clone(outcomeTokenImpl);
+        OutcomeTokenClone(yesToken).initialize(marketId, true, "YES", "YES");
+        OutcomeTokenClone(noToken).initialize(marketId, false, "NO", "NO");
 
         _markets[marketId] = IMarketFacet.MarketView({
             question: "",

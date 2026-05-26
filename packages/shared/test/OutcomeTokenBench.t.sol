@@ -5,11 +5,17 @@ import {Test, console2} from "forge-std/Test.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-import {OutcomeToken} from "@predix/shared/tokens/OutcomeToken.sol";
 import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
-/// @notice Gas benchmark — current `new OutcomeToken(...)` vs EIP-1167 clone path.
+/// @notice Gas benchmark — EIP-1167 clone path (post-v1.3 production path).
+/// @dev   Pre-v1.3 reference numbers (from the pre-cut benchmark, retained here for
+///        comparison; the legacy `OutcomeToken` source has been removed):
+///          - Old `new OutcomeToken x2` per market : 1,642,076 gas
+///          - New `Clones.clone + initialize` x2   :   395,049 gas
+///          - Δ                                     :  −76% per token-deploy path
+///        Run this file to confirm clone gas stays in the same ballpark whenever
+///        the master impl or OZ upgradeable contracts move.
 contract OutcomeTokenBench is Test {
     address constant FACTORY = address(0xC8F12AF2a396c9C906ac36Bc0AC2279BBb69Ef96);
 
@@ -25,30 +31,7 @@ contract OutcomeTokenBench is Test {
         console2.log("");
     }
 
-    /// @notice Measure gas per market creation under current path (2x new OutcomeToken).
-    function testGasCurrentPath() external {
-        console2.log("=== CURRENT PATH (new OutcomeToken x2) ===");
-        uint256 totalGas;
-        uint256 N = 5;
-        for (uint256 i = 1; i <= N; ++i) {
-            string memory id = Strings.toString(i);
-            uint256 g0 = gasleft();
-            OutcomeToken yes =
-                new OutcomeToken(FACTORY, i, true, string.concat("PrediX YES #", id), string.concat("pxY-", id));
-            OutcomeToken no =
-                new OutcomeToken(FACTORY, i, false, string.concat("PrediX NO #", id), string.concat("pxN-", id));
-            uint256 gas = g0 - gasleft();
-            totalGas += gas;
-            console2.log(string.concat("  market #", id, " gas: "), gas);
-            yes;
-            no; // silence warnings
-        }
-        uint256 avg = totalGas / N;
-        console2.log("AVG gas/market (current):", avg);
-        console2.log("");
-    }
-
-    /// @notice Measure gas per market creation under clone path.
+    /// @notice Measure gas per market creation under the production clone path.
     function testGasClonePath() external {
         console2.log("=== CLONE PATH (Clones.clone + initialize) x2 ===");
         uint256 totalGas;
@@ -66,6 +49,7 @@ contract OutcomeTokenBench is Test {
         }
         uint256 avg = totalGas / N;
         console2.log("AVG gas/market (clone):", avg);
+        console2.log("Reference: pre-v1.3 averaged 1,642,076 gas/market.");
         console2.log("");
     }
 
