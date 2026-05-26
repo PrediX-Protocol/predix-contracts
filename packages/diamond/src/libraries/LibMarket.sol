@@ -4,9 +4,10 @@ pragma solidity 0.8.34;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
-import {OutcomeToken} from "@predix/shared/tokens/OutcomeToken.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 import {LibConfigStorage} from "@predix/diamond/libraries/LibConfigStorage.sol";
 import {LibMarketStorage} from "@predix/diamond/libraries/LibMarketStorage.sol";
@@ -44,12 +45,22 @@ library LibMarket {
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
         marketId = ++ms.marketCount;
 
+        // v1.3 path: clone the configured OutcomeTokenClone master via EIP-1167
+        // minimal proxy. Cuts per-market token-deploy gas ~76% vs `new OutcomeToken(...)`.
+        // Admin must call `MarketFacet.setOutcomeTokenImpl` once before any market is
+        // ever created on a fresh diamond; the revert here is the single fail-fast
+        // gate that catches a missed init.
+        address impl = cfg.outcomeTokenImpl;
+        if (impl == address(0)) revert IMarketFacet.Market_OutcomeTokenImplNotSet();
+
         string memory idStr = Strings.toString(marketId);
-        OutcomeToken yes = new OutcomeToken(
-            address(this), marketId, true, string.concat("PrediX YES #", idStr), string.concat("pxY-", idStr)
+        address yesAddr = Clones.clone(impl);
+        address noAddr = Clones.clone(impl);
+        OutcomeTokenClone(yesAddr).initialize(
+            marketId, true, string.concat("PrediX YES #", idStr), string.concat("pxY-", idStr)
         );
-        OutcomeToken no = new OutcomeToken(
-            address(this), marketId, false, string.concat("PrediX NO #", idStr), string.concat("pxN-", idStr)
+        OutcomeTokenClone(noAddr).initialize(
+            marketId, false, string.concat("PrediX NO #", idStr), string.concat("pxN-", idStr)
         );
 
         LibMarketStorage.MarketData storage m = ms.markets[marketId];
@@ -57,12 +68,12 @@ library LibMarket {
         m.endTime = endTime;
         m.oracle = oracle;
         m.creator = msg.sender;
-        m.yesToken = address(yes);
-        m.noToken = address(no);
+        m.yesToken = yesAddr;
+        m.noToken = noAddr;
         m.eventId = eventId;
         if (cfg.defaultRedemptionFeeBps > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
         m.snapshottedDefaultRedemptionFeeBps = uint16(cfg.defaultRedemptionFeeBps);
 
-        emit IMarketFacet.MarketCreated(marketId, msg.sender, oracle, address(yes), address(no), endTime, question);
+        emit IMarketFacet.MarketCreated(marketId, msg.sender, oracle, yesAddr, noAddr, endTime, question);
     }
 }

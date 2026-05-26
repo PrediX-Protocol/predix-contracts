@@ -443,6 +443,21 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         emit PerMarketRedemptionFeeUpdated(marketId, 0, false);
     }
 
+    /// @inheritdoc IMarketFacet
+    /// @dev    No on-chain factory-binding check (e.g. asserting impl.factory() == diamond)
+    ///         because `OutcomeTokenClone.factory` is `immutable`: the deployer of the master
+    ///         encodes the diamond address into bytecode at construction. Admin handles that
+    ///         off-chain in the deploy script; mis-deploys surface immediately on the first
+    ///         `mint` call (revert `OutcomeToken_NotFactory`).
+    function setOutcomeTokenImpl(address impl) external override {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        if (impl == address(0)) revert Market_ZeroAddress();
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        address previous = cfg.outcomeTokenImpl;
+        cfg.outcomeTokenImpl = impl;
+        emit OutcomeTokenImplUpdated(previous, impl);
+    }
+
     // -----------------------------------------------------------------------
     // Views
     // -----------------------------------------------------------------------
@@ -518,6 +533,11 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     /// @inheritdoc IMarketFacet
     function effectiveRedemptionFeeBps(uint256 marketId) external view override returns (uint256) {
         return _effectiveRedemptionFee(_market(marketId));
+    }
+
+    /// @inheritdoc IMarketFacet
+    function outcomeTokenImpl() external view override returns (address) {
+        return LibConfigStorage.layout().outcomeTokenImpl;
     }
 
     // -----------------------------------------------------------------------

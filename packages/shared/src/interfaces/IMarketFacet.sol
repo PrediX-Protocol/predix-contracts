@@ -121,6 +121,11 @@ interface IMarketFacet {
     /// @notice Emitted when an admin overrides a single market's per-market cap.
     event PerMarketCapUpdated(uint256 indexed marketId, uint256 previous, uint256 current);
 
+    /// @notice Emitted when admin rotates the OutcomeTokenClone master implementation.
+    ///         Only future market creations use the new impl; existing markets retain their
+    ///         already-deployed token contracts.
+    event OutcomeTokenImplUpdated(address indexed previous, address indexed current);
+
     // ---------------------------------------------------------------------
     // Errors
     // ---------------------------------------------------------------------
@@ -182,6 +187,12 @@ interface IMarketFacet {
     ///         produced an answer. Operators must route normal resolutions
     ///         through `resolveMarket`; emergency is for genuine stalls.
     error Market_OracleResolvedUseResolve();
+    /// @notice Reverts from `LibMarket.create` (used by `createMarket` /
+    ///         `EventFacet.createEvent` / `addEventOutcome`) when the EIP-1167
+    ///         master implementation for `OutcomeTokenClone` has not been set.
+    ///         Admin must call `setOutcomeTokenImpl` once before any market can
+    ///         be created on a fresh diamond.
+    error Market_OutcomeTokenImplNotSet();
 
     // ---------------------------------------------------------------------
     // Lifecycle
@@ -285,6 +296,15 @@ interface IMarketFacet {
     /// @notice Clear a per-market redemption fee override so the market reverts to using
     ///         the global default. Restricted to `ADMIN_ROLE`. Idempotent.
     function clearPerMarketRedemptionFee(uint256 marketId) external;
+
+    /// @notice Set the OutcomeTokenClone master implementation (EIP-1167 template). Restricted to `ADMIN_ROLE`.
+    ///         All future market creations will clone this address. Existing markets keep their
+    ///         already-deployed token contracts and are unaffected by rotations.
+    /// @param impl Deployed `OutcomeTokenClone` master with `factory == diamond`. Cannot be `address(0)`.
+    function setOutcomeTokenImpl(address impl) external;
+
+    /// @notice Read the currently-configured OutcomeTokenClone master implementation.
+    function outcomeTokenImpl() external view returns (address);
 
     // ---------------------------------------------------------------------
     // Views

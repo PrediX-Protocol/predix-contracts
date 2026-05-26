@@ -21,6 +21,14 @@ library LibConfigStorage {
         ///      `MAX_REDEMPTION_FEE_BPS` by `MarketFacet.setDefaultRedemptionFeeBps`.
         ///      0 = fee disabled (the launch default).
         uint256 defaultRedemptionFeeBps;
+        /// @dev Append-only field added in v1.3 — master implementation address
+        ///      for `OutcomeTokenClone` (EIP-1167 minimal proxy template).
+        ///      `LibMarket.create` clones this address for every new YES/NO leg,
+        ///      cutting per-market deploy gas by ~76% vs `new OutcomeToken(...)`.
+        ///      0 = clone path disabled → `LibMarket.create` reverts. Admin sets via
+        ///      `MarketFacet.setOutcomeTokenImpl`. NEVER REORDER — namespaced
+        ///      storage append-only contract.
+        address outcomeTokenImpl;
     }
 
     function layout() internal pure returns (Layout storage l) {

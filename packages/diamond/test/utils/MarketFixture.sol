@@ -5,6 +5,7 @@ import {IDiamondCut} from "@predix/shared/interfaces/IDiamondCut.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 import {MarketFacet} from "@predix/diamond/facets/market/MarketFacet.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
@@ -18,6 +19,7 @@ abstract contract MarketFixture is DiamondFixture {
     MarketInit internal marketInit;
     MockUSDC internal usdc;
     MockOracle internal oracle;
+    OutcomeTokenClone internal outcomeTokenImpl;
 
     IMarketFacet internal market;
 
@@ -54,11 +56,15 @@ abstract contract MarketFixture is DiamondFixture {
         // below) so the fixture pre-grants the role. Individual tests can
         // revoke or regrant via `accessControl` to exercise the guard.
         accessControl.grantRole(Roles.CREATOR_ROLE, alice);
+        // v1.3: register the OutcomeTokenClone master impl. Without this,
+        // `LibMarket.create` reverts `Market_OutcomeTokenImplNotSet`.
+        outcomeTokenImpl = new OutcomeTokenClone(address(diamond));
+        market.setOutcomeTokenImpl(address(outcomeTokenImpl));
         vm.stopPrank();
     }
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](29);
+        s = new bytes4[](31);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -88,6 +94,8 @@ abstract contract MarketFixture is DiamondFixture {
         s[26] = IMarketFacet.effectiveRedemptionFeeBps.selector;
         s[27] = IMarketFacet.rescueSurplus.selector;
         s[28] = IMarketFacet.totalCollateralLocked.selector;
+        s[29] = IMarketFacet.setOutcomeTokenImpl.selector;
+        s[30] = IMarketFacet.outcomeTokenImpl.selector;
     }
 
     function _createMarket(uint256 endTime) internal returns (uint256 id) {
