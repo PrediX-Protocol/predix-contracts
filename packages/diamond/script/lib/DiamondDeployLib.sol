@@ -21,6 +21,7 @@ import {PausableFacet} from "@predix/diamond/facets/pausable/PausableFacet.sol";
 import {DiamondInit} from "@predix/diamond/init/DiamondInit.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
 import {Diamond} from "@predix/diamond/proxy/Diamond.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 /// @title DiamondDeployLib
 /// @notice Shared building blocks for deploying the PrediX diamond. Used by both
@@ -36,6 +37,12 @@ library DiamondDeployLib {
         address eventF;
         address diamondInit;
         address marketInit;
+        /// @notice v1.3 — OutcomeTokenClone master that `LibMarket.create` will
+        ///         `Clones.clone` from. Deployed once at `deployFacets` time so it
+        ///         can be threaded through `wireMarketAndEvent`'s atomic init.
+        ///         `factory` is the diamond address — set after diamond deploy in
+        ///         the orchestration script.
+        address outcomeTokenImpl;
     }
 
     error ZeroAddress(string name);
@@ -54,6 +61,17 @@ library DiamondDeployLib {
         f.eventF = address(new EventFacet());
         f.diamondInit = address(new DiamondInit());
         f.marketInit = address(new MarketInit());
+        // `outcomeTokenImpl` is deployed in `deployOutcomeTokenImpl` after the
+        // diamond address is known (the master's `factory` is constructor-immutable).
+    }
+
+    /// @notice Deploy the v1.3 OutcomeTokenClone master bound to `diamond` as
+    ///         factory. Must be called AFTER the diamond proxy exists and BEFORE
+    ///         `wireMarketAndEvent`, so the atomic `MarketInit.initWithOutcomeImpl`
+    ///         can land the pointer in the same cut as the MarketFacet add.
+    function deployOutcomeTokenImpl(FacetAddresses memory f, address diamond) internal {
+        if (diamond == address(0)) revert ZeroAddress("diamond");
+        f.outcomeTokenImpl = address(new OutcomeTokenClone(diamond));
     }
 
     function buildCoreCuts(FacetAddresses memory f) internal pure returns (IDiamondCut.FacetCut[] memory cuts) {
@@ -84,8 +102,12 @@ library DiamondDeployLib {
     }
 
     /// @notice Runs the second diamondCut that adds MarketFacet + EventFacet and
-    ///         delegatecalls `MarketInit.init(args)` atomically. Caller must hold
-    ///         `CUT_EXECUTOR_ROLE` at call time.
+    ///         delegatecalls `MarketInit.initWithOutcomeImpl(args, impl)` atomically.
+    ///         Caller must hold `CUT_EXECUTOR_ROLE` at call time.
+    /// @dev    v1.3 — requires `f.outcomeTokenImpl` to be populated (call
+    ///         `deployOutcomeTokenImpl(f, diamond)` first). This is the canonical
+    ///         path: after this cut returns, `createMarket(...)` is immediately
+    ///         callable; no follow-up `setOutcomeTokenImpl` admin tx needed.
     function wireMarketAndEvent(
         address diamond,
         FacetAddresses memory f,
@@ -96,6 +118,7 @@ library DiamondDeployLib {
     ) internal {
         if (collateralToken == address(0)) revert ZeroAddress("collateralToken");
         if (feeRecipient == address(0)) revert ZeroAddress("feeRecipient");
+        if (f.outcomeTokenImpl == address(0)) revert ZeroAddress("outcomeTokenImpl");
 
         MarketInit.InitArgs memory args = MarketInit.InitArgs({
             collateralToken: collateralToken,
@@ -103,7 +126,7 @@ library DiamondDeployLib {
             marketCreationFee: marketCreationFee,
             defaultPerMarketCap: defaultPerMarketCap
         });
-        bytes memory initData = abi.encodeCall(MarketInit.init, (args));
+        bytes memory initData = abi.encodeCall(MarketInit.initWithOutcomeImpl, (args, f.outcomeTokenImpl));
 
         IDiamondCut(diamond).diamondCut(buildMarketAndEventCuts(f), f.marketInit, initData);
     }
@@ -230,8 +253,12 @@ library DiamondDeployLib {
         s[5] = IPausableFacet.isModulePaused.selector;
     }
 
+    /// @dev v1.3 — 31 selectors: 29 pre-v1.3 + setOutcomeTokenImpl / outcomeTokenImpl.
+    ///      Fresh-diamond deploys do a single ADD with all 31; the existing
+    ///      mainnet diamond used a REPLACE 29 + ADD 2 cut shape (see
+    ///      `UpgradeOutcomeTokenClone.s.sol`).
     function _marketSelectors() private pure returns (bytes4[] memory s) {
-        s = new bytes4[](29);
+        s = new bytes4[](31);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -261,6 +288,9 @@ library DiamondDeployLib {
         s[26] = IMarketFacet.effectiveRedemptionFeeBps.selector;
         s[27] = IMarketFacet.rescueSurplus.selector;
         s[28] = IMarketFacet.totalCollateralLocked.selector;
+        // v1.3 additions
+        s[29] = IMarketFacet.setOutcomeTokenImpl.selector;
+        s[30] = IMarketFacet.outcomeTokenImpl.selector;
     }
 
     function _eventSelectors() private pure returns (bytes4[] memory s) {

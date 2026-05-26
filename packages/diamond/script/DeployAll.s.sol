@@ -119,6 +119,10 @@ contract DeployAll is Script {
         out.timelock = _deployTimelock(env);
         out.facets = DiamondDeployLib.deployFacets();
         out.diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(out.facets, env.deployer);
+        // v1.3 — deploy OutcomeTokenClone master with diamond as factory immutable,
+        // then thread it through `wireMarketAndEvent` so `MarketInit.initWithOutcomeImpl`
+        // sets the impl pointer atomically with the MarketFacet add.
+        DiamondDeployLib.deployOutcomeTokenImpl(out.facets, out.diamond);
         DiamondDeployLib.wireMarketAndEvent(
             out.diamond, out.facets, env.usdc, env.feeRecipient, env.marketCreationFee, env.defaultPerMarketCap
         );

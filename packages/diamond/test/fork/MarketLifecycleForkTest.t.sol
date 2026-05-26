@@ -10,6 +10,7 @@ import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {MarketFacet} from "@predix/diamond/facets/market/MarketFacet.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 import {DiamondFixture} from "../utils/DiamondFixture.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
@@ -40,6 +41,9 @@ contract MarketLifecycleForkTest is DiamondFixture {
         marketFacet = new MarketFacet();
         marketInit = new MarketInit();
         oracle = new MockOracle();
+        // v1.3 — deploy OutcomeTokenClone master so the atomic init wires
+        // outcomeTokenImpl alongside the MarketFacet add.
+        address outcomeImpl = address(new OutcomeTokenClone(address(diamond)));
 
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
         cuts[0] = _add(address(marketFacet), _marketSelectors());
@@ -47,7 +51,7 @@ contract MarketLifecycleForkTest is DiamondFixture {
         MarketInit.InitArgs memory args = MarketInit.InitArgs({
             collateralToken: address(usdc), feeRecipient: feeRecipient, marketCreationFee: 0, defaultPerMarketCap: 0
         });
-        bytes memory initData = abi.encodeCall(MarketInit.init, (args));
+        bytes memory initData = abi.encodeCall(MarketInit.initWithOutcomeImpl, (args, outcomeImpl));
 
         vm.prank(timelock);
         diamondCut.diamondCut(cuts, address(marketInit), initData);

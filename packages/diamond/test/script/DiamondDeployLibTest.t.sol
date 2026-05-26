@@ -62,6 +62,7 @@ contract DiamondDeployLibTest is Test {
 
         DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
         address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.deployOutcomeTokenImpl(facets, diamond);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
 
         // Deployer can hit ADMIN_ROLE-gated setters before handover.
@@ -91,6 +92,10 @@ contract DiamondDeployLibTest is Test {
 
         IMarketFacet market = IMarketFacet(diamond);
         assertEq(market.feeRecipient(), feeRecipient, "fee recipient");
+        // v1.3 — atomic init wrote the OutcomeTokenClone master pointer alongside
+        // the MarketFacet add, so the first `createMarket` is immediately callable.
+        assertEq(market.outcomeTokenImpl(), facets.outcomeTokenImpl, "outcomeTokenImpl wired atomically");
+        assertTrue(facets.outcomeTokenImpl != address(0), "outcomeTokenImpl deployed");
         assertEq(market.defaultRedemptionFeeBps(), 100, "redemption fee");
         assertEq(market.marketCount(), 0, "marketCount");
 
@@ -113,6 +118,7 @@ contract DiamondDeployLibTest is Test {
         vm.startPrank(deployer);
         DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
         address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.deployOutcomeTokenImpl(facets, diamond);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
         DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, address(shortTimelock));
         vm.stopPrank();
@@ -129,6 +135,7 @@ contract DiamondDeployLibTest is Test {
         vm.startPrank(deployer);
         DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
         address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.deployOutcomeTokenImpl(facets, diamond);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
         DiamondDeployLib.transferGovernance(diamond, deployer, multisig, multisig, timelock);
         vm.stopPrank();
@@ -148,6 +155,7 @@ contract DiamondDeployLibTest is Test {
         vm.startPrank(deployer);
         DiamondDeployLib.FacetAddresses memory facets = DiamondDeployLib.deployFacets();
         address diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        DiamondDeployLib.deployOutcomeTokenImpl(facets, diamond);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, address(usdc), feeRecipient, 0, 0);
         DiamondDeployLib.transferGovernance(diamond, deployer, multisig, pauser, timelock);
         vm.stopPrank();

@@ -49,4 +49,37 @@ contract MarketInitDecimalsTest is Test {
             })
         );
     }
+
+    /// @dev v1.3 — `initWithOutcomeImpl` must reject a zero-address master so the
+    ///      misconfiguration surfaces at cut time, not at first `createMarket`.
+    function test_InitWithOutcomeImpl_RevertsOnZeroImpl() public {
+        MockUSDC good = new MockUSDC();
+        vm.expectRevert(MarketInit.MarketInit_ZeroOutcomeImpl.selector);
+        init.initWithOutcomeImpl(
+            MarketInit.InitArgs({
+                collateralToken: address(good),
+                feeRecipient: feeRecipient,
+                marketCreationFee: 0,
+                defaultPerMarketCap: 0
+            }),
+            address(0)
+        );
+    }
+
+    /// @dev Happy-path: setting a non-zero impl must not revert at the guard.
+    ///      (Storage write isn't observable here because we're not delegatecalling
+    ///      from a diamond; the integration coverage lives in DiamondDeployLibTest.)
+    function test_InitWithOutcomeImpl_AcceptsNonZeroImpl() public {
+        MockUSDC good = new MockUSDC();
+        address mockImpl = makeAddr("outcomeTokenImpl");
+        init.initWithOutcomeImpl(
+            MarketInit.InitArgs({
+                collateralToken: address(good),
+                feeRecipient: feeRecipient,
+                marketCreationFee: 0,
+                defaultPerMarketCap: 0
+            }),
+            mockImpl
+        );
+    }
 }

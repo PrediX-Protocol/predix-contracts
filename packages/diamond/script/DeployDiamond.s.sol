@@ -35,6 +35,8 @@ contract DeployDiamond is Script {
 
         facets = DiamondDeployLib.deployFacets();
         diamond = DiamondDeployLib.deployDiamondWithDeployerAdmin(facets, deployer);
+        // v1.3 — deploy OutcomeTokenClone master + thread into atomic init.
+        DiamondDeployLib.deployOutcomeTokenImpl(facets, diamond);
         DiamondDeployLib.wireMarketAndEvent(diamond, facets, usdc, feeRecipient, marketCreationFee, defaultPerMarketCap);
 
         if (finalize) {
