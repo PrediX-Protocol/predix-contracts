@@ -29,9 +29,18 @@ interface IPaymasterView {
 ///
 ///         Required env: PAYMASTER_ADDRESS, ENTRY_POINT_V07, PAYMASTER_OWNER,
 ///         PAYMASTER_INITIAL_SIGNER, ROUTER_ADDRESS, DIAMOND_ADDRESS,
-///         EXCHANGE_ADDRESS.
+///         EXCHANGE_ADDRESS, POSITION_MANAGER_ADDRESS, PERMIT2_ADDRESS.
 ///         Optional: PAYMASTER_MIN_STAKE_WEI (default 1e15 = Pimlico floor),
 ///         PAYMASTER_MIN_DEPOSIT_WEI (default 1e15).
+///
+///         Allowlist coverage: this script asserts the five known
+///         sponsorable targets are present and that critical infra is
+///         absent. Because `PrediXPaymaster.allowedTarget` is a `mapping`
+///         (not an enumerable set), the script cannot prove the absence
+///         of *unknown* extra entries on-chain — a full exclusivity audit
+///         requires indexer-side replay of `TargetAllowlistUpdated`
+///         events. Adding a new sponsorable target = add a new env var +
+///         assert here AND extend the BE policy-check allowlist together.
 ///
 ///         Usage:
 ///             forge script PaymasterVerify --rpc-url $UNICHAIN_RPC_PRIMARY
@@ -46,6 +55,8 @@ contract PaymasterVerify is Script {
         address router = vm.envAddress("ROUTER_ADDRESS");
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address exchange = vm.envAddress("EXCHANGE_ADDRESS");
+        address positionManager = vm.envAddress("POSITION_MANAGER_ADDRESS");
+        address permit2 = vm.envAddress("PERMIT2_ADDRESS");
         // Pimlico (and most ERC-7562 bundlers) reject paymasters staked below
         // 1e15 wei; deposit must stay funded or every sponsored UserOp fails.
         uint256 minStake = vm.envOr("PAYMASTER_MIN_STAKE_WEI", uint256(1e15));
@@ -68,12 +79,23 @@ contract PaymasterVerify is Script {
         if (p.paused()) revert PaymasterVerify_Failed("paymaster is PAUSED");
 
         // 4. Trade-path targets MUST all be sponsorable:
-        //    Router = AMM market trades, Diamond = split/merge/redeem,
-        //    Exchange = CLOB limit orders + cancels (the historically-missing one).
+        //    Router          = AMM market trades
+        //    Diamond         = split/merge/redeem
+        //    Exchange        = CLOB limit orders + cancels (historically dropped, motivated this script)
+        //    PositionManager = gasless add/remove liquidity
+        //    Permit2         = signature-based token approvals batched into the same UserOp
+        //    Drift here mirrors the BE policy-check allowlist
+        //    (policy-check.service.ts) one-to-one; out-of-sync = silent UserOp validation reverts.
         if (!p.isTargetAllowed(router)) revert PaymasterVerify_Failed("Router not allowlisted");
         if (!p.isTargetAllowed(diamond)) revert PaymasterVerify_Failed("Diamond not allowlisted");
         if (!p.isTargetAllowed(exchange)) {
             revert PaymasterVerify_Failed("Exchange not allowlisted -> gasless CLOB limit/cancel broken");
+        }
+        if (!p.isTargetAllowed(positionManager)) {
+            revert PaymasterVerify_Failed("PositionManager not allowlisted -> gasless add/remove liquidity broken");
+        }
+        if (!p.isTargetAllowed(permit2)) {
+            revert PaymasterVerify_Failed("Permit2 not allowlisted -> gasless approve+trade batch broken");
         }
 
         // 5. Drain guard: critical infra must NEVER be allowlisted, else a
@@ -85,12 +107,14 @@ contract PaymasterVerify is Script {
         IStakeManager.DepositInfo memory info = IEntryPoint(ep).getDepositInfo(pm);
         if (!info.staked) revert PaymasterVerify_Failed("paymaster NOT staked (bundlers reject every UserOp)");
         if (uint256(info.stake) < minStake) revert PaymasterVerify_Failed("paymaster stake below floor");
-        if (info.deposit < minDeposit) revert PaymasterVerify_Failed("paymaster deposit below floor (gasless runs dry)");
+        if (info.deposit < minDeposit) {
+            revert PaymasterVerify_Failed("paymaster deposit below floor (gasless runs dry)");
+        }
 
         console2.log("PaymasterVerify: signer    =", signerAddr);
         console2.log("PaymasterVerify: deposit   =", info.deposit);
         console2.log("PaymasterVerify: stake     =", uint256(info.stake));
-        console2.log("PaymasterVerify: allowlist = Router + Diamond + Exchange OK");
+        console2.log("PaymasterVerify: allowlist = Router + Diamond + Exchange + PositionManager + Permit2 OK");
         console2.log("PaymasterVerify: OK");
     }
 }
