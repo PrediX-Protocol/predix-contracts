@@ -62,6 +62,10 @@ contract ChainlinkOracle is IChainlinkOracle, AccessControl {
     ///                                exists on this diamond so an adapter reused
     ///                                across deployments cannot have cross-diamond
     ///                                marketId collisions.
+    /// @dev `diamond` is immutable: a diamond rotation requires redeploying this oracle
+    ///      and pointing the new instance at the new diamond. There is no in-place
+    ///      setter; this is by design so the bind cannot be silently retargeted
+    ///      post-deploy.
     constructor(address admin, address sequencerUptimeFeed_, address diamond_) {
         if (admin == address(0)) revert ChainlinkOracle_ZeroAdmin();
         if (diamond_ == address(0)) revert ChainlinkOracle_ZeroDiamond();

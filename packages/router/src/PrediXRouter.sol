@@ -184,6 +184,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @dev Pre-approves the diamond and the exchange for infinite USDC so the hot path
     ///      never pays for an `approve` call. YES/NO outcome-token approvals to the exchange
     ///      are lazy because every market deploys its own ERC20 pair.
+    /// @dev `diamond` is immutable: a diamond rotation (replacing the diamond proxy with a
+    ///      new deployment) requires redeploying this router and pointing the new instance
+    ///      at the new diamond. There is no in-place setter; this is by design so this
+    ///      contract's trust binding cannot be silently retargeted post-deploy.
     constructor(
         IPoolManager _poolManager,
         address _diamond,

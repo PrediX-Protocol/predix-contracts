@@ -71,6 +71,10 @@ contract ManualOracle is IManualOracle, AccessControl {
     /// @param admin    Address granted `DEFAULT_ADMIN_ROLE`; must be non-zero.
     /// @param diamond_ Address of the diamond proxy whose markets this oracle
     ///                 resolves; must be non-zero.
+    /// @dev `diamond` is immutable: a diamond rotation requires redeploying this oracle
+    ///      and pointing the new instance at the new diamond. There is no in-place
+    ///      setter; this is by design so the bind cannot be silently retargeted
+    ///      post-deploy.
     constructor(address admin, address diamond_) {
         if (admin == address(0)) revert ManualOracle_ZeroAdmin();
         if (diamond_ == address(0)) revert ManualOracle_ZeroDiamond();
