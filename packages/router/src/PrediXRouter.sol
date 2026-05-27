@@ -947,10 +947,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///      blended USDC-per-YES the swap would pay across the full trade. Used to size the
     ///      CLOB cap so the orderbook is not forced to undercut spot when the actual
     ///      AMM-effective price is higher under slippage. Returns 0 if the pool is empty.
-    function _ammEffectivePriceForBuy(address yesToken, uint128 usdcSize)
-        internal
-        returns (uint256 usdcPerYes)
-    {
+    function _ammEffectivePriceForBuy(address yesToken, uint128 usdcSize) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || usdcSize == 0) return 0;
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
@@ -964,10 +961,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
 
     /// @notice Fee-adjusted AMM effective price when selling `yesSize` YES at the pool.
     /// @dev Symmetric to {_ammEffectivePriceForBuy}. Returns 0 on empty pool / zero size.
-    function _ammEffectivePriceForSell(address yesToken, uint128 yesSize)
-        internal
-        returns (uint256 usdcPerYes)
-    {
+    function _ammEffectivePriceForSell(address yesToken, uint128 yesSize) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || yesSize == 0) return 0;
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
@@ -982,10 +976,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Fee-adjusted AMM effective cost-per-YES for an exact-out buy of `yesOut` YES.
     /// @dev Used by the SELL_NO cap derivation, where the virtual-NO callback flash-buys
     ///      `noIn` YES exact-out. Returns 0 on empty pool / zero size.
-    function _ammEffectivePriceForBuyExactOut(address yesToken, uint128 yesOut)
-        internal
-        returns (uint256 usdcPerYes)
-    {
+    function _ammEffectivePriceForBuyExactOut(address yesToken, uint128 yesOut) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || yesOut == 0) return 0;
         _preCommitForQuoter(yesToken);
         PoolKey memory key = _buildPoolKey(yesToken);
@@ -1109,8 +1100,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         // provide on the execute leg.
         uint256 gateCost;
         try IPrediXExchangeView(exchange)
-            .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this))
-        returns (uint256, uint256 gc) {
+            .previewFillMarketOrder(marketId, side, cap, amountIn, maxFills, address(this)) returns (
+            uint256, uint256 gc
+        ) {
             gateCost = gc;
         } catch {
             return cap;
@@ -1125,8 +1117,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         for (uint256 r; r < CLOB_CAP_CONVERGE_ROUNDS; ++r) {
             uint256 clobCost;
             try IPrediXExchangeView(exchange)
-                .previewFillMarketOrder(marketId, side, conv, amountIn, maxFills, address(this))
-            returns (uint256, uint256 cc) {
+                .previewFillMarketOrder(marketId, side, conv, amountIn, maxFills, address(this)) returns (
+                uint256, uint256 cc
+            ) {
                 clobCost = cc;
             } catch {
                 break;
@@ -1192,10 +1185,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _preCommitForQuoter(yesToken);
             (uint256 proceeds,) = quoter.quoteExactInputSingle(
                 IV4Quoter.QuoteExactSingleParams({
-                    poolKey: key,
-                    zeroForOne: zeroForOne,
-                    exactAmount: uint128(size),
-                    hookData: ""
+                    poolKey: key, zeroForOne: zeroForOne, exactAmount: uint128(size), hookData: ""
                 })
             );
             if (proceeds + usdcIn >= size) {
@@ -1233,18 +1223,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _preCommitForQuoter(yesToken);
             (uint256 finalProceeds,) = quoter.quoteExactInputSingle(
                 IV4Quoter.QuoteExactSingleParams({
-                    poolKey: key,
-                    zeroForOne: zeroForOne,
-                    exactAmount: uint128(candidate),
-                    hookData: ""
+                    poolKey: key, zeroForOne: zeroForOne, exactAmount: uint128(candidate), hookData: ""
                 })
             );
             if (finalProceeds + usdcIn >= candidate) {
                 mintAmount = candidate;
                 return mintAmount;
             }
-            uint256 newCandidate =
-                ((finalProceeds + usdcIn) * BUY_NO_PRECISION_CUSHION_BPS) / BPS_DENOMINATOR;
+            uint256 newCandidate = ((finalProceeds + usdcIn) * BUY_NO_PRECISION_CUSHION_BPS) / BPS_DENOMINATOR;
             if (newCandidate == 0 || newCandidate >= candidate) {
                 // Saturated — no further shrink possible. Return the
                 // strictly feasible budget cushioned once for drift; in
@@ -1355,8 +1341,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit =
-            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills);
+        uint256 clobLimit = _convergeCap(
+            marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills
+        );
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline);
@@ -1423,8 +1410,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address yesToken,
         address noToken
     ) internal returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit =
-            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills);
+        uint256 clobLimit = _convergeCap(
+            marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills
+        );
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
             _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline);
@@ -1478,8 +1466,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     }
 
     function _isClobGracefulError(bytes4 sel) private pure returns (bool) {
-        return sel == _EX_PAUSED || sel == _EX_MARKET_PAUSED || sel == _EX_MARKET_EXPIRED
-            || sel == _EX_MARKET_RESOLVED || sel == _EX_MARKET_REFUND || sel == _EX_DEADLINE
-            || sel == _EX_NO_LIQUIDITY;
+        return sel == _EX_PAUSED || sel == _EX_MARKET_PAUSED || sel == _EX_MARKET_EXPIRED || sel == _EX_MARKET_RESOLVED
+            || sel == _EX_MARKET_REFUND || sel == _EX_DEADLINE || sel == _EX_NO_LIQUIDITY;
     }
 }
