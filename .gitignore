@@ -22,6 +22,8 @@ pnpm-debug.log*
 !.env.example
 !.env.beta.example
 !.env.dev-beta.example
+.testenv.*
+!.testenv.example
 testenv.*
 !testenv.example
 *.pem
