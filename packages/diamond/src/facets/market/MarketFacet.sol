@@ -14,6 +14,7 @@ import {TransientReentrancyGuard} from "@predix/shared/utils/TransientReentrancy
 
 import {LibAccessControl} from "@predix/diamond/libraries/LibAccessControl.sol";
 import {LibConfigStorage} from "@predix/diamond/libraries/LibConfigStorage.sol";
+import {LibEventStorage} from "@predix/diamond/libraries/LibEventStorage.sol";
 import {LibMarket} from "@predix/diamond/libraries/LibMarket.sol";
 import {LibMarketStorage} from "@predix/diamond/libraries/LibMarketStorage.sol";
 import {LibPausable} from "@predix/diamond/libraries/LibPausable.sol";
@@ -76,10 +77,16 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (m.refundModeActive) revert Market_RefundModeActive();
         if (block.timestamp >= m.endTime) revert Market_Ended();
 
-        uint256 cap = m.perMarketCap > 0 ? m.perMarketCap : LibConfigStorage.layout().defaultPerMarketCap;
-        if (cap > 0 && m.totalCollateral + amount > cap) revert Market_ExceedsPerMarketCap();
-
-        m.totalCollateral += amount;
+        if (m.linkedChild) {
+            // Gap#1 (Q6=A): a child of a shared-collateral event pools its backing at the event level,
+            // so a single-outcome split is exactly a NegRisk `splitOutcome` and preserves
+            // `eventPool == Σ NO_i + M`. The per-market cap is a binary-market concept and does not apply.
+            LibEventStorage.layout().eventPool[m.eventId] += amount;
+        } else {
+            uint256 cap = m.perMarketCap > 0 ? m.perMarketCap : LibConfigStorage.layout().defaultPerMarketCap;
+            if (cap > 0 && m.totalCollateral + amount > cap) revert Market_ExceedsPerMarketCap();
+            m.totalCollateral += amount;
+        }
         LibMarketStorage.layout().totalCollateralLocked += amount;
         LibConfigStorage.layout().collateralToken.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -100,7 +107,13 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
 
         IOutcomeToken(m.yesToken).burn(msg.sender, amount);
         IOutcomeToken(m.noToken).burn(msg.sender, amount);
-        m.totalCollateral -= amount;
+        if (m.linkedChild) {
+            // Gap#1 (Q6=A): mirror the split path — debit the shared event pool, not per-child collateral.
+            // The 0.8 checked subtraction is the pool-underflow guard (cannot merge more than was pooled).
+            LibEventStorage.layout().eventPool[m.eventId] -= amount;
+        } else {
+            m.totalCollateral -= amount;
+        }
         LibMarketStorage.layout().totalCollateralLocked -= amount;
 
         LibConfigStorage.layout().collateralToken.safeTransfer(msg.sender, amount);
@@ -187,6 +200,10 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     ///      `enableRefundMode` / `sweepUnclaimed`.
     function redeem(uint256 marketId) external override nonReentrant returns (uint256 payout) {
         LibMarketStorage.MarketData storage m = _market(marketId);
+        // Gap#1: linked children cannot redeem per-child — winning-YES + losing-NO claims pay from the
+        // shared event pool via `LinkedEventFacet.redeemLinked`. Reject here to prevent a single-outcome
+        // payout that would break event-level solvency.
+        if (m.linkedChild) revert Market_LinkedEvent();
         if (!m.isResolved) revert Market_NotResolved();
 
         IOutcomeToken yes = IOutcomeToken(m.yesToken);
@@ -279,6 +296,9 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         returns (uint256 payout)
     {
         LibMarketStorage.MarketData storage m = _market(marketId);
+        // Gap#1: linked children have no per-child refund path in v1 (linked refund mode is deferred and
+        // unreachable — see IEventFacet.Event_LinkedNoRefund). Reject defensively.
+        if (m.linkedChild) revert Market_LinkedEvent();
         if (!m.refundModeActive) revert Market_RefundModeInactive();
 
         uint256 refundable = yesAmount < noAmount ? yesAmount : noAmount;
@@ -300,6 +320,9 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
 
         LibMarketStorage.MarketData storage m = _market(marketId);
+        // Gap#1: linked children carry no per-child collateral (it lives in eventPool); the per-child
+        // residual sweep math does not apply. Linked-pool sweep is deferred to v1.1.
+        if (m.linkedChild) revert Market_LinkedEvent();
         uint256 finalAt = m.isResolved ? m.resolvedAt : (m.refundModeActive ? m.refundEnabledAt : 0);
         if (finalAt == 0) revert Market_NotInFinalState();
         if (block.timestamp < finalAt + GRACE_PERIOD) revert Market_GracePeriodNotElapsed();
