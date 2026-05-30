@@ -125,8 +125,9 @@ contract M02_StaleBindingDetection is Test {
 
         PoolKey memory key = _key(yesOriginal);
 
+        // In-band for the bounded-LP guard (yes = currency0 here -> tickUpper <= 0).
         ModifyLiquidityParams memory addParams =
-            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
+            ModifyLiquidityParams({tickLower: -60, tickUpper: 0, liquidityDelta: 1e18, salt: bytes32(0)});
         vm.prank(POOL_MANAGER);
         bytes4 sel = hook.beforeAddLiquidity(address(this), key, addParams, "");
         assertEq(sel, hook.beforeAddLiquidity.selector);
@@ -152,8 +153,9 @@ contract M02_StaleBindingDetection is Test {
         PoolKey memory newKey = _key(yesAttacker);
         hook.registerMarketPool(MARKET_ID, newKey);
 
+        // In-band for the bounded-LP guard (yes = currency0 here -> tickUpper <= 0).
         ModifyLiquidityParams memory addParams =
-            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
+            ModifyLiquidityParams({tickLower: -60, tickUpper: 0, liquidityDelta: 1e18, salt: bytes32(0)});
         vm.prank(POOL_MANAGER);
         bytes4 sel = hook.beforeAddLiquidity(address(this), newKey, addParams, "");
         assertEq(sel, hook.beforeAddLiquidity.selector, "post-recovery callbacks succeed");
