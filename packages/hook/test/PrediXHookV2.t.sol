@@ -390,8 +390,19 @@ contract PrediXHookV2Test is Test {
         ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
 
     function test_BeforeAddLiquidity_HappyPath() public view {
-        bytes4 sel = hook.exposed_beforeAddLiquidity(trader, key0, addParams, "");
+        // In-band for key0 (yesIsCurrency0): tickUpper <= 0 keeps YES price <= 1.
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 0, liquidityDelta: 1e18, salt: bytes32(0)});
+        bytes4 sel = hook.exposed_beforeAddLiquidity(trader, key0, p, "");
         assertEq(sel, IHooks.beforeAddLiquidity.selector);
+    }
+
+    function test_Revert_BeforeAddLiquidity_RangeAboveOne_YesCurrency0() public {
+        // key0 is yesIsCurrency0 -> bounded side is tickUpper; tickUpper 60 > 0 (YES > 1).
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
+        vm.expectRevert(IPrediXHook.Hook_LiquidityRangeOutOfBounds.selector);
+        hook.exposed_beforeAddLiquidity(trader, key0, p, "");
     }
 
     function test_Revert_BeforeAddLiquidity_Resolved() public {

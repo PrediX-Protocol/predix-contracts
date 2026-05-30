@@ -791,7 +791,7 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
 
     /// @dev C-04: block JIT into resolved/expired markets. Pause is enforced in the
     ///      external wrapper, not here.
-    function _beforeAddLiquidity(address, PoolKey calldata key, ModifyLiquidityParams calldata, bytes calldata)
+    function _beforeAddLiquidity(address, PoolKey calldata key, ModifyLiquidityParams calldata params, bytes calldata)
         internal
         view
         returns (bytes4)
@@ -808,6 +808,18 @@ contract PrediXHookV2 is IPrediXHook, IHooks {
         if (mkt.isResolved) revert Hook_MarketResolved();
         if (mkt.refundModeActive) revert Hook_MarketInRefundMode();
         if (block.timestamp >= mkt.endTime) revert Hook_MarketExpired();
+
+        // Bound LP to the [0,1] YES-price band. YES = 1 USDC is raw pool price 1.0 = tick 0
+        // (YES and USDC are both 6 decimals). Liquidity past tick 0 would let the pool quote
+        // YES > 1, which is irrational (a YES share redeems for at most 1). Orientation flips
+        // the bounded side: YES = currency0 -> price = USDC/YES so cap tickUpper; YES =
+        // currency1 inverts the price so floor tickLower.
+        if (binding.yesIsCurrency0) {
+            if (params.tickUpper > 0) revert Hook_LiquidityRangeOutOfBounds();
+        } else {
+            if (params.tickLower < 0) revert Hook_LiquidityRangeOutOfBounds();
+        }
+
         return IHooks.beforeAddLiquidity.selector;
     }
 
