@@ -113,7 +113,8 @@ contract PrediXHookV2Test is Test {
     ///         because the constructor sets _initialized = true on the impl storage.
     function test_Revert_InitializeImplementationDirectly() public {
         // Deploy a bare PrediXHookV2 (not via proxy, not via TestHookHarness which resets _initialized).
-        PrediXHookV2 bareImpl = new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
+        PrediXHookV2 bareImpl =
+            new PrediXHookV2(IPoolManager(POOL_MANAGER), address(0xC0FFEE), 0x800000, int24(60), 48 hours);
         vm.expectRevert(IPrediXHook.Hook_AlreadyInitialized.selector);
         bareImpl.initialize(address(diamond), admin, usdc);
     }
@@ -403,6 +404,27 @@ contract PrediXHookV2Test is Test {
             ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
         vm.expectRevert(IPrediXHook.Hook_LiquidityRangeOutOfBounds.selector);
         hook.exposed_beforeAddLiquidity(trader, key0, p, "");
+    }
+
+    function test_Revert_BeforeAddLiquidity_RangeAboveOne_YesCurrency1() public {
+        // key1 is yesIsCurrency1 -> bounded side is tickLower; tickLower -60 < 0 (YES > 1).
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
+        vm.expectRevert(IPrediXHook.Hook_LiquidityRangeOutOfBounds.selector);
+        hook.exposed_beforeAddLiquidity(trader, key1, p, "");
+    }
+
+    function test_BeforeAddLiquidity_WithinBand_YesCurrency1() public view {
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: 0, tickUpper: 120, liquidityDelta: 1e18, salt: bytes32(0)});
+        assertEq(hook.exposed_beforeAddLiquidity(trader, key1, p, ""), IHooks.beforeAddLiquidity.selector);
+    }
+
+    function test_BeforeAddLiquidity_BoundaryTickZero_YesCurrency0() public view {
+        // tickUpper exactly 0 (YES = 1 USDC, the rational max) must be allowed.
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: -60, tickUpper: 0, liquidityDelta: 1e18, salt: bytes32(0)});
+        assertEq(hook.exposed_beforeAddLiquidity(trader, key0, p, ""), IHooks.beforeAddLiquidity.selector);
     }
 
     function test_Revert_BeforeAddLiquidity_Resolved() public {
