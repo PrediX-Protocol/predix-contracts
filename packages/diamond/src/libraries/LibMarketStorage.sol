@@ -35,6 +35,12 @@ library LibMarketStorage {
         ///      from retroactive admin fee hikes applied after split/resolve. Read
         ///      by `_effectiveRedemptionFee` when no per-market override is set.
         uint16 snapshottedDefaultRedemptionFeeBps;
+        /// @dev Append-only field added in v1.6 for Gap#1 (shared-collateral linked events). `true` =
+        ///      this market is a child of a LINKED event: its collateral lives in
+        ///      `LibEventStorage.eventPool[eventId]`, not in `totalCollateral` (which stays 0). Read by
+        ///      `MarketFacet` to route split/merge to the pool and to reject per-child
+        ///      redeem/refund/sweep. `false` for standalone markets and legacy per-child event children.
+        bool linkedChild;
     }
 
     struct Layout {

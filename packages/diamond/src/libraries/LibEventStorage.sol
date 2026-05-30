@@ -20,12 +20,25 @@ library LibEventStorage {
         bool isResolved;
         bool refundModeActive;
         address oracle; // v1.1 — append-only
+        /// @dev Append-only field added for Gap#1. `true` = shared-collateral (linked) event whose
+        ///      children share `eventPool[eventId]` as one pooled balance. `false` = legacy per-child
+        ///      event. Never reorder.
+        bool linked;
+        /// @dev Append-only field added for Gap#1. Redemption fee (bps) snapshotted at
+        ///      `createLinkedEvent`, applied uniformly by `LinkedEventFacet.redeemLinked`. `0` = no fee
+        ///      (the launch default). `uint16` suffices: bounded by `MAX_REDEMPTION_FEE_BPS = 1500`.
+        uint16 redemptionFeeBps;
     }
 
     struct Layout {
         uint256 eventCount;
         mapping(uint256 eventId => EventData) events;
         mapping(uint256 marketId => uint256 eventId) marketToEvent;
+        /// @dev Append-only field added for Gap#1. Shared collateral pool per LINKED event (USDC base
+        ///      units). Maintained in lockstep with `LibMarketStorage.totalCollateralLocked` so
+        ///      `MarketFacet.rescueSurplus` never mistakes pooled backing for surplus. Mappings are
+        ///      hash-slotted, so appending this is always storage-safe.
+        mapping(uint256 eventId => uint256) eventPool;
     }
 
     function layout() internal pure returns (Layout storage l) {
