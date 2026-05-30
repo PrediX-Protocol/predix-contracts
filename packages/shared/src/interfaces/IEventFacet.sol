@@ -95,6 +95,14 @@ interface IEventFacet {
     ///         has already passed. Outcomes may only be appended while the event is
     ///         still live so every child shares an identical, future deadline.
     error Event_Ended();
+    /// @notice Reverts when `enableEventRefundMode` is called on a shared-collateral (linked) event.
+    ///         Linked refund-mode is deferred to v1.1; v1 exit is `resolveEvent` /
+    ///         `emergencyResolveEvent` followed by `ILinkedEventFacet.redeemLinked`.
+    error Event_LinkedNoRefund();
+    /// @notice Reverts when `addEventOutcome` is called on a shared-collateral (linked) event. A linked
+    ///         event's outcome set is FIXED at `createLinkedEvent`: appending a child after complete-sets
+    ///         exist would break the uniform-margin solvency precondition and strand pool collateral.
+    error Event_LinkedNoAddOutcome();
 
     // ---------------------------------------------------------------------
     // Lifecycle
