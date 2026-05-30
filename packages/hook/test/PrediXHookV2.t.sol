@@ -427,6 +427,21 @@ contract PrediXHookV2Test is Test {
         assertEq(hook.exposed_beforeAddLiquidity(trader, key0, p, ""), IHooks.beforeAddLiquidity.selector);
     }
 
+    function testFuzz_BeforeAddLiquidity_BoundYesCurrency0(int24 rawTick) public {
+        // Align to tickSpacing 60 and clamp into v4's usable tick range for spacing 60.
+        int24 tickUpper = (rawTick / 60) * 60;
+        if (tickUpper < -887220) tickUpper = -887220;
+        if (tickUpper > 887220) tickUpper = 887220;
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: -887220, tickUpper: tickUpper, liquidityDelta: 1e18, salt: bytes32(0)});
+        if (tickUpper > 0) {
+            vm.expectRevert(IPrediXHook.Hook_LiquidityRangeOutOfBounds.selector);
+            hook.exposed_beforeAddLiquidity(trader, key0, p, "");
+        } else {
+            assertEq(hook.exposed_beforeAddLiquidity(trader, key0, p, ""), IHooks.beforeAddLiquidity.selector);
+        }
+    }
+
     function test_Revert_BeforeAddLiquidity_Resolved() public {
         diamond.setMarket(MARKET_ID, yesLow, noToken, endTime, true, false);
         vm.expectRevert(IPrediXHook.Hook_MarketResolved.selector);
