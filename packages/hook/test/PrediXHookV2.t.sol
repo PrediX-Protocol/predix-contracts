@@ -427,6 +427,13 @@ contract PrediXHookV2Test is Test {
         assertEq(hook.exposed_beforeAddLiquidity(trader, key0, p, ""), IHooks.beforeAddLiquidity.selector);
     }
 
+    function test_BeforeAddLiquidity_BoundaryTickZero_YesCurrency1() public view {
+        // tickLower exactly 0 (YES = 1 USDC, the rational max) must be allowed.
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: 0, tickUpper: 60, liquidityDelta: 1e18, salt: bytes32(0)});
+        assertEq(hook.exposed_beforeAddLiquidity(trader, key1, p, ""), IHooks.beforeAddLiquidity.selector);
+    }
+
     function testFuzz_BeforeAddLiquidity_BoundYesCurrency0(int24 rawTick) public {
         // Align to tickSpacing 60 and clamp into v4's usable tick range for spacing 60.
         int24 tickUpper = (rawTick / 60) * 60;
@@ -439,6 +446,22 @@ contract PrediXHookV2Test is Test {
             hook.exposed_beforeAddLiquidity(trader, key0, p, "");
         } else {
             assertEq(hook.exposed_beforeAddLiquidity(trader, key0, p, ""), IHooks.beforeAddLiquidity.selector);
+        }
+    }
+
+    function testFuzz_BeforeAddLiquidity_BoundYesCurrency1(int24 rawTick) public {
+        // key1 is yesIsCurrency1 -> bounded side is tickLower. Align to tickSpacing 60
+        // and clamp into v4's usable tick range for spacing 60.
+        int24 tickLower = (rawTick / 60) * 60;
+        if (tickLower < -887220) tickLower = -887220;
+        if (tickLower > 887220) tickLower = 887220;
+        ModifyLiquidityParams memory p =
+            ModifyLiquidityParams({tickLower: tickLower, tickUpper: 887220, liquidityDelta: 1e18, salt: bytes32(0)});
+        if (tickLower < 0) {
+            vm.expectRevert(IPrediXHook.Hook_LiquidityRangeOutOfBounds.selector);
+            hook.exposed_beforeAddLiquidity(trader, key1, p, "");
+        } else {
+            assertEq(hook.exposed_beforeAddLiquidity(trader, key1, p, ""), IHooks.beforeAddLiquidity.selector);
         }
     }
 
