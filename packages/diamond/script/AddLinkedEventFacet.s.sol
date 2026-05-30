@@ -4,6 +4,7 @@ pragma solidity 0.8.34;
 import {Script, console2} from "forge-std/Script.sol";
 
 import {IDiamondCut} from "@predix/shared/interfaces/IDiamondCut.sol";
+import {IDiamondLoupe} from "@predix/shared/interfaces/IDiamondLoupe.sol";
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {ILinkedEventFacet} from "@predix/shared/interfaces/ILinkedEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
@@ -31,6 +32,13 @@ contract AddLinkedEventFacet is Script {
     function run() external returns (address marketFacet, address eventFacet, address linkedFacet) {
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address timelock = vm.envAddress("TIMELOCK_ADDRESS");
+
+        // F2 pre-flight (audit Gap#1): every Market/Event selector this script REPLACEs must already
+        // be live on the diamond, else the Timelock `execute` reverts mid-cut AFTER the multi-day
+        // delay (a wasted cycle, not a brick — funds untouched). Asserted only when the diamond has
+        // deployed code (fork / live run); skipped on a pure local dry-run where DIAMOND_ADDRESS
+        // points at an empty account.
+        if (diamond.code.length > 0) _assertReplaceTargetsLive(diamond);
 
         string memory mnemonic = vm.envOr("MNEMONIC", string(""));
         uint256 deployerKey =
@@ -89,6 +97,27 @@ contract AddLinkedEventFacet is Script {
         console2.log("");
         console2.log(">> STEP B - after minDelay, multisig submits to Timelock (execute). to =", timelock);
         console2.logBytes(executeCalldata);
+    }
+
+    /// @dev Asserts every Replace-target selector resolves to a live facet on the diamond (EIP-2535
+    ///      loupe). A `Replace` of a selector the diamond does not currently serve reverts inside
+    ///      `diamondCut`; catching it here (pre-schedule) avoids burning the Timelock delay on a cut
+    ///      that would only revert on execute.
+    function _assertReplaceTargetsLive(address diamond_) internal view {
+        bytes4[] memory marketSels = _marketSelectors();
+        for (uint256 i; i < marketSels.length; ++i) {
+            require(
+                IDiamondLoupe(diamond_).facetAddress(marketSels[i]) != address(0),
+                "preflight: a MarketFacet Replace-target selector is not live on the diamond"
+            );
+        }
+        bytes4[] memory eventSels = _eventSelectors();
+        for (uint256 i; i < eventSels.length; ++i) {
+            require(
+                IDiamondLoupe(diamond_).facetAddress(eventSels[i]) != address(0),
+                "preflight: an EventFacet Replace-target selector is not live on the diamond"
+            );
+        }
     }
 
     /// @dev Full MarketFacet selector set (bytecode changed: linked-aware split/merge + linked guards), so

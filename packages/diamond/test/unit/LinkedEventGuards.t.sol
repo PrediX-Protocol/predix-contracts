@@ -98,4 +98,25 @@ contract LinkedEventGuardsTest is LinkedEventFixture {
         uint256 newChild = eventFacet.addEventOutcome(legacyId, "extra");
         assertEq(eventFacet.eventOfMarket(newChild), legacyId, "addEventOutcome regressed on legacy event");
     }
+
+    // --- F1 (audit Gap#1): per-market cap/fee setters MUST reject linked children (fail-loud).
+    //     Non-linked markets still accept them — covered by the existing MarketFacet unit suite. ---
+
+    function test_Revert_SetPerMarketCap_OnLinkedChild() public {
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.setPerMarketCap(childIds[0], 1e6);
+    }
+
+    function test_Revert_SetPerMarketRedemptionFeeBps_OnLinkedChild() public {
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.setPerMarketRedemptionFeeBps(childIds[0], 100);
+    }
+
+    function test_Revert_ClearPerMarketRedemptionFee_OnLinkedChild() public {
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.clearPerMarketRedemptionFee(childIds[0]);
+    }
 }

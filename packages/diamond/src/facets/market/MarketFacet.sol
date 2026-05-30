@@ -421,9 +421,13 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev Reverts for linked-event children: the linked split path pools collateral at the event
+    ///      level and never reads `perMarketCap`, so accepting one would silently ignore the admin's
+    ///      risk limit (§Fail-loud). Audit Gap#1 F1.
     function setPerMarketCap(uint256 marketId, uint256 cap) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         LibMarketStorage.MarketData storage m = _market(marketId);
+        if (m.linkedChild) revert Market_LinkedEvent();
         uint256 previous = m.perMarketCap;
         m.perMarketCap = cap;
         emit PerMarketCapUpdated(marketId, previous, cap);
@@ -440,10 +444,14 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev Reverts for linked-event children: `LinkedEventFacet.redeemLinked` applies the
+    ///      event-level `redemptionFeeBps`, so a per-market override here would be a silent dead
+    ///      write (§Fail-loud). Audit Gap#1 F1.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
+        if (m.linkedChild) revert Market_LinkedEvent();
         if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
         // Per-market override may only LOWER the effective fee. Without this
         // bound, admin could raise the per-market fee post-split up to
@@ -457,9 +465,12 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev Reverts for linked-event children — symmetric with `setPerMarketRedemptionFeeBps`
+    ///      (a linked child's per-market fee is never read). Audit Gap#1 F1.
     function clearPerMarketRedemptionFee(uint256 marketId) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         LibMarketStorage.MarketData storage m = _market(marketId);
+        if (m.linkedChild) revert Market_LinkedEvent();
         if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
         m.perMarketRedemptionFeeBps = 0;
         m.redemptionFeeOverridden = false;
