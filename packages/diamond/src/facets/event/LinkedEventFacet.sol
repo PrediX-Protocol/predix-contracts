@@ -78,11 +78,10 @@ contract LinkedEventFacet is ILinkedEventFacet, TransientReentrancyGuard {
         e.creator = msg.sender;
         e.oracle = oracle;
         e.linked = true;
-        // Snapshot the redemption fee at creation (PLAN §5-Q2). Fail-loud bounds guard mirrors
-        // LibMarket.create — a comment is not enforcement (§Fail-loud).
-        uint256 defaultFee = LibConfigStorage.layout().defaultRedemptionFeeBps;
-        if (defaultFee > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
-        e.redemptionFeeBps = uint16(defaultFee);
+        // v1: linked events are redemption-fee-free (owner decision 2026-05-31). `redemptionFeeBps`
+        // stays 0 (struct default), so `redeemLinked` pays the full claim and IGNORES the global
+        // default fee. The general fee path in `redeemLinked` is retained for a configurable linked
+        // fee in v1.1.
 
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
         marketIds = new uint256[](n);

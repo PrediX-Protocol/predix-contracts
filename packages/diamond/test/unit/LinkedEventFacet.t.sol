@@ -187,10 +187,11 @@ contract LinkedEventFacetTest is LinkedEventFixture {
         linked.redeemLinked(eventId);
     }
 
-    function test_RedeemLinked_WithFee() public {
-        // set a 1% default redemption fee BEFORE creating the event (snapshotted at creation)
+    function test_RedeemLinked_LinkedIsFeeFree_IgnoresDefault() public {
+        // v1: linked events are fee-free. Even with a non-zero GLOBAL default fee set, a linked
+        // event must ignore it and pay the full claim (owner decision 2026-05-31).
         vm.prank(admin);
-        market.setDefaultRedemptionFeeBps(100); // 1%
+        market.setDefaultRedemptionFeeBps(100); // 1% default — linked MUST ignore this
 
         (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
         _fundAndApprove(alice, 100e6);
@@ -207,11 +208,11 @@ contract LinkedEventFacetTest is LinkedEventFixture {
         vm.prank(alice);
         uint256 payout = linked.redeemLinked(eventId);
 
-        // grossClaim = YES_0 = 10e6; fee = 1% = 1e5; payout = 9.9e6
-        assertEq(payout, 10e6 - 1e5, "payout net of fee");
-        assertEq(usdc.balanceOf(alice) - aliceBefore, 10e6 - 1e5, "alice net");
-        assertEq(usdc.balanceOf(feeRecipient) - feeRecipientBefore, 1e5, "fee to recipient");
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drained (fee+payout == grossClaim)");
+        // Linked is fee-free: grossClaim = YES_0 = 10e6, fee = 0, payout = full 10e6.
+        assertEq(payout, 10e6, "linked redeem must be fee-free");
+        assertEq(usdc.balanceOf(alice) - aliceBefore, 10e6, "alice gets the full claim");
+        assertEq(usdc.balanceOf(feeRecipient) - feeRecipientBefore, 0, "no fee taken for a linked event");
+        assertEq(linked.eventPoolOf(eventId), 0, "pool drained to zero");
         ids; // silence unused warning
     }
 }
