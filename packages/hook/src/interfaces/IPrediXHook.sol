@@ -206,6 +206,13 @@ interface IPrediXHook {
     ///         that would otherwise let a hostile caller lock the pool at an unfair price.
     error Hook_InitPriceOutOfWindow();
 
+    /// @notice Thrown in `_beforeAddLiquidity` when a liquidity position's tick range
+    ///         extends beyond the band whose implied YES price stays within [0,1]
+    ///         (tick 0 = YES priced at 1 USDC). Prevents LPs from backing irrational
+    ///         YES > 1 quotes. Applies to new adds only; pre-existing positions are
+    ///         grandfathered.
+    error Hook_LiquidityRangeOutOfBounds();
+
     /// @notice Reverts when the immediate-apply `setTrustedRouter` is called
     ///         after `completeBootstrap`. Use the propose/execute flow.
     error Hook_BootstrapComplete();
