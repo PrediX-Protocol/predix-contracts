@@ -24,11 +24,21 @@ forge test --match-path 'test/fork/*' -vv
 
 ## Coverage
 
+`MarketLifecycleForkTest.t.sol` — deploys the diamond against a live RPC, real USDC:
+
 - `test_FullLifecycle_SplitResolveRedeem` — happy path across real USDC.
 - `test_RefundMode_WithRealUSDC` — admin refund-mode branch round-trip.
 - `test_Gas_SplitPositionAgainstRealUSDC` — gas probe with a soft regression
   ceiling (surfaces drift vs unit-test mock snapshots when the real USDC
   upgrades its storage layout).
+
+`Gap1UpgradeForkSim.t.sol` — runs the REAL Gap#1 diamond cut on the LIVE forked
+mainnet diamond (additionally needs `DIAMOND_ADDRESS` + `TIMELOCK_ADDRESS`):
+
+- `test_Fork_Gap1Cut_NoBrick_LiveDiamond` — the cut leaves existing
+  markets/events/locked collateral untouched.
+- `test_Fork_Gap1Cut_Rollback_RestoresLiveFacets` — the cut is reversible; a
+  rollback restores the exact pre-upgrade routing with funds intact.
 
 ## Not covered here
 
