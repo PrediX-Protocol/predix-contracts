@@ -110,6 +110,10 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         if (bytes(question).length == 0) revert IMarketFacet.Market_EmptyQuestion();
 
         LibEventStorage.EventData storage e = _event(eventId);
+        // Gap#1 (audit F-A): a shared-collateral event's outcome set is FIXED at createLinkedEvent.
+        // Appending a child after complete sets exist (M>0) would break the uniform-margin precondition
+        // (yᵢ−nᵢ = M for all i) and strand pool collateral — the new child starts at y=n=0.
+        if (e.linked) revert Event_LinkedNoAddOutcome();
         if (e.isResolved) revert Event_AlreadyResolved();
         if (e.refundModeActive) revert Event_RefundModeActive();
         if (block.timestamp >= e.endTime) revert Event_Ended();
@@ -197,6 +201,10 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
 
         LibEventStorage.EventData storage e = _event(eventId);
+        // Gap#1: linked events have no v1 refund mode (deferred to v1.1). Exit is resolveEvent /
+        // emergencyResolveEvent → LinkedEventFacet.redeemLinked. Rejecting here keeps funds from ever
+        // entering a refund state that has no withdrawal path.
+        if (e.linked) revert Event_LinkedNoRefund();
         if (e.isResolved) revert Event_AlreadyResolved();
         if (e.refundModeActive) revert Event_RefundModeActive();
         if (block.timestamp < e.endTime) revert Event_NotEnded();
@@ -237,6 +245,10 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         for (uint256 i; i < n; ++i) {
             uint256 childId = e.marketIds[i];
             LibMarketStorage.MarketData storage m = ms.markets[childId];
+
+            // Gap#1: linked children hold no per-child collateral (it lives in eventPool); their sweep is
+            // deferred to v1.1. Skip explicitly so the per-child residual math never runs on a linked child.
+            if (m.linkedChild) continue;
 
             uint256 finalAt = m.isResolved ? m.resolvedAt : (m.refundModeActive ? m.refundEnabledAt : 0);
             if (finalAt == 0) continue;

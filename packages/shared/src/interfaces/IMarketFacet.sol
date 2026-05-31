@@ -193,6 +193,11 @@ interface IMarketFacet {
     ///         Admin must call `setOutcomeTokenImpl` once before any market can
     ///         be created on a fresh diamond.
     error Market_OutcomeTokenImplNotSet();
+    /// @notice Reverts when a per-child-only flow (`redeem` / `refund` / `sweepUnclaimed`) is called on
+    ///         a child of a shared-collateral (linked) event. Linked split/merge ARE allowed and route
+    ///         collateral to the event pool; resolution-time claims go through
+    ///         `ILinkedEventFacet.redeemLinked`.
+    error Market_LinkedEvent();
 
     // ---------------------------------------------------------------------
     // Lifecycle
