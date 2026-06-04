@@ -31,6 +31,15 @@ testenv.*
 secrets/
 .secrets/
 
+# ---------- Analysis / working docs (not product source) ----------
+GAP_ROADMAP_POLYMARKET.md
+VERIFY_*.md
+DESIGN_*.md
+PLAN_*.md
+AUDIT_*.md
+RUNBOOK_*.md
+*_analysis.local.md
+
 # ---------- OS & editor ----------
 .DS_Store
 ._*
