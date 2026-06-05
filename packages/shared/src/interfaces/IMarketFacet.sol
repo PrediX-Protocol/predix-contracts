@@ -226,6 +226,12 @@ interface IMarketFacet {
     /// @notice Force-resolve a stalled market after `endTime + EMERGENCY_DELAY` (7 days).
     ///         Restricted to `OPERATOR_ROLE`. Bypasses the pause guard so an emergency
     ///         is always actionable.
+    /// @dev `outcome` is operator-asserted and trusted — it is NOT derived from the oracle
+    ///      (the oracle is checked only to classify a reason and to reject the call when it
+    ///      already answered). Use only for a genuinely stalled oracle; `enableRefundMode`
+    ///      is the fair, winner-less alternative. Consumers indexing `MarketEmergencyResolved`
+    ///      should surface it for monitoring.
+    /// @param outcome Operator-asserted final outcome (`true` = YES wins).
     function emergencyResolve(uint256 marketId, bool outcome) external;
 
     /// @notice Burn the caller's full YES and NO balances for `marketId` and pay out the

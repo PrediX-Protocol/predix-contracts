@@ -160,6 +160,15 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    /// @dev TRUST ASSUMPTION: `outcome` is operator-chosen and written verbatim. The oracle
+    ///      is consulted only to classify a bypass reason and to reject the call when it has
+    ///      already answered — it never constrains the value. This is the intentional
+    ///      last-resort settlement for a genuinely stalled oracle; the fair alternative that
+    ///      picks no winner is `enableRefundMode`. The power is bounded by `OPERATOR_ROLE`
+    ///      (a multisig in production), the `endTime + EMERGENCY_DELAY` wait, and that fair
+    ///      alternative. Operators MUST monitor `MarketEmergencyResolved` and treat a resolve
+    ///      whose reason is `OracleUnready`/`OracleUnreachable` while a real oracle answer
+    ///      existed as an incident.
     function emergencyResolve(uint256 marketId, bool outcome) external override nonReentrant {
         LibAccessControl.checkRole(Roles.OPERATOR_ROLE);
 
