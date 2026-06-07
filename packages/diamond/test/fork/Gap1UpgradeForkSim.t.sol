@@ -27,6 +27,7 @@ contract Gap1UpgradeForkSim is Test {
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address timelock = vm.envAddress("TIMELOCK_ADDRESS");
         IERC20 usdc = IERC20(vm.envAddress("USDC_ADDRESS"));
+        _skipIfGap1CutAlreadyLive(diamond);
 
         // --- snapshot the live state pre-upgrade ---
         uint256 mcBefore = IMarketFacet(diamond).marketCount();
@@ -100,6 +101,7 @@ contract Gap1UpgradeForkSim is Test {
         address diamond = vm.envAddress("DIAMOND_ADDRESS");
         address timelock = vm.envAddress("TIMELOCK_ADDRESS");
         IERC20 usdc = IERC20(vm.envAddress("USDC_ADDRESS"));
+        _skipIfGap1CutAlreadyLive(diamond);
 
         // --- snapshot live money facts + the ORIGINAL facet routing (the rollback targets) ---
         uint256 lockedBefore = IMarketFacet(diamond).totalCollateralLocked();
@@ -166,6 +168,17 @@ contract Gap1UpgradeForkSim is Test {
         assertEq(usdc.balanceOf(diamond), usdcBefore, "usdc balance changed");
         assertEq(IMarketFacet(diamond).marketCount(), mcBefore, "marketCount changed");
         assertEq(IEventFacet(diamond).eventCount(), ecBefore, "eventCount changed");
+    }
+
+    /// @dev This sim rehearses the Gap#1 cut on a diamond that has NOT received it yet (its `Add`s
+    ///      revert `DiamondCut_AddExistingSelector` otherwise). The cut went live on chain-130
+    ///      (facet 0xbDcC2Ec9..., verified byte-identical to source in `LinkedLiveForkE2E`), so on a
+    ///      current-block fork the precondition no longer holds — skip explicitly rather than fail.
+    ///      The sim stays runnable against any pre-upgrade pinned block or a fresh testnet deploy.
+    function _skipIfGap1CutAlreadyLive(address diamond) internal {
+        if (IDiamondLoupe(diamond).facetAddress(ILinkedEventFacet.createLinkedEvent.selector) != address(0)) {
+            vm.skip(true, "Gap#1 cut already live on the forked diamond - pre-upgrade sim not applicable");
+        }
     }
 
     function _linkedSelectors() internal pure returns (bytes4[] memory s) {
