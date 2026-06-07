@@ -22,22 +22,32 @@ import {LibMarketStorage} from "@predix/diamond/libraries/LibMarketStorage.sol";
 import {LibPausable} from "@predix/diamond/libraries/LibPausable.sol";
 
 /// @title EventFacet
-/// @notice Coordinator for multi-outcome events. Groups N binary child markets under
-///         a single `eventId`, shares their deadline, and settles them atomically via
-///         `resolveEvent` (exactly one winner, N-1 losers). Each child is a standard
-///         binary market created through the shared `LibMarket` primitive, so it
-///         trades, splits, merges, redeems and refunds exactly like any standalone
-///         market. Direct individual resolution of a child is blocked by
-///         `MarketFacet` — the mutual-exclusion guarantee is on-chain.
+/// @notice Multi-outcome events with shared collateral. `createEvent` groups N mutually-exclusive
+///         binary child markets under one `eventId` backed by a single USDC pool
+///         (`eventPool[eventId]`): `splitEvent` deposits $1 and mints one YES per outcome,
+///         `mergeEvent` is the pre-resolution inverse, and after `resolveEvent` settles exactly one
+///         winner `redeemEvent` pays winner-YES + loser-NO claims from the pool. Per-outcome
+///         split/merge is handled by the linked-aware `MarketFacet.splitPosition`/`mergePositions`
+///         (which route collateral to the pool).
+/// @dev Solvency invariant (proved in DESIGN/PLAN §2): with `yᵢ = YES_i.totalSupply`,
+///      `nᵢ = NO_i.totalSupply`, and `M = yᵢ − nᵢ` (uniform across i), `eventPool == Σ nᵢ + M`, and
+///      the payout if outcome k wins, `y_k + Σ_{j≠k} n_j`, equals `eventPool` for EVERY k. Every
+///      state change below preserves this; `totalCollateralLocked` is updated in lockstep so
+///      `rescueSurplus` is correct.
+///
+///      Pre-consolidation events created by the legacy unlinked `createEvent` remain on chain with
+///      `linked == false` and per-child collateral; the shared lifecycle (`resolveEvent`,
+///      `emergencyResolveEvent`, `enableEventRefundMode`, `sweepUnclaimedEvent`) still serves them,
+///      while the pool ops reject them with `Event_NotLinked`.
 contract EventFacet is IEventFacet, TransientReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice Minimum number of candidate binary markets per event.
     uint256 internal constant MIN_CANDIDATES = 2;
 
-    /// @notice Maximum number of candidate binary markets per event. Bounds the gas
-    ///         cost of `resolveEvent`'s per-child loop and the storage footprint of
-    ///         `EventData.marketIds`.
+    /// @notice Maximum number of candidate binary markets per event. Bounds the gas cost of the
+    ///         `resolveEvent` / `splitEvent` / `mergeEvent` / `redeemEvent` per-child loops and the
+    ///         storage footprint of `EventData.marketIds`.
     uint256 internal constant MAX_CANDIDATES = 50;
 
     /// @notice Grace period after `endTime` before emergency resolution unlocks.
@@ -46,6 +56,9 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     /// @notice Window after finalization during which users can claim. After this
     ///         an admin may sweep leftover collateral. Matches MarketFacet.GRACE_PERIOD.
     uint256 internal constant GRACE_PERIOD = 365 days;
+
+    /// @notice Basis-point denominator (100% = 10000). Mirrors `MarketFacet.BPS_DENOMINATOR`.
+    uint256 internal constant BPS_DENOMINATOR = 10000;
 
     // -----------------------------------------------------------------------
     // Lifecycle
@@ -86,10 +99,17 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         e.endTime = endTime;
         e.creator = msg.sender;
         e.oracle = oracle;
+        e.linked = true;
+        // v1: shared-pool events are redemption-fee-free (owner decision 2026-05-31).
+        // `redemptionFeeBps` stays 0 (struct default), so `redeemEvent` pays the full claim and
+        // IGNORES the global default fee. The general fee path in `redeemEvent` is retained for a
+        // configurable fee in v1.1.
 
+        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
         marketIds = new uint256[](n);
         for (uint256 i; i < n; ++i) {
             uint256 marketId = LibMarket.create(candidateQuestions[i], endTime, address(0), eventId);
+            ms.markets[marketId].linkedChild = true;
             marketIds[i] = marketId;
             e.marketIds.push(marketId);
             es.marketToEvent[marketId] = eventId;
@@ -99,43 +119,102 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IEventFacet
-    function addEventOutcome(uint256 eventId, string calldata question)
-        external
-        override
-        nonReentrant
-        returns (uint256 marketId)
-    {
+    function splitEvent(uint256 eventId, uint256 amount) external override nonReentrant {
         LibPausable.enforceNotPaused(Modules.MARKET);
-        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
-        if (bytes(question).length == 0) revert IMarketFacet.Market_EmptyQuestion();
+        if (amount == 0) revert Event_ZeroAmount();
 
-        LibEventStorage.EventData storage e = _event(eventId);
-        // Gap#1 (audit F-A): a shared-collateral event's outcome set is FIXED at createLinkedEvent.
-        // Appending a child after complete sets exist (M>0) would break the uniform-margin precondition
-        // (yᵢ−nᵢ = M for all i) and strand pool collateral — the new child starts at y=n=0.
-        if (e.linked) revert Event_LinkedNoAddOutcome();
+        LibEventStorage.EventData storage e = _linkedEvent(eventId);
         if (e.isResolved) revert Event_AlreadyResolved();
         if (e.refundModeActive) revert Event_RefundModeActive();
         if (block.timestamp >= e.endTime) revert Event_Ended();
-        if (e.marketIds.length >= MAX_CANDIDATES) revert Event_TooManyCandidates();
 
-        // The new child inherits the event's endTime + collective oracle (address(0))
-        // so its lifecycle stays identical to its siblings; resolution still flows
-        // through the event's oracle in resolveEvent.
-        marketId = LibMarket.create(question, e.endTime, address(0), eventId);
+        // Effects (CEI): credit the pool + global lock before the external pull/mint.
+        LibEventStorage.layout().eventPool[eventId] += amount;
+        LibMarketStorage.layout().totalCollateralLocked += amount;
 
-        // Match the redemption-fee snapshot of the existing children so a late-added
-        // outcome never settles on a different fee than its siblings if the global
-        // default changed after the event was created. marketIds[0] always exists —
-        // createEvent enforces MIN_CANDIDATES.
+        LibConfigStorage.layout().collateralToken.safeTransferFrom(msg.sender, address(this), amount);
+
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
-        ms.markets[marketId].snapshottedDefaultRedemptionFeeBps =
-            ms.markets[e.marketIds[0]].snapshottedDefaultRedemptionFeeBps;
+        uint256 n = e.marketIds.length;
+        for (uint256 i; i < n; ++i) {
+            IOutcomeToken(ms.markets[e.marketIds[i]].yesToken).mint(msg.sender, amount);
+        }
 
-        e.marketIds.push(marketId);
-        LibEventStorage.layout().marketToEvent[marketId] = eventId;
+        emit EventSplit(eventId, msg.sender, amount);
+    }
 
-        emit EventOutcomeAdded(eventId, marketId, question);
+    /// @inheritdoc IEventFacet
+    function mergeEvent(uint256 eventId, uint256 amount) external override nonReentrant {
+        LibPausable.enforceNotPaused(Modules.MARKET);
+        if (amount == 0) revert Event_ZeroAmount();
+
+        LibEventStorage.EventData storage e = _linkedEvent(eventId);
+        if (e.isResolved) revert Event_AlreadyResolved();
+        if (e.refundModeActive) revert Event_RefundModeActive();
+
+        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
+        uint256 n = e.marketIds.length;
+        // Burn one YES of every outcome first — reverts if the caller is short any leg.
+        for (uint256 i; i < n; ++i) {
+            IOutcomeToken(ms.markets[e.marketIds[i]].yesToken).burn(msg.sender, amount);
+        }
+
+        LibEventStorage.layout().eventPool[eventId] -= amount; // underflow-checked
+        LibMarketStorage.layout().totalCollateralLocked -= amount;
+
+        LibConfigStorage.layout().collateralToken.safeTransfer(msg.sender, amount);
+
+        emit EventMerged(eventId, msg.sender, amount);
+    }
+
+    /// @inheritdoc IEventFacet
+    /// @dev Post-resolution redemption deliberately bypasses the MARKET pause guard, mirroring
+    ///      `MarketFacet.redeem`: the outcome is final and a paused module must not hold winners' funds.
+    function redeemEvent(uint256 eventId) external override nonReentrant returns (uint256 payout) {
+        LibEventStorage.EventData storage e = _linkedEvent(eventId);
+        if (!e.isResolved) revert Event_NotResolved();
+        // Defense-in-depth: shared-pool events cannot enter refund mode in v1 (Event_LinkedNoRefund),
+        // so this is unreachable today — kept so redeemEvent can never run against a future refund state.
+        if (e.refundModeActive) revert Event_RefundModeActive();
+
+        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
+        uint256 n = e.marketIds.length;
+        uint256 winningIndex = e.winningIndex;
+        uint256 grossClaim;
+
+        for (uint256 i; i < n; ++i) {
+            LibMarketStorage.MarketData storage m = ms.markets[e.marketIds[i]];
+            // Winner pays on YES, every loser pays on NO — `payout(k) == eventPool` by the solvency THM.
+            IOutcomeToken token = i == winningIndex ? IOutcomeToken(m.yesToken) : IOutcomeToken(m.noToken);
+            uint256 bal = token.balanceOf(msg.sender);
+            if (bal > 0) {
+                token.burn(msg.sender, bal);
+                grossClaim += bal;
+            }
+        }
+        if (grossClaim == 0) revert Event_NothingToRedeem();
+
+        uint256 pool = LibEventStorage.layout().eventPool[eventId];
+        // Accounting tripwire: must never fire if `eventPool == Σ nᵢ + M` holds.
+        if (pool < grossClaim) revert Event_PoolInsolvent();
+
+        // Floor rounding (fee down → payout up) is intentional and matches MarketFacet.redeem; the pool is
+        // decremented by the FULL grossClaim so `fee + payout == grossClaim` and the pool still drains to 0.
+        uint256 fee = (grossClaim * e.redemptionFeeBps) / BPS_DENOMINATOR;
+        payout = grossClaim - fee;
+
+        LibEventStorage.layout().eventPool[eventId] = pool - grossClaim;
+        LibMarketStorage.layout().totalCollateralLocked -= grossClaim;
+
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        if (fee > 0) {
+            cfg.collateralToken.safeTransfer(cfg.feeRecipient, fee);
+        }
+        if (payout > 0) {
+            cfg.collateralToken.safeTransfer(msg.sender, payout);
+        }
+
+        emit EventRedeemed(eventId, msg.sender, grossClaim, fee, payout);
     }
 
     /// @inheritdoc IEventFacet
@@ -201,9 +280,9 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
 
         LibEventStorage.EventData storage e = _event(eventId);
-        // Gap#1: linked events have no v1 refund mode (deferred to v1.1). Exit is resolveEvent /
-        // emergencyResolveEvent → LinkedEventFacet.redeemLinked. Rejecting here keeps funds from ever
-        // entering a refund state that has no withdrawal path.
+        // Shared-pool events have no v1 refund mode (deferred to v1.1). Exit is resolveEvent /
+        // emergencyResolveEvent → redeemEvent. Rejecting here keeps funds from ever entering a
+        // refund state that has no withdrawal path.
         if (e.linked) revert Event_LinkedNoRefund();
         if (e.isResolved) revert Event_AlreadyResolved();
         if (e.refundModeActive) revert Event_RefundModeActive();
@@ -246,8 +325,8 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
             uint256 childId = e.marketIds[i];
             LibMarketStorage.MarketData storage m = ms.markets[childId];
 
-            // Gap#1: linked children hold no per-child collateral (it lives in eventPool); their sweep is
-            // deferred to v1.1. Skip explicitly so the per-child residual math never runs on a linked child.
+            // Shared-pool children hold no per-child collateral (it lives in eventPool); their sweep is
+            // deferred to v1.1. Skip explicitly so the per-child residual math never runs on one.
             if (m.linkedChild) continue;
 
             uint256 finalAt = m.isResolved ? m.resolvedAt : (m.refundModeActive ? m.refundEnabledAt : 0);
@@ -292,7 +371,8 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
             winningIndex: e.winningIndex,
             isResolved: e.isResolved,
             refundModeActive: e.refundModeActive,
-            oracle: e.oracle
+            oracle: e.oracle,
+            linked: e.linked
         });
     }
 
@@ -315,6 +395,11 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     /// @inheritdoc IEventFacet
     function eventCount() external view override returns (uint256) {
         return LibEventStorage.layout().eventCount;
+    }
+
+    /// @inheritdoc IEventFacet
+    function eventPoolOf(uint256 eventId) external view override returns (uint256) {
+        return LibEventStorage.layout().eventPool[eventId];
     }
 
     // -----------------------------------------------------------------------
@@ -342,5 +427,12 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     function _event(uint256 eventId) private view returns (LibEventStorage.EventData storage e) {
         e = LibEventStorage.layout().events[eventId];
         if (e.creator == address(0)) revert Event_NotFound();
+    }
+
+    /// @dev Pool ops require a shared-collateral event: pre-consolidation legacy events
+    ///      (`linked == false`) keep per-child collateral and must use the per-child paths.
+    function _linkedEvent(uint256 eventId) private view returns (LibEventStorage.EventData storage e) {
+        e = _event(eventId);
+        if (!e.linked) revert Event_NotLinked();
     }
 }

@@ -210,7 +210,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     function redeem(uint256 marketId) external override nonReentrant returns (uint256 payout) {
         LibMarketStorage.MarketData storage m = _market(marketId);
         // Gap#1: linked children cannot redeem per-child — winning-YES + losing-NO claims pay from the
-        // shared event pool via `LinkedEventFacet.redeemLinked`. Reject here to prevent a single-outcome
+        // shared event pool via `EventFacet.redeemEvent`. Reject here to prevent a single-outcome
         // payout that would break event-level solvency.
         if (m.linkedChild) revert Market_LinkedEvent();
         if (!m.isResolved) revert Market_NotResolved();
@@ -453,7 +453,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
-    /// @dev Reverts for linked-event children: `LinkedEventFacet.redeemLinked` applies the
+    /// @dev Reverts for linked-event children: `EventFacet.redeemEvent` applies the
     ///      event-level `redemptionFeeBps`, so a per-market override here would be a silent dead
     ///      write (§Fail-loud). Audit Gap#1 F1.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {

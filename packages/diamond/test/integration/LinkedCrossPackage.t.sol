@@ -14,7 +14,6 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
-import {ILinkedEventFacet} from "@predix/shared/interfaces/ILinkedEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
@@ -26,7 +25,7 @@ import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
 import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
 import {IPrediXExchange} from "@predix/exchange/IPrediXExchange.sol";
 
-import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
+import {EventFixture} from "../utils/EventFixture.sol";
 import {IntegrationPoolManager, IntegrationQuoter, IntegrationPermit2} from "./RouterIntegration.t.sol";
 
 /// @title LinkedCrossPackageE2E
@@ -34,12 +33,12 @@ import {IntegrationPoolManager, IntegrationQuoter, IntegrationPermit2} from "./R
 ///         linked coverage is diamond-only (facet-direct); this suite drives linked children through the
 ///         REAL PrediXExchange CLOB (complementary fill, synthetic MINT via `splitPosition`, synthetic
 ///         MERGE via `mergePositions`) and the REAL PrediXRouter (CLOB leg + virtual-NO split inside the
-///         unlock callback), then resolves and drains the shared pool through `redeemLinked` — asserting
+///         unlock callback), then resolves and drains the shared pool through `redeemEvent` — asserting
 ///         the solvency identity `eventPool == Σ NO_i + M` (uniform M) after every step and an EXACT
 ///         drain to 0 at the end. v4 PoolManager/Quoter are the same deterministic stubs RouterIntegration
 ///         uses (v4-core's concrete PoolManager pins an incompatible solc); the hook's real swap-path
 ///         behavior is covered by `packages/hook` unit + fork suites and is linked-agnostic by design.
-contract LinkedCrossPackageE2ETest is LinkedEventFixture {
+contract LinkedCrossPackageE2ETest is EventFixture {
     IntegrationPoolManager internal pm;
     IntegrationQuoter internal quoter;
     IntegrationPermit2 internal permit2;
@@ -128,13 +127,13 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
             else assertEq(margin, m0, "M not uniform across outcomes");
             sumNo += IOutcomeToken(m.noToken).totalSupply();
         }
-        assertEq(int256(linked.eventPoolOf(eventId)), int256(sumNo) + m0, "eventPool != sum(NO_i) + M");
+        assertEq(int256(eventFacet.eventPoolOf(eventId)), int256(sumNo) + m0, "eventPool != sum(NO_i) + M");
     }
 
     function _mintSet(address user, uint256 eventId, uint256 amount) internal {
         _fundAndApprove(user, amount);
         vm.prank(user);
-        linked.mintCompleteSet(eventId, amount);
+        eventFacet.splitEvent(eventId, amount);
     }
 
     function _giveUsdcForExchange(address to, uint256 amount) internal {
@@ -177,7 +176,7 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
     function test_E2E_Clob_ComplementaryFill_LinkedChild_PoolDrainsToZero() public {
         uint256 endTime = block.timestamp + 7 days;
-        (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
+        (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
 
         // alice mints a complete set and rests SELL_YES on child0 @ $0.60.
         _mintSet(alice, eventId, 200e6);
@@ -195,20 +194,20 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
         assertEq(filled, 200e6, "filled 200 YES");
         assertEq(cost, 120e6, "cost 120 USDC at 0.60");
         _assertLinkedSolvent(eventId);
-        assertEq(linked.eventPoolOf(eventId), 200e6, "trading must not move the pool");
+        assertEq(eventFacet.eventPoolOf(eventId), 200e6, "trading must not move the pool");
 
         // Resolve outcome 0 — bob holds all winner-YES, alice holds only loser-YES (worthless).
         _resolveWinner(eventId, endTime, 0);
 
         vm.prank(bob);
-        uint256 bobPayout = linked.redeemLinked(eventId);
+        uint256 bobPayout = eventFacet.redeemEvent(eventId);
         assertEq(bobPayout, 200e6, "bob claims the full pool via winner-YES");
 
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NothingToRedeem.selector);
-        linked.redeemLinked(eventId);
+        vm.expectRevert(IEventFacet.Event_NothingToRedeem.selector);
+        eventFacet.redeemEvent(eventId);
 
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drains to exactly 0");
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
         assertEq(market.totalCollateralLocked(), 0, "global lock restored");
     }
 
@@ -218,7 +217,7 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
     function test_E2E_Clob_SyntheticMint_LinkedChild_RoutesToEventPool() public {
         uint256 endTime = block.timestamp + 7 days;
-        (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
+        (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
 
         // alice rests BUY_NO child0 @ $0.40; bob's BUY_YES taker forces the synthetic MINT:
         // the exchange calls the diamond's splitPosition(child0) with combined funds.
@@ -236,18 +235,18 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
         // The linked branch must credit the EVENT pool, never the child's own collateral.
         assertEq(market.getMarket(ids[0]).totalCollateral, 0, "linked child holds no per-child collateral");
-        assertEq(linked.eventPoolOf(eventId), 100e6, "split routed to eventPool");
+        assertEq(eventFacet.eventPoolOf(eventId), 100e6, "split routed to eventPool");
         assertEq(market.totalCollateralLocked(), 100e6, "lockstep credit");
         _assertLinkedSolvent(eventId);
 
         // Winner 0: bob's YES0 claims the whole pool; alice's NO0 is the winner's NO (worthless).
         _resolveWinner(eventId, endTime, 0);
         vm.prank(bob);
-        assertEq(linked.redeemLinked(eventId), 100e6, "bob drains the pool");
+        assertEq(eventFacet.redeemEvent(eventId), 100e6, "bob drains the pool");
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NothingToRedeem.selector);
-        linked.redeemLinked(eventId);
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drains to exactly 0");
+        vm.expectRevert(IEventFacet.Event_NothingToRedeem.selector);
+        eventFacet.redeemEvent(eventId);
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
     }
 
     // =========================================================================
@@ -256,13 +255,13 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
     function test_E2E_Clob_SyntheticMerge_LinkedChild_DebitsEventPool() public {
         uint256 endTime = block.timestamp + 7 days;
-        (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
+        (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
 
         // alice: complete set + child0 split → she can rest SELL_NO; bob: child0 split → taker SELL_YES.
         _mintSet(alice, eventId, 100e6);
         _split(alice, ids[0], 100e6);
         _split(bob, ids[0], 100e6);
-        assertEq(linked.eventPoolOf(eventId), 300e6, "pool after set + two splits");
+        assertEq(eventFacet.eventPoolOf(eventId), 300e6, "pool after set + two splits");
         _assertLinkedSolvent(eventId);
 
         _approveOutcomeTokens(alice, ids[0], address(exchange));
@@ -278,17 +277,17 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
         assertEq(cost, 100e6, "bob spent 100 YES");
 
         // Synthetic MERGE burned 100 YES + 100 NO through the diamond → pool debited by exactly 100.
-        assertEq(linked.eventPoolOf(eventId), 200e6, "merge debited the eventPool");
+        assertEq(eventFacet.eventPoolOf(eventId), 200e6, "merge debited the eventPool");
         assertEq(market.getMarket(ids[0]).totalCollateral, 0, "child collateral untouched");
         _assertLinkedSolvent(eventId);
 
         // Winner 1: alice claims YES1 (100); bob claims loser-NO0 (100) — exact drain.
         _resolveWinner(eventId, endTime, 1);
         vm.prank(alice);
-        assertEq(linked.redeemLinked(eventId), 100e6, "alice winner-YES claim");
+        assertEq(eventFacet.redeemEvent(eventId), 100e6, "alice winner-YES claim");
         vm.prank(bob);
-        assertEq(linked.redeemLinked(eventId), 100e6, "bob loser-NO claim");
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drains to exactly 0");
+        assertEq(eventFacet.redeemEvent(eventId), 100e6, "bob loser-NO claim");
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
         assertEq(market.totalCollateralLocked(), 0, "global lock restored");
     }
 
@@ -298,7 +297,7 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
     function test_E2E_Router_BuyYes_ClobLeg_LinkedChild_FullLifecycle() public {
         uint256 endTime = block.timestamp + 7 days;
-        (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
+        (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
         _registerChildPool(ids[0]);
 
         _mintSet(alice, eventId, 200e6);
@@ -323,8 +322,8 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
         _resolveWinner(eventId, endTime, 0);
         vm.prank(trader);
-        assertEq(linked.redeemLinked(eventId), 200e6, "router-bought YES redeems the pool");
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drains to exactly 0");
+        assertEq(eventFacet.redeemEvent(eventId), 200e6, "router-bought YES redeems the pool");
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
     }
 
     // =========================================================================
@@ -333,7 +332,7 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
     function test_E2E_Router_BuyNo_VirtualPath_LinkedChild_SplitsToEventPool() public {
         uint256 endTime = block.timestamp + 30 days;
-        (uint256 eventId, uint256[] memory ids) = _createLinked3(endTime);
+        (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
         (address yesToken,) = _registerChildPool(ids[0]);
         address noToken = market.getMarket(ids[0]).noToken;
 
@@ -368,7 +367,7 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
 
         // The split inside the router's unlock callback must credit the EVENT pool.
         assertEq(market.getMarket(ids[0]).totalCollateral, 0, "linked child holds no per-child collateral");
-        assertEq(linked.eventPoolOf(eventId), mintAmount, "callback split routed to eventPool");
+        assertEq(eventFacet.eventPoolOf(eventId), mintAmount, "callback split routed to eventPool");
         _assertLinkedSolvent(eventId);
 
         // Full drain: the YES leg sits in the PM stub — hand it to carol (plain ERC20 transfer),
@@ -377,11 +376,11 @@ contract LinkedCrossPackageE2ETest is LinkedEventFixture {
         IERC20(yesToken).transfer(carol, mintAmount);
         _resolveWinner(eventId, endTime, 0);
         vm.prank(carol);
-        assertEq(linked.redeemLinked(eventId), mintAmount, "carol claims the pool");
+        assertEq(eventFacet.redeemEvent(eventId), mintAmount, "carol claims the pool");
         vm.prank(trader);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NothingToRedeem.selector);
-        linked.redeemLinked(eventId);
-        assertEq(linked.eventPoolOf(eventId), 0, "pool drains to exactly 0");
+        vm.expectRevert(IEventFacet.Event_NothingToRedeem.selector);
+        eventFacet.redeemEvent(eventId);
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
         assertEq(market.totalCollateralLocked(), 0, "global lock restored");
     }
 }

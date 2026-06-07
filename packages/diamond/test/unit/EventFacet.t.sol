@@ -299,16 +299,10 @@ contract EventFacetTest is EventFixture {
         eventFacet.resolveEvent(eventId);
     }
 
-    function test_Revert_ResolveEvent_RefundModeActive() public {
-        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.enableEventRefundMode(eventId);
-
-        eventOracle.setEventResolution(eventId, 0);
-        vm.expectRevert(IEventFacet.Event_RefundModeActive.selector);
-        eventFacet.resolveEvent(eventId);
-    }
+    // NOTE (consolidation): resolveEvent-vs-refundMode and the refund-mode happy paths are only
+    // reachable for pre-consolidation legacy events (`linked == false`) — they are locked by the
+    // storage-forged `LegacyEventLifecycle` repro. `enableEventRefundMode` on a (now always
+    // shared-pool) event reverts `Event_LinkedNoRefund` — covered in `LinkedEventGuards`.
 
     // -----------------------------------------------------------------------
     // MarketFacet.* blocked on event children (CORE invariant)
@@ -341,40 +335,6 @@ contract EventFacetTest is EventFixture {
     // enableEventRefundMode
     // -----------------------------------------------------------------------
 
-    function test_EnableEventRefundMode_HappyPath() public {
-        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.enableEventRefundMode(eventId);
-        IEventFacet.EventView memory e = eventFacet.getEvent(eventId);
-        assertTrue(e.refundModeActive);
-        assertEq(e.refundEnabledAt, block.timestamp);
-    }
-
-    function test_EnableEventRefundMode_PropagatesToAllChildren() public {
-        (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
-        vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.enableEventRefundMode(eventId);
-        for (uint256 i; i < marketIds.length; ++i) {
-            assertTrue(market.getMarket(marketIds[i]).refundModeActive);
-        }
-    }
-
-    function test_EnableEventRefundMode_UsersCanRefundOnChildren() public {
-        (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
-        _split(alice, marketIds[0], 100e6);
-
-        vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.enableEventRefundMode(eventId);
-
-        uint256 balBefore = usdc.balanceOf(alice);
-        vm.prank(alice);
-        market.refund(marketIds[0], 100e6, 100e6);
-        assertEq(usdc.balanceOf(alice) - balBefore, 100e6);
-    }
-
     function test_Revert_EnableEventRefundMode_NotAdmin() public {
         (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         vm.warp(endTime + 1);
@@ -391,64 +351,52 @@ contract EventFacetTest is EventFixture {
         eventFacet.enableEventRefundMode(999);
     }
 
-    function test_Revert_EnableEventRefundMode_AlreadyResolved() public {
-        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        _resolveAt(eventId, 0);
-        vm.prank(admin);
-        vm.expectRevert(IEventFacet.Event_AlreadyResolved.selector);
-        eventFacet.enableEventRefundMode(eventId);
-    }
-
-    function test_Revert_EnableEventRefundMode_NotEnded() public {
-        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        vm.prank(admin);
-        vm.expectRevert(IEventFacet.Event_NotEnded.selector);
-        eventFacet.enableEventRefundMode(eventId);
-    }
-
-    function test_Revert_EnableEventRefundMode_RefundModeActive() public {
-        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
-        vm.warp(endTime + 1);
-        vm.prank(admin);
-        eventFacet.enableEventRefundMode(eventId);
-        vm.prank(admin);
-        vm.expectRevert(IEventFacet.Event_RefundModeActive.selector);
-        eventFacet.enableEventRefundMode(eventId);
-    }
+    // NOTE (consolidation): the AlreadyResolved/NotEnded/RefundModeActive state gates of
+    // `enableEventRefundMode` sit BEHIND the `Event_LinkedNoRefund` reject and are reachable only
+    // for legacy events — locked by the storage-forged `LegacyEventLifecycle` repro.
 
     // -----------------------------------------------------------------------
     // Child-market trading
     // -----------------------------------------------------------------------
 
-    function test_SplitPosition_OnEventChild_Works() public {
-        (, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
+    function test_SplitPosition_OnEventChild_RoutesToEventPool() public {
+        (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         _split(alice, marketIds[0], 50e6);
-        assertEq(market.getMarket(marketIds[0]).totalCollateral, 50e6);
+        assertEq(market.getMarket(marketIds[0]).totalCollateral, 0, "child must hold no per-child collateral");
+        assertEq(eventFacet.eventPoolOf(eventId), 50e6, "split credits the shared pool");
     }
 
-    function test_MergePositions_OnEventChild_Works() public {
-        (, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
+    function test_MergePositions_OnEventChild_DebitsEventPool() public {
+        (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         _split(alice, marketIds[0], 50e6);
         vm.prank(alice);
         market.mergePositions(marketIds[0], 20e6);
-        assertEq(market.getMarket(marketIds[0]).totalCollateral, 30e6);
+        assertEq(market.getMarket(marketIds[0]).totalCollateral, 0, "child must hold no per-child collateral");
+        assertEq(eventFacet.eventPoolOf(eventId), 30e6, "merge debits the shared pool");
     }
 
-    function test_Redeem_OnEventChild_AfterEventResolve_PaysOut() public {
+    function test_Redeem_OnEventChild_Blocked_RedeemEventPaysOut() public {
         (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         _split(alice, marketIds[1], 100e6);
         _resolveAt(eventId, 1);
 
+        // Per-child redeem is blocked — the claim flows through the shared pool instead.
+        vm.prank(alice);
+        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.redeem(marketIds[1]);
+
         uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        market.redeem(marketIds[1]);
+        uint256 payout = eventFacet.redeemEvent(eventId);
+        assertEq(payout, 100e6, "winner-YES claim pays from the pool");
         assertEq(usdc.balanceOf(alice) - balBefore, 100e6);
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
     }
 
-    function test_Revert_Redeem_OnEventChild_AfterEventResolve_OnlyLosingLeg() public {
+    function test_Revert_RedeemEvent_OnlyLosingYes_NothingToRedeem() public {
         (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
-        // alice splits on the losing child, then offloads her NO leg to bob so the
-        // remaining YES leg is a pure loser position once the event settles.
+        // alice splits on the losing child, then offloads her NO leg to bob so her remaining
+        // YES leg is a pure loser position once the event settles.
         _split(alice, marketIds[0], 100e6);
         IMarketFacet.MarketView memory m = market.getMarket(marketIds[0]);
         vm.prank(alice);
@@ -456,28 +404,30 @@ contract EventFacetTest is EventFixture {
 
         _resolveAt(eventId, 1);
 
-        uint256 balBefore = usdc.balanceOf(alice);
+        // alice holds only loser-YES — worthless, redeemEvent refuses (her balance is preserved).
         uint256 aliceYesBefore = IOutcomeToken(m.yesToken).balanceOf(alice);
         vm.prank(alice);
-        vm.expectRevert(IMarketFacet.Market_NothingWorthRedeeming.selector);
-        market.redeem(marketIds[0]);
-        // USDC unchanged and losing-leg balance preserved.
-        assertEq(usdc.balanceOf(alice), balBefore);
+        vm.expectRevert(IEventFacet.Event_NothingToRedeem.selector);
+        eventFacet.redeemEvent(eventId);
         assertEq(IOutcomeToken(m.yesToken).balanceOf(alice), aliceYesBefore);
+
+        // bob holds loser-NO — that leg pays the pool's full backing.
+        vm.prank(bob);
+        assertEq(eventFacet.redeemEvent(eventId), 100e6, "loser-NO claim pays from the pool");
+        assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drains to exactly 0");
     }
 
-    function test_SweepUnclaimed_OnEventChild_AfterGrace_RefusesLiveBacking() public {
+    function test_Revert_SweepUnclaimed_OnEventChild() public {
         (uint256 eventId, uint256[] memory marketIds) = _createThreeCandidateEvent(endTime);
         _split(alice, marketIds[0], 100e6);
         _resolveAt(eventId, 1);
 
+        // Event children carry no per-child collateral; the per-child residual sweep is rejected
+        // outright (pool-level sweep is deferred to v1.1).
         vm.warp(block.timestamp + 365 days + 1);
-        uint256 before = usdc.balanceOf(feeRecipient);
         vm.prank(admin);
-        uint256 swept = market.sweepUnclaimed(marketIds[0]);
-        // Post-FINAL-H03: alice still holds outcome tokens; sweep must refuse.
-        assertEq(swept, 0);
-        assertEq(usdc.balanceOf(feeRecipient) - before, 0);
+        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.sweepUnclaimed(marketIds[0]);
     }
 
     // -----------------------------------------------------------------------

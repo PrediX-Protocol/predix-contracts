@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
+import {EventFixture} from "../utils/EventFixture.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
 /// @notice Task 3 guards: linked children route split/merge to the event pool (NOT revert), but reject
-///         per-child redeem/refund/sweep; the event rejects addEventOutcome + enableEventRefundMode.
-contract LinkedEventGuardsTest is LinkedEventFixture {
+///         per-child redeem/refund/sweep; the event rejects enableEventRefundMode (no v1 refund path).
+contract LinkedEventGuardsTest is EventFixture {
     uint256 internal eventId;
     uint256[] internal childIds;
     uint256 internal endTime;
@@ -16,7 +16,7 @@ contract LinkedEventGuardsTest is LinkedEventFixture {
     function setUp() public override {
         super.setUp();
         endTime = block.timestamp + 30 days;
-        (eventId, childIds) = _createLinked3(endTime);
+        (eventId, childIds) = _createThreeCandidateEvent(endTime);
     }
 
     // --- split/merge MUST work on linked children (Q6=A) ---
@@ -27,7 +27,7 @@ contract LinkedEventGuardsTest is LinkedEventFixture {
         vm.prank(alice);
         market.splitPosition(childIds[0], 1e6);
 
-        assertEq(linked.eventPoolOf(eventId), 1e6, "pool not credited");
+        assertEq(eventFacet.eventPoolOf(eventId), 1e6, "pool not credited");
         assertEq(market.getMarket(childIds[0]).totalCollateral, 0, "linked child per-market collateral must stay 0");
         assertEq(IOutcomeToken(m.yesToken).balanceOf(alice), 1e6, "YES not minted");
         assertEq(IOutcomeToken(m.noToken).balanceOf(alice), 1e6, "NO not minted");
@@ -41,7 +41,7 @@ contract LinkedEventGuardsTest is LinkedEventFixture {
         market.mergePositions(childIds[0], 4e5);
         vm.stopPrank();
 
-        assertEq(linked.eventPoolOf(eventId), 6e5, "pool not debited");
+        assertEq(eventFacet.eventPoolOf(eventId), 6e5, "pool not debited");
         assertEq(market.totalCollateralLocked(), 6e5, "lockstep broken");
     }
 
@@ -72,31 +72,11 @@ contract LinkedEventGuardsTest is LinkedEventFixture {
 
     // --- event-level guards ---
 
-    function test_Revert_AddEventOutcome_OnLinkedEvent() public {
-        vm.prank(alice);
-        vm.expectRevert(IEventFacet.Event_LinkedNoAddOutcome.selector);
-        eventFacet.addEventOutcome(eventId, "late outcome");
-    }
-
     function test_Revert_EnableEventRefundMode_OnLinkedEvent() public {
         vm.warp(endTime + 1);
         vm.prank(admin);
         vm.expectRevert(IEventFacet.Event_LinkedNoRefund.selector);
         eventFacet.enableEventRefundMode(eventId);
-    }
-
-    // --- legacy (non-linked) event must STILL allow addEventOutcome (no regression) ---
-
-    function test_LegacyEvent_AddEventOutcome_StillWorks() public {
-        uint256 legacyEnd = block.timestamp + 30 days;
-        string[] memory qs = _defaultQuestions(2);
-        vm.prank(alice);
-        (uint256 legacyId,) = eventFacet.createEvent("Legacy", qs, legacyEnd, address(eventOracle));
-        assertFalse(linked.isLinkedEvent(legacyId), "legacy must not be linked");
-
-        vm.prank(alice);
-        uint256 newChild = eventFacet.addEventOutcome(legacyId, "extra");
-        assertEq(eventFacet.eventOfMarket(newChild), legacyId, "addEventOutcome regressed on legacy event");
     }
 
     // --- F1 (audit Gap#1): per-market cap/fee setters MUST reject linked children (fail-loud).

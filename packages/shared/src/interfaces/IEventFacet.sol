@@ -4,11 +4,17 @@ pragma solidity 0.8.34;
 import {EmergencyReason} from "@predix/shared/constants/EmergencyReason.sol";
 
 /// @title IEventFacet
-/// @notice Public interface for the PrediX multi-outcome event coordinator. An event
-///         groups N binary child markets under a single id, shares their end time,
-///         and resolves them atomically with exactly one winning child. Every child
-///         is a standard binary market with its own YES/NO outcome token pair — the
-///         event layer only enforces grouping and mutual exclusion at resolution time.
+/// @notice Public interface for PrediX multi-outcome events. An event groups N mutually-exclusive
+///         binary child markets under a single id, backed by ONE shared USDC pool
+///         (`eventPool[eventId]`): `splitEvent` deposits $1 and mints one YES per outcome,
+///         `mergeEvent` is the pre-resolution inverse, and after `resolveEvent` settles exactly one
+///         winner `redeemEvent` pays winner-YES + loser-NO claims from the pool. Each child trades
+///         on the same AMM pools and CLOB books as any standalone market; per-outcome split/merge
+///         goes through `IMarketFacet.splitPosition`/`mergePositions` (linked-aware — they route
+///         collateral to the shared pool). `Σ YES → $1` is enforceable by arbitrage.
+/// @dev Pre-consolidation legacy events (per-child collateral, `linked == false`) still exist on
+///      chain: the shared lifecycle continues to serve them, while the pool ops reject them with
+///      `Event_NotLinked`.
 interface IEventFacet {
     /// @notice Snapshot of an event for off-chain consumers.
     struct EventView {
@@ -22,6 +28,9 @@ interface IEventFacet {
         bool isResolved;
         bool refundModeActive;
         address oracle;
+        /// @dev `true` = shared-collateral event (the only creatable kind post-consolidation);
+        ///      `false` = pre-consolidation legacy event with per-child collateral.
+        bool linked;
     }
 
     // ---------------------------------------------------------------------
@@ -58,10 +67,6 @@ interface IEventFacet {
 
     /// @notice Emitted per-child when `sweepUnclaimedEvent` recovers residual collateral.
     event EventChildSwept(uint256 indexed eventId, uint256 indexed childMarketId, uint256 amount);
-
-    /// @notice Emitted when a new outcome (child market) is appended to a live event.
-    ///         The child also emits its own `IMarketFacet.MarketCreated` in the same tx.
-    event EventOutcomeAdded(uint256 indexed eventId, uint256 indexed marketId, string question);
 
     /// @notice Emitted when a user deposits USDC into the shared pool and mints one YES
     ///         of every outcome (`splitEvent`).
@@ -111,18 +116,12 @@ interface IEventFacet {
     error Event_OracleNotResolved();
     error Event_TooEarlyForEmergency();
     error Event_OracleResolvedUseResolve();
-    /// @notice Reverts when `addEventOutcome` is called on an event whose `endTime`
-    ///         has already passed. Outcomes may only be appended while the event is
-    ///         still live so every child shares an identical, future deadline.
+    /// @notice Reverts when a pre-resolution `splitEvent` is attempted after the event `endTime`.
     error Event_Ended();
-    /// @notice Reverts when `enableEventRefundMode` is called on a shared-collateral (linked) event.
-    ///         Linked refund-mode is deferred to v1.1; v1 exit is `resolveEvent` /
-    ///         `emergencyResolveEvent` followed by `ILinkedEventFacet.redeemLinked`.
+    /// @notice Reverts when `enableEventRefundMode` is called on a shared-collateral event.
+    ///         Shared-pool refund-mode is deferred to v1.1; v1 exit is `resolveEvent` /
+    ///         `emergencyResolveEvent` followed by `redeemEvent`.
     error Event_LinkedNoRefund();
-    /// @notice Reverts when `addEventOutcome` is called on a shared-collateral (linked) event. A linked
-    ///         event's outcome set is FIXED at `createLinkedEvent`: appending a child after complete-sets
-    ///         exist would break the uniform-margin solvency precondition and strand pool collateral.
-    error Event_LinkedNoAddOutcome();
     /// @notice Reverts when a shared-pool op (`splitEvent`/`mergeEvent`/`redeemEvent`) targets an event
     ///         that is not shared-collateral (a pre-consolidation legacy event with `linked == false`).
     error Event_NotLinked();
@@ -140,10 +139,12 @@ interface IEventFacet {
     // Lifecycle
     // ---------------------------------------------------------------------
 
-    /// @notice Create a new event with N binary child markets. All children share
-    ///         `endTime` and are marked with the new `eventId`. The event stores
-    ///         the oracle address for resolution — child markets have `oracle = address(0)`
-    ///         since they resolve atomically via the event's oracle.
+    /// @notice Create a shared-collateral event with N binary child markets backed by one USDC
+    ///         pool. All children share `endTime` and are marked with the new `eventId`; child
+    ///         markets have `oracle = address(0)` since they resolve atomically via the event's
+    ///         oracle. The outcome set is FIXED at creation: appending a child after positions
+    ///         exist would break the uniform-margin solvency precondition (`yᵢ − nᵢ` equal for
+    ///         all i) and strand pool collateral.
     /// @param name                Event name (non-empty).
     /// @param candidateQuestions  One question per candidate. Length must be in
     ///                            `[2, 50]`. Every question must be non-empty.
@@ -157,19 +158,22 @@ interface IEventFacet {
         external
         returns (uint256 eventId, uint256[] memory marketIds);
 
-    /// @notice Append one outcome (child market) to an existing live event. The new
-    ///         child inherits the event's `endTime`, its collective oracle
-    ///         (`oracle = address(0)`, resolved via the event), and `eventId`, so it
-    ///         stays consistent with the existing candidates. Restricted to
-    ///         `CREATOR_ROLE`. Charges `marketCreationFee` like any market creation.
-    /// @dev    Callable only while the event is live: not resolved, not in refund
-    ///         mode, and `block.timestamp < endTime`. Bounded by `MAX_CANDIDATES`.
-    ///         Adding a candidate mid-event dilutes the implied probability of
-    ///         existing positions — an intentional property of "open" events.
-    /// @param eventId  Target event.
-    /// @param question The new candidate's question (non-empty).
-    /// @return marketId The newly created child market id (appended to the event).
-    function addEventOutcome(uint256 eventId, string calldata question) external returns (uint256 marketId);
+    /// @notice Deposit `amount` USDC into the shared pool and mint `amount` YES of EVERY outcome.
+    /// @param eventId Target shared-collateral event (unresolved, not ended).
+    /// @param amount  USDC to deposit; must be non-zero.
+    function splitEvent(uint256 eventId, uint256 amount) external;
+
+    /// @notice Burn `amount` YES of EVERY outcome and withdraw `amount` USDC from the pool.
+    /// @param eventId Target shared-collateral event (unresolved).
+    /// @param amount  Per-outcome YES amount to burn; must be non-zero and held in full across
+    ///                all outcomes.
+    function mergeEvent(uint256 eventId, uint256 amount) external;
+
+    /// @notice After resolution, burn the caller's winning-YES and losing-NO and pay out from
+    ///         the pool.
+    /// @param eventId Target shared-collateral event (resolved).
+    /// @return payout Net USDC transferred to the caller (`grossClaim - fee`).
+    function redeemEvent(uint256 eventId) external returns (uint256 payout);
 
     /// @notice Resolve an event atomically by reading the outcome from its oracle.
     ///         Permissionless — anyone may call once the oracle has reported.
@@ -214,4 +218,7 @@ interface IEventFacet {
 
     /// @notice Total number of events ever created. Latest id == this value.
     function eventCount() external view returns (uint256);
+
+    /// @notice Current shared-pool balance (USDC base units) backing `eventId`.
+    function eventPoolOf(uint256 eventId) external view returns (uint256);
 }

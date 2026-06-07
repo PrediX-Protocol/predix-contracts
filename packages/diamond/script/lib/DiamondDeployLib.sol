@@ -294,7 +294,7 @@ library DiamondDeployLib {
     }
 
     function _eventSelectors() private pure returns (bytes4[] memory s) {
-        s = new bytes4[](10);
+        s = new bytes4[](13);
         s[0] = IEventFacet.createEvent.selector;
         s[1] = IEventFacet.resolveEvent.selector;
         s[2] = IEventFacet.enableEventRefundMode.selector;
@@ -304,6 +304,10 @@ library DiamondDeployLib {
         s[6] = IEventFacet.emergencyResolveEvent.selector;
         s[7] = IEventFacet.getEventStatus.selector;
         s[8] = IEventFacet.sweepUnclaimedEvent.selector;
-        s[9] = IEventFacet.addEventOutcome.selector;
+        // Consolidation: shared-pool ops live on the same facet.
+        s[9] = IEventFacet.splitEvent.selector;
+        s[10] = IEventFacet.mergeEvent.selector;
+        s[11] = IEventFacet.redeemEvent.selector;
+        s[12] = IEventFacet.eventPoolOf.selector;
     }
 }

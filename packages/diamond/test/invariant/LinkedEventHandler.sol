@@ -6,7 +6,6 @@ import {StdCheats} from "forge-std/StdCheats.sol";
 import {StdUtils} from "forge-std/StdUtils.sol";
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
-import {ILinkedEventFacet} from "@predix/shared/interfaces/ILinkedEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
@@ -14,14 +13,12 @@ import {MockEventOracle} from "../mocks/MockEventOracle.sol";
 import {MockUSDC} from "../mocks/MockUSDC.sol";
 
 /// @notice Stateful handler for the shared-collateral engine. Exercises per-outcome split/merge (via the
-///         linked-aware MarketFacet), complete-set mint/redeem, an attempt to append an outcome (which
-///         must always revert on a linked event), and resolve-then-redeem — all bounded so the fuzzer
-///         spends its runs on real flows. A single pre-seeded linked event keeps every invariant
-///         non-trivial on every run.
+///         linked-aware MarketFacet), event-level split/merge against the shared pool, and
+///         resolve-then-redeem — all bounded so the fuzzer spends its runs on real flows. A single
+///         pre-seeded event keeps every invariant non-trivial on every run.
 contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
     IMarketFacet internal immutable market;
     IEventFacet internal immutable eventFacet;
-    ILinkedEventFacet internal immutable linked;
     MockUSDC internal immutable usdc;
     MockEventOracle internal immutable eventOracle;
     address internal immutable diamondAddr;
@@ -44,7 +41,6 @@ contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
     ) {
         market = IMarketFacet(_diamond);
         eventFacet = IEventFacet(_diamond);
-        linked = ILinkedEventFacet(_diamond);
         usdc = MockUSDC(_usdc);
         eventOracle = MockEventOracle(_eventOracle);
         diamondAddr = _diamond;
@@ -55,7 +51,7 @@ contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
         }
 
         for (uint256 i; i < users.length; ++i) {
-            address u = address(uint160(uint256(keccak256(abi.encode("linked.handler.user", i)))));
+            address u = address(uint160(uint256(keccak256(abi.encode("eventFacet.handler.user", i)))));
             users[i] = u;
             usdc.mint(u, 1_000_000_000e6);
             vm.prank(u);
@@ -91,16 +87,16 @@ contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
         market.mergePositions(marketId, amt);
     }
 
-    function mintCompleteSet(uint8 userIdx, uint96 amount) external {
+    function splitEvent(uint8 userIdx, uint96 amount) external {
         if (resolved) return;
         if (block.timestamp >= eventEndTime) return;
         address user = users[userIdx % users.length];
         uint256 amt = bound(amount, 1, 1_000_000e6);
         vm.prank(user);
-        linked.mintCompleteSet(eventId, amt);
+        eventFacet.splitEvent(eventId, amt);
     }
 
-    function redeemCompleteSet(uint8 userIdx, uint96 amount) external {
+    function mergeEvent(uint8 userIdx, uint96 amount) external {
         if (resolved) return;
         address user = users[userIdx % users.length];
         // bound by the user's min YES balance across outcomes (a complete set needs one YES of each).
@@ -112,18 +108,7 @@ contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
         if (maxSet == 0) return;
         uint256 amt = bound(amount, 1, maxSet);
         vm.prank(user);
-        linked.redeemCompleteSet(eventId, amt);
-    }
-
-    /// @notice Appending an outcome to a linked event must ALWAYS revert (audit F-A guard). The handler
-    ///         treats the expected revert as a no-op so state stays valid; a successful call would be a bug
-    ///         surfaced by the next invariant evaluation (the outcome set must stay fixed).
-    function tryAddOutcome() external {
-        if (resolved) return;
-        try eventFacet.addEventOutcome(eventId, "late") {
-        // unreachable; if it ever succeeds, childIds is now stale and invariants will catch the drift.
-        }
-            catch {}
+        eventFacet.mergeEvent(eventId, amt);
     }
 
     function resolveThenRedeemAll(uint8 winIdxRaw) external {
@@ -137,9 +122,9 @@ contract LinkedEventHandler is CommonBase, StdCheats, StdUtils {
         resolved = true;
 
         for (uint256 u; u < users.length; ++u) {
-            try linked.redeemLinked(eventId) {} catch {}
+            try eventFacet.redeemEvent(eventId) {} catch {}
             vm.prank(users[u]);
-            try linked.redeemLinked(eventId) {} catch {}
+            try eventFacet.redeemEvent(eventId) {} catch {}
         }
     }
 }

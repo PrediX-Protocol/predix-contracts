@@ -85,10 +85,6 @@ contract PrediXMarketFactory {
     ///         and every child's pool is registered + initialized.
     event EventCreatedWithPools(uint256 indexed eventId, uint256[] marketIds, address indexed creator);
 
-    /// @notice Emitted when a single outcome is appended to a live event and its
-    ///         pool is registered + initialized.
-    event OutcomeAddedWithPool(uint256 indexed eventId, uint256 indexed marketId, address indexed creator);
-
     constructor(
         IPoolManager poolManager_,
         address diamond_,
@@ -172,35 +168,6 @@ contract PrediXMarketFactory {
 
         _settleResidualUsdc();
         emit EventCreatedWithPools(eventId, marketIds, msg.sender);
-    }
-
-    /// @notice Append one outcome to an existing live event and atomically register +
-    ///         initialize its v4 pool with the PrediX hook. Mirrors
-    ///         `createMarketWithPool`; the new child inherits the event's endTime and
-    ///         collective oracle from the diamond, so off-chain tooling reconstructs
-    ///         the pool key from `_buildPoolKey(yesToken)` exactly as for any market.
-    /// @dev    Use to grow an event past the single-tx gas ceiling: create the event
-    ///         with a small candidate set, then append the rest one outcome per tx.
-    /// @param  eventId    Target event (must be live on the diamond).
-    /// @param  question   The new candidate's question.
-    /// @param  usdcBudget Max USDC the caller allows; the diamond pulls
-    ///                    `marketCreationFee`. Unused remainder is refunded synchronously.
-    /// @return marketId   The on-chain id of the appended child market.
-    function addOutcomeWithPool(uint256 eventId, string calldata question, uint256 usdcBudget)
-        external
-        onlyCreator
-        returns (uint256 marketId)
-    {
-        if (usdcBudget > 0) usdc.safeTransferFrom(msg.sender, address(this), usdcBudget);
-        usdc.forceApprove(diamond, usdcBudget);
-
-        marketId = IEventFacet(diamond).addEventOutcome(eventId, question);
-
-        IMarketFacet.MarketView memory m = IMarketFacet(diamond).getMarket(marketId);
-        _initPool(marketId, m.yesToken);
-
-        _settleResidualUsdc();
-        emit OutcomeAddedWithPool(eventId, marketId, msg.sender);
     }
 
     // =========================================================================

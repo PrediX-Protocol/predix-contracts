@@ -5,13 +5,13 @@ import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
-import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
+import {EventFixture} from "../utils/EventFixture.sol";
 import {LinkedEventHandler} from "./LinkedEventHandler.sol";
 
-/// @notice Runtime solvency proof for the shared-collateral engine. Inherits ONLY LinkedEventFixture
+/// @notice Runtime solvency proof for the shared-collateral engine. Inherits ONLY EventFixture
 ///         (→ EventFixture), so it does NOT pick up the legacy `invariant_BinaryInvariantHoldsPerChild`,
 ///         which would false-fail on linked children (whose per-market totalCollateral is 0 by design).
-contract LinkedEventInvariantTest is LinkedEventFixture {
+contract LinkedEventInvariantTest is EventFixture {
     LinkedEventHandler internal handler;
     uint256 internal theEventId;
     uint256[] internal theChildIds;
@@ -20,19 +20,18 @@ contract LinkedEventInvariantTest is LinkedEventFixture {
         super.setUp();
 
         uint256 endTime = block.timestamp + 365 days;
-        (theEventId, theChildIds) = _createLinkedN(4, endTime);
+        (theEventId, theChildIds) = _createNCandidateEvent(4, endTime);
 
         handler = new LinkedEventHandler(
             address(diamond), address(usdc), address(eventOracle), theEventId, theChildIds, endTime
         );
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = LinkedEventHandler.splitOutcome.selector;
         selectors[1] = LinkedEventHandler.mergeOutcome.selector;
-        selectors[2] = LinkedEventHandler.mintCompleteSet.selector;
-        selectors[3] = LinkedEventHandler.redeemCompleteSet.selector;
-        selectors[4] = LinkedEventHandler.tryAddOutcome.selector;
-        selectors[5] = LinkedEventHandler.resolveThenRedeemAll.selector;
+        selectors[2] = LinkedEventHandler.splitEvent.selector;
+        selectors[3] = LinkedEventHandler.mergeEvent.selector;
+        selectors[4] = LinkedEventHandler.resolveThenRedeemAll.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -57,7 +56,7 @@ contract LinkedEventInvariantTest is LinkedEventFixture {
             sumNo += IOutcomeToken(market.getMarket(e.marketIds[i]).noToken).totalSupply();
         }
         int256 expected = int256(sumNo) + _margin(e.marketIds[0]);
-        assertEq(int256(linked.eventPoolOf(theEventId)), expected, "eventPool != sum(NO_i) + M");
+        assertEq(int256(eventFacet.eventPoolOf(theEventId)), expected, "eventPool != sum(NO_i) + M");
     }
 
     /// @dev THE solvency theorem as a runtime check: for an unresolved event and EVERY candidate winner k,
@@ -66,7 +65,7 @@ contract LinkedEventInvariantTest is LinkedEventFixture {
     function invariant_PoolSolventForEveryWinner() public view {
         IEventFacet.EventView memory e = eventFacet.getEvent(theEventId);
         if (e.isResolved) return;
-        uint256 pool = linked.eventPoolOf(theEventId);
+        uint256 pool = eventFacet.eventPoolOf(theEventId);
         uint256 n = e.marketIds.length;
         for (uint256 k; k < n; ++k) {
             uint256 claim;
@@ -82,7 +81,7 @@ contract LinkedEventInvariantTest is LinkedEventFixture {
     /// @dev The pool is always reflected inside the global lock, and the diamond holds at least the lock —
     ///      so `rescueSurplus` can never reach pooled backing.
     function invariant_PoolReflectedInTotalCollateralLocked() public view {
-        uint256 pool = linked.eventPoolOf(theEventId);
+        uint256 pool = eventFacet.eventPoolOf(theEventId);
         uint256 locked = market.totalCollateralLocked();
         assertLe(pool, locked, "eventPool exceeds totalCollateralLocked");
         assertGe(usdc.balanceOf(address(diamond)), locked, "diamond USDC below totalCollateralLocked");
@@ -92,7 +91,7 @@ contract LinkedEventInvariantTest is LinkedEventFixture {
     function invariant_NoFundsStuck() public view {
         if (!handler.resolved()) return;
         // handler.resolveThenRedeemAll drains every user; any residual would be stranded collateral.
-        assertEq(linked.eventPoolOf(theEventId), 0, "pool not fully drained after resolve+redeem");
+        assertEq(eventFacet.eventPoolOf(theEventId), 0, "pool not fully drained after resolve+redeem");
     }
 
     function _margin(uint256 marketId) internal view returns (int256) {

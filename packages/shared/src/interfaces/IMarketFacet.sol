@@ -188,7 +188,7 @@ interface IMarketFacet {
     ///         through `resolveMarket`; emergency is for genuine stalls.
     error Market_OracleResolvedUseResolve();
     /// @notice Reverts from `LibMarket.create` (used by `createMarket` /
-    ///         `EventFacet.createEvent` / `addEventOutcome`) when the EIP-1167
+    ///         `EventFacet.createEvent`) when the EIP-1167
     ///         master implementation for `OutcomeTokenClone` has not been set.
     ///         Admin must call `setOutcomeTokenImpl` once before any market can
     ///         be created on a fresh diamond.
@@ -196,7 +196,7 @@ interface IMarketFacet {
     /// @notice Reverts when a per-child-only flow (`redeem` / `refund` / `sweepUnclaimed`) is called on
     ///         a child of a shared-collateral (linked) event. Linked split/merge ARE allowed and route
     ///         collateral to the event pool; resolution-time claims go through
-    ///         `ILinkedEventFacet.redeemLinked`.
+    ///         `IEventFacet.redeemEvent`.
     error Market_LinkedEvent();
 
     // ---------------------------------------------------------------------

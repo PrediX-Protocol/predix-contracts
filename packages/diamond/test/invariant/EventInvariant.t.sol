@@ -3,7 +3,6 @@ pragma solidity 0.8.34;
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
-import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 import {Roles} from "@predix/shared/constants/Roles.sol";
 
 import {EventFixture} from "../utils/EventFixture.sol";
@@ -98,15 +97,16 @@ contract EventInvariantTest is EventFixture {
         }
     }
 
-    function invariant_BinaryInvariantHoldsPerChild() public view {
+    /// @dev Consolidation: every event child is pool-backed — its collateral lives in
+    ///      `eventPool[eventId]`, NEVER in per-child `totalCollateral`. A non-zero value here means
+    ///      a split/merge path mis-routed collateral (the exact bug `rescueSurplus` would then
+    ///      amplify). Pool solvency itself is proven by `LinkedEventInvariant`.
+    function invariant_EventChildHoldsNoPerChildCollateral() public view {
         uint256[] memory ids = _allEventIds();
         for (uint256 i; i < ids.length; ++i) {
             IEventFacet.EventView memory e = eventFacet.getEvent(ids[i]);
             for (uint256 j; j < e.marketIds.length; ++j) {
-                IMarketFacet.MarketView memory m = market.getMarket(e.marketIds[j]);
-                if (m.isResolved || m.refundModeActive) continue;
-                assertEq(IOutcomeToken(m.yesToken).totalSupply(), m.totalCollateral, "yes != coll");
-                assertEq(IOutcomeToken(m.noToken).totalSupply(), m.totalCollateral, "no != coll");
+                assertEq(market.getMarket(e.marketIds[j]).totalCollateral, 0, "event child holds per-child collateral");
             }
         }
     }

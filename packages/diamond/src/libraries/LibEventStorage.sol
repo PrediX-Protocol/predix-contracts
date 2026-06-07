@@ -25,8 +25,8 @@ library LibEventStorage {
         ///      event. Never reorder.
         bool linked;
         /// @dev Append-only field added for Gap#1. Per-event redemption fee (bps) applied by
-        ///      `LinkedEventFacet.redeemLinked`. v1: never written, so it stays `0` (fee-free — owner
-        ///      decision 2026-05-31); the `redeemLinked` fee path is retained so v1.1 can introduce a
+        ///      `EventFacet.redeemEvent`. v1: never written, so it stays `0` (fee-free — owner
+        ///      decision 2026-05-31); the `redeemEvent` fee path is retained so v1.1 can introduce a
         ///      non-zero linked fee. `uint16` suffices; a future setter must bound it by
         ///      `MAX_REDEMPTION_FEE_BPS`. Never reorder.
         uint16 redemptionFeeBps;

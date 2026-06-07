@@ -3,7 +3,7 @@ pragma solidity 0.8.34;
 
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 
-import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
+import {EventFixture} from "../utils/EventFixture.sol";
 
 /// @title Gap1UpgradeStorageBrick
 /// @notice AUDIT (upgrade/storage lens). Proves the Gap#1 append of `EventData.linked` (slot 7, byte 22)
@@ -15,7 +15,7 @@ import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
 ///         AND the appended fields read as their zero defaults (not garbage from the address tail).
 /// @dev Audit-only; no engine src touched. Mirrors the compiler offsets independently verified via
 ///      `forge inspect Gap1LayoutProbe storage-layout`.
-contract Gap1UpgradeStorageBrick is LinkedEventFixture {
+contract Gap1UpgradeStorageBrick is EventFixture {
     // keccak256("predix.storage.event.v1") — LibEventStorage.SLOT.
     bytes32 internal constant EVENT_SLOT = keccak256("predix.storage.event.v1");
 
@@ -40,7 +40,7 @@ contract Gap1UpgradeStorageBrick is LinkedEventFixture {
 
         // --- Read through NEW facet code ---
         // 1. Appended `linked` must read false (NOT a non-zero leak from the oracle bytes below it).
-        assertFalse(linked.isLinkedEvent(eventId), "BRICK: appended `linked` read non-false for legacy event");
+        assertFalse(eventFacet.getEvent(eventId).linked, "BRICK: appended `linked` read non-false for legacy event");
 
         // 2. Pre-existing slot-7 fields must be intact after the append.
         IEventFacet.EventView memory e = eventFacet.getEvent(eventId);
@@ -61,7 +61,7 @@ contract Gap1UpgradeStorageBrick is LinkedEventFixture {
         uint256 slot7 = uint256(1) | (uint256(uint160(maxOracle)) << (8 * 2));
         vm.store(address(diamond), bytes32(uint256(base) + 7), bytes32(slot7));
 
-        assertFalse(linked.isLinkedEvent(eventId), "BRICK: `linked` aliases the oracle's high byte");
+        assertFalse(eventFacet.getEvent(eventId).linked, "BRICK: `linked` aliases the oracle's high byte");
         assertEq(eventFacet.getEvent(eventId).oracle, maxOracle, "oracle mismatch under max-address pack");
     }
 }

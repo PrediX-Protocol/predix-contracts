@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {LinkedEventFixture} from "../utils/LinkedEventFixture.sol";
-import {ILinkedEventFacet} from "@predix/shared/interfaces/ILinkedEventFacet.sol";
+import {EventFixture} from "../utils/EventFixture.sol";
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IPausableFacet} from "@predix/shared/interfaces/IPausableFacet.sol";
 import {Modules} from "@predix/shared/constants/Modules.sol";
 
-/// @notice F4 (audit Gap#1): revert-path + pause coverage for LinkedEventFacet. `createLinkedEvent`
+/// @notice F4 (audit Gap#1): revert-path + pause coverage for LinkedEventFacet. `createEvent`
 ///         re-implements (does not delegate) EventFacet's input validation, and the completeSet
 ///         revert paths + the MARKET pause guards were untested — a regression weakening one of
-///         these inline checks would not be caught. (Defensive-only paths `LinkedEvent_PoolInsolvent`
-///         and `LinkedEvent_RefundModeActive` are unreachable while the solvency invariant holds /
+///         these inline checks would not be caught. (Defensive-only paths `Event_PoolInsolvent`
+///         and `Event_RefundModeActive` are unreachable while the solvency invariant holds /
 ///         linked refund-mode is a v1.1 deferral, so they are intentionally not exercised here.)
-contract LinkedEventRevertsTest is LinkedEventFixture {
+contract LinkedEventRevertsTest is EventFixture {
     uint256 internal endTime;
 
     function setUp() public override {
@@ -33,34 +32,34 @@ contract LinkedEventRevertsTest is LinkedEventFixture {
         eventFacet.resolveEvent(eventId);
     }
 
-    // --- createLinkedEvent input validation (inline copies of EventFacet's) ---
+    // --- createEvent input validation (inline copies of EventFacet's) ---
 
     function test_Revert_CreateLinkedEvent_EmptyName() public {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_EmptyName.selector);
-        linked.createLinkedEvent("", qs, endTime, address(eventOracle));
+        eventFacet.createEvent("", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateLinkedEvent_InvalidEndTime() public {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_InvalidEndTime.selector);
-        linked.createLinkedEvent("E", qs, block.timestamp, address(eventOracle)); // not strictly > now
+        eventFacet.createEvent("E", qs, block.timestamp, address(eventOracle)); // not strictly > now
     }
 
     function test_Revert_CreateLinkedEvent_ZeroOracle() public {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_ZeroOracle.selector);
-        linked.createLinkedEvent("E", qs, endTime, address(0));
+        eventFacet.createEvent("E", qs, endTime, address(0));
     }
 
     function test_Revert_CreateLinkedEvent_OracleNotApproved() public {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_OracleNotApproved.selector);
-        linked.createLinkedEvent("E", qs, endTime, makeAddr("unapprovedOracle"));
+        eventFacet.createEvent("E", qs, endTime, makeAddr("unapprovedOracle"));
     }
 
     function test_Revert_CreateLinkedEvent_OracleNotEventCapable() public {
@@ -68,14 +67,14 @@ contract LinkedEventRevertsTest is LinkedEventFixture {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_OracleNotEventCapable.selector);
-        linked.createLinkedEvent("E", qs, endTime, address(oracle));
+        eventFacet.createEvent("E", qs, endTime, address(oracle));
     }
 
     function test_Revert_CreateLinkedEvent_TooManyCandidates() public {
         string[] memory qs = _defaultQuestions(51); // MAX_CANDIDATES = 50
         vm.prank(alice);
         vm.expectRevert(IEventFacet.Event_TooManyCandidates.selector);
-        linked.createLinkedEvent("E", qs, endTime, address(eventOracle));
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateLinkedEvent_EmptyQuestion() public {
@@ -85,7 +84,7 @@ contract LinkedEventRevertsTest is LinkedEventFixture {
         qs[2] = "C";
         vm.prank(alice);
         vm.expectRevert(IMarketFacet.Market_EmptyQuestion.selector);
-        linked.createLinkedEvent("E", qs, endTime, address(eventOracle));
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
     function test_Revert_CreateLinkedEvent_WhenPaused() public {
@@ -93,68 +92,61 @@ contract LinkedEventRevertsTest is LinkedEventFixture {
         string[] memory qs = _defaultQuestions(3);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
-        linked.createLinkedEvent("E", qs, endTime, address(eventOracle));
+        eventFacet.createEvent("E", qs, endTime, address(eventOracle));
     }
 
-    // --- mintCompleteSet uncovered reverts (NotFound / AlreadyResolved / paused) ---
+    // --- splitEvent uncovered reverts (NotFound / AlreadyResolved / paused) ---
 
     function test_Revert_MintCompleteSet_NotFound() public {
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NotFound.selector);
-        linked.mintCompleteSet(999, 1e6);
+        vm.expectRevert(IEventFacet.Event_NotFound.selector);
+        eventFacet.splitEvent(999, 1e6);
     }
 
     function test_Revert_MintCompleteSet_AlreadyResolved() public {
-        (uint256 eventId,) = _createLinked3(endTime);
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         _resolveLinked(eventId);
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_AlreadyResolved.selector);
-        linked.mintCompleteSet(eventId, 1e6);
+        vm.expectRevert(IEventFacet.Event_AlreadyResolved.selector);
+        eventFacet.splitEvent(eventId, 1e6);
     }
 
     function test_Revert_MintCompleteSet_WhenPaused() public {
-        (uint256 eventId,) = _createLinked3(endTime);
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         _pauseMarket();
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
-        linked.mintCompleteSet(eventId, 1e6);
+        eventFacet.splitEvent(eventId, 1e6);
     }
 
-    // --- redeemCompleteSet reverts (only the happy path was covered) ---
+    // --- mergeEvent reverts (only the happy path was covered) ---
 
     function test_Revert_RedeemCompleteSet_ZeroAmount() public {
-        (uint256 eventId,) = _createLinked3(endTime);
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_ZeroAmount.selector);
-        linked.redeemCompleteSet(eventId, 0);
+        vm.expectRevert(IEventFacet.Event_ZeroAmount.selector);
+        eventFacet.mergeEvent(eventId, 0);
     }
 
     function test_Revert_RedeemCompleteSet_NotFound() public {
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NotFound.selector);
-        linked.redeemCompleteSet(999, 1e6);
-    }
-
-    function test_Revert_RedeemCompleteSet_NotLinked() public {
-        (uint256 legacyId,) = _createNCandidateEvent(3, endTime); // legacy event (linked == false)
-        vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_NotLinked.selector);
-        linked.redeemCompleteSet(legacyId, 1e6);
+        vm.expectRevert(IEventFacet.Event_NotFound.selector);
+        eventFacet.mergeEvent(999, 1e6);
     }
 
     function test_Revert_RedeemCompleteSet_AlreadyResolved() public {
-        (uint256 eventId,) = _createLinked3(endTime);
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         _resolveLinked(eventId);
         vm.prank(alice);
-        vm.expectRevert(ILinkedEventFacet.LinkedEvent_AlreadyResolved.selector);
-        linked.redeemCompleteSet(eventId, 1e6);
+        vm.expectRevert(IEventFacet.Event_AlreadyResolved.selector);
+        eventFacet.mergeEvent(eventId, 1e6);
     }
 
     function test_Revert_RedeemCompleteSet_WhenPaused() public {
-        (uint256 eventId,) = _createLinked3(endTime);
+        (uint256 eventId,) = _createThreeCandidateEvent(endTime);
         _pauseMarket();
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPausableFacet.Pausable_EnforcedPause.selector, Modules.MARKET));
-        linked.redeemCompleteSet(eventId, 1e6);
+        eventFacet.mergeEvent(eventId, 1e6);
     }
 }
