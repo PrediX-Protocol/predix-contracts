@@ -49,10 +49,7 @@ interface IEventFacet {
     ///        off-chain monitoring to distinguish routine stall recovery from
     ///        suspicious operator action.
     event EventEmergencyResolved(
-        uint256 indexed eventId,
-        uint256 winningIndex,
-        address indexed resolver,
-        EmergencyReason.Reason reason
+        uint256 indexed eventId, uint256 winningIndex, address indexed resolver, EmergencyReason.Reason reason
     );
 
     /// @notice Emitted when an admin enables refund mode for the whole event. One
@@ -65,6 +62,29 @@ interface IEventFacet {
     /// @notice Emitted when a new outcome (child market) is appended to a live event.
     ///         The child also emits its own `IMarketFacet.MarketCreated` in the same tx.
     event EventOutcomeAdded(uint256 indexed eventId, uint256 indexed marketId, string question);
+
+    /// @notice Emitted when a user deposits USDC into the shared pool and mints one YES
+    ///         of every outcome (`splitEvent`).
+    /// @param eventId Target event.
+    /// @param user    Caller who deposited `amount` USDC.
+    /// @param amount  USDC deposited; also the YES amount minted per outcome.
+    event EventSplit(uint256 indexed eventId, address indexed user, uint256 amount);
+
+    /// @notice Emitted when a user burns one YES of every outcome and withdraws USDC from
+    ///         the shared pool (`mergeEvent`).
+    /// @param eventId Target event.
+    /// @param user    Caller.
+    /// @param amount  USDC returned; also the YES amount burned per outcome.
+    event EventMerged(uint256 indexed eventId, address indexed user, uint256 amount);
+
+    /// @notice Emitted when a holder redeems a resolved event from the shared pool
+    ///         (`redeemEvent`).
+    /// @param eventId    Target event.
+    /// @param user       Caller.
+    /// @param grossClaim Winning-YES + losing-NO burned (the gross pool draw).
+    /// @param fee        Redemption fee routed to the protocol fee recipient.
+    /// @param payout     Net USDC transferred to the caller (`grossClaim - fee`).
+    event EventRedeemed(uint256 indexed eventId, address indexed user, uint256 grossClaim, uint256 fee, uint256 payout);
 
     // ---------------------------------------------------------------------
     // Errors
@@ -103,6 +123,18 @@ interface IEventFacet {
     ///         event's outcome set is FIXED at `createLinkedEvent`: appending a child after complete-sets
     ///         exist would break the uniform-margin solvency precondition and strand pool collateral.
     error Event_LinkedNoAddOutcome();
+    /// @notice Reverts when a shared-pool op (`splitEvent`/`mergeEvent`/`redeemEvent`) targets an event
+    ///         that is not shared-collateral (a pre-consolidation legacy event with `linked == false`).
+    error Event_NotLinked();
+    /// @notice Reverts when `redeemEvent` is called before the event is resolved.
+    error Event_NotResolved();
+    /// @notice Reverts when an amount argument is zero.
+    error Event_ZeroAmount();
+    /// @notice Reverts when `redeemEvent` finds the caller holds no winning-YES or losing-NO to claim.
+    error Event_NothingToRedeem();
+    /// @notice Reverts when the shared pool is smaller than the gross claim — an accounting tripwire that
+    ///         must never fire while the solvency invariant holds (`pool == Σ NO_i + M`).
+    error Event_PoolInsolvent();
 
     // ---------------------------------------------------------------------
     // Lifecycle
