@@ -98,8 +98,68 @@ contract ConsolidationCutForkSim is Test {
         }
         assertEq(loupe.facetFunctionSelectors(newFacet).length, 13, "consolidated facet selector count");
 
+        // === IN-FLIGHT linked event (created by the OLD LinkedEventFacet, with a live pool) must
+        //     survive the cut and stay fully operational via the NEW facet — the data-loss gate ===
+        _assertInFlightLinkedEventSurvives(diamond);
+
         // === E2E post-cut: live ManualOracle still resolves a freshly created shared-pool event ===
         _postCutFlow(diamond);
+    }
+
+    /// @dev Live chain-130 carries event 41: a shared-pool event created by the now-retired
+    ///      LinkedEventFacet, holding ~144,289 USDC across children [199,200,201] (M=60 uniform,
+    ///      pool == ΣNO_i + M exact, verified on-chain). The cut must not touch its storage and the
+    ///      NEW EventFacet must read+write that pre-existing pool slot correctly. Proven by an
+    ///      additive split/merge ROUND-TRIP: my deposit returns in full, the original 144,289 is
+    ///      never perturbed, and the solvency identity holds throughout. (No resolve — these are
+    ///      real user positions; the round-trip is the clean storage-continuity proof.)
+    function _assertInFlightLinkedEventSurvives(address diamond) private {
+        uint256 EID = 41;
+        IEventFacet ev = IEventFacet(diamond);
+        IEventFacet.EventView memory e = ev.getEvent(EID);
+        if (!e.linked || ev.eventPoolOf(EID) == 0 || e.isResolved || e.endTime <= block.timestamp) {
+            // Event 41 drained/resolved/ended on a newer fork block — skip rather than assert stale shape.
+            return;
+        }
+
+        uint256 poolBefore = ev.eventPoolOf(EID);
+        uint256 lockedBefore = IMarketFacet(diamond).totalCollateralLocked();
+        _assertEventSolvent(diamond, EID); // new facet reads the OLD pool storage correctly
+
+        // Operate the pre-cut event through the NEW facet: deposit then withdraw the same amount.
+        address u = makeAddr("cutsim.inflight");
+        uint256 amt = 1_000e6;
+        vm.prank(USDC_OWNER);
+        ITestUSDCSim(USDC).mint(u, amt);
+        vm.prank(u);
+        IERC20(USDC).approve(diamond, type(uint256).max);
+
+        vm.prank(u);
+        ev.splitEvent(EID, amt);
+        assertEq(ev.eventPoolOf(EID), poolBefore + amt, "splitEvent on in-flight event must grow the live pool");
+        _assertEventSolvent(diamond, EID);
+
+        vm.prank(u);
+        ev.mergeEvent(EID, amt);
+        assertEq(ev.eventPoolOf(EID), poolBefore, "mergeEvent must restore the pool to its exact pre-op value");
+        assertEq(IERC20(USDC).balanceOf(u), amt, "round-trip must return the depositor's full amount");
+        assertEq(IMarketFacet(diamond).totalCollateralLocked(), lockedBefore, "global lock unchanged after round-trip");
+        _assertEventSolvent(diamond, EID);
+    }
+
+    /// @dev pool == Σ NO_i + M with M = (YES_i - NO_i) uniform across outcomes.
+    function _assertEventSolvent(address diamond, uint256 eventId) private view {
+        IEventFacet.EventView memory e = IEventFacet(diamond).getEvent(eventId);
+        uint256 sumNo;
+        int256 m0;
+        for (uint256 i; i < e.marketIds.length; ++i) {
+            IMarketFacet.MarketView memory m = IMarketFacet(diamond).getMarket(e.marketIds[i]);
+            int256 margin = int256(IERC20(m.yesToken).totalSupply()) - int256(IERC20(m.noToken).totalSupply());
+            if (i == 0) m0 = margin;
+            else assertEq(margin, m0, "M not uniform on in-flight event");
+            sumNo += IERC20(m.noToken).totalSupply();
+        }
+        assertEq(int256(IEventFacet(diamond).eventPoolOf(eventId)), int256(sumNo) + m0, "in-flight pool != sumNO + M");
     }
 
     function test_Fork_ConsolidationCut_Rollback_RestoresLiveFacets() public {
