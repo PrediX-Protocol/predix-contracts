@@ -24,6 +24,10 @@ import {LibMarketStorage} from "@predix/diamond/libraries/LibMarketStorage.sol";
 library LibMarket {
     using SafeERC20 for IERC20;
 
+    /// @notice Hard ceiling on redemption fees (1000 bps = 10%). Single source of truth shared by
+    ///         `MarketFacet` and `EventFacet` (keyti-fqn8).
+    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
+
     /// @notice Create a new binary market. Caller handles all input validation.
     /// @param question  Market question. Caller must ensure non-empty.
     /// @param endTime   Unix timestamp after which the market accepts no more splits.
@@ -75,5 +79,14 @@ library LibMarket {
         m.snapshottedDefaultRedemptionFeeBps = uint16(cfg.defaultRedemptionFeeBps);
 
         emit IMarketFacet.MarketCreated(marketId, msg.sender, oracle, yesAddr, noAddr, endTime, question);
+    }
+
+    /// @notice Resolve a market's effective redemption fee (bps), clamped to the hard cap.
+    /// @dev Override wins over the snapshotted default; the read-time clamp guarantees a stored value
+    ///      from before the 1500->1000 cap drop can never charge above `MAX_REDEMPTION_FEE_BPS`. Single
+    ///      read path shared by `MarketFacet` (binary redeem + view) and `EventFacet.redeemEvent`.
+    function effectiveRedemptionFee(LibMarketStorage.MarketData storage m) internal view returns (uint16) {
+        uint16 raw = m.redemptionFeeOverridden ? m.perMarketRedemptionFeeBps : m.snapshottedDefaultRedemptionFeeBps;
+        return raw > MAX_REDEMPTION_FEE_BPS ? uint16(MAX_REDEMPTION_FEE_BPS) : raw;
     }
 }

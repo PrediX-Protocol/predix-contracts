@@ -38,10 +38,6 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     ///         fee recipient.
     uint256 internal constant GRACE_PERIOD = 365 days;
 
-    /// @notice Hard ceiling on redemption fees. 1000 bps = 10%. Bounds `defaultRedemptionFeeBps`,
-    ///         every `perMarketRedemptionFeeBps`, and the optional create-time fee (keyti-fqn8).
-    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
-
     /// @notice Basis-point denominator. 10000 = 100%.
     uint256 internal constant BPS_DENOMINATOR = 10000;
 
@@ -66,7 +62,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         nonReentrant
         returns (uint256 marketId)
     {
-        if (feeBps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
+        if (feeBps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         marketId = _createMarket(question, endTime, oracle);
         // Overwrite the default snapshot `LibMarket.create` took with the explicit create-time fee.
         LibMarketStorage.layout().markets[marketId].snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
@@ -450,7 +446,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     /// @inheritdoc IMarketFacet
     function setDefaultRedemptionFeeBps(uint256 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
-        if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
+        if (bps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
         uint256 previous = cfg.defaultRedemptionFeeBps;
         cfg.defaultRedemptionFeeBps = bps;
@@ -467,7 +463,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     ///      after trading closes.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
-        if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
+        if (bps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
         if (block.timestamp >= m.endTime && bps > _effectiveRedemptionFee(m)) revert Market_Ended();
         m.perMarketRedemptionFeeBps = bps;
@@ -612,6 +608,6 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     function _effectiveRedemptionFee(LibMarketStorage.MarketData storage m) private view returns (uint256) {
-        return m.redemptionFeeOverridden ? m.perMarketRedemptionFeeBps : m.snapshottedDefaultRedemptionFeeBps;
+        return LibMarket.effectiveRedemptionFee(m);
     }
 }

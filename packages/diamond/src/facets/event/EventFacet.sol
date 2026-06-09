@@ -60,10 +60,6 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     /// @notice Basis-point denominator (100% = 10000). Mirrors `MarketFacet.BPS_DENOMINATOR`.
     uint256 internal constant BPS_DENOMINATOR = 10000;
 
-    /// @notice Hard ceiling on the create-time redemption fee (1000 bps = 10%). Mirrors
-    ///         `MarketFacet.MAX_REDEMPTION_FEE_BPS`; per-child fees are otherwise bounded there.
-    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
-
     // -----------------------------------------------------------------------
     // Lifecycle
     // -----------------------------------------------------------------------
@@ -86,7 +82,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         address oracle,
         uint256 feeBps
     ) external override nonReentrant returns (uint256 eventId, uint256[] memory marketIds) {
-        if (feeBps > MAX_REDEMPTION_FEE_BPS) revert IMarketFacet.Market_FeeTooHigh();
+        if (feeBps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert IMarketFacet.Market_FeeTooHigh();
         (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle);
         // Overwrite each child's default snapshot (taken in `LibMarket.create`) with the explicit fee.
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
@@ -170,12 +166,9 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
                 token.burn(msg.sender, bal);
                 grossClaim += bal;
                 // keyti-fqn8: redemption fee is a pure per-MARKET property — charge THIS child's effective
-                // fee on THIS child's claim, then sum. Resolution mirrors `MarketFacet._effectiveRedemptionFee`
-                // (`override ? perMarket : snapshottedDefault`); floor per child (favors the redeemer). The
-                // legacy event-level `e.redemptionFeeBps` is no longer read.
-                uint16 childBps =
-                    m.redemptionFeeOverridden ? m.perMarketRedemptionFeeBps : m.snapshottedDefaultRedemptionFeeBps;
-                fee += (bal * childBps) / BPS_DENOMINATOR;
+                // fee (clamped to the cap via the shared resolver) on THIS child's claim, then sum; floor
+                // per child (favors the redeemer). The legacy event-level `e.redemptionFeeBps` is unused.
+                fee += (bal * LibMarket.effectiveRedemptionFee(m)) / BPS_DENOMINATOR;
             }
         }
         if (grossClaim == 0) revert Event_NothingToRedeem();
