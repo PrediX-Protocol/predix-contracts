@@ -176,11 +176,11 @@ contract LinkedEventFacetTest is EventFixture {
         eventFacet.redeemEvent(eventId);
     }
 
-    function test_RedeemLinked_LinkedIsFeeFree_IgnoresDefault() public {
-        // v1: linked events are fee-free. Even with a non-zero GLOBAL default fee set, a linked
-        // event must ignore it and pay the full claim (owner decision 2026-05-31).
+    function test_RedeemLinked_ChargesSnapshottedDefault() public {
+        // keyti-fqn8: linked events are NO LONGER fee-free. Children snapshot the global default at
+        // creation (exactly like a binary market) and `redeemEvent` charges each child's effective fee.
         vm.prank(admin);
-        market.setDefaultRedemptionFeeBps(100); // 1% default — linked MUST ignore this
+        market.setDefaultRedemptionFeeBps(100); // 1% — children snapshot this at creation
 
         (uint256 eventId, uint256[] memory ids) = _createThreeCandidateEvent(endTime);
         _fundAndApprove(alice, 100e6);
@@ -197,10 +197,10 @@ contract LinkedEventFacetTest is EventFixture {
         vm.prank(alice);
         uint256 payout = eventFacet.redeemEvent(eventId);
 
-        // Linked is fee-free: grossClaim = YES_0 = 10e6, fee = 0, payout = full 10e6.
-        assertEq(payout, 10e6, "linked redeem must be fee-free");
-        assertEq(usdc.balanceOf(alice) - aliceBefore, 10e6, "alice gets the full claim");
-        assertEq(usdc.balanceOf(feeRecipient) - feeRecipientBefore, 0, "no fee taken for a linked event");
+        // grossClaim = winner YES_0 = 10e6, child fee = snapshotted 1% = 0.1e6, payout = 9.9e6.
+        assertEq(payout, 9_900_000, "winner claim charges the snapshotted 1% child fee");
+        assertEq(usdc.balanceOf(alice) - aliceBefore, 9_900_000, "alice gets claim net of fee");
+        assertEq(usdc.balanceOf(feeRecipient) - feeRecipientBefore, 100_000, "1% fee forwarded");
         assertEq(eventFacet.eventPoolOf(eventId), 0, "pool drained to zero");
         ids; // silence unused warning
     }

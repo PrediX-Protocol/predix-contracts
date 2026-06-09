@@ -17,7 +17,7 @@ import {EventFixture} from "../utils/EventFixture.sol";
 ///      equivalent to the post-cut diamond state the consolidation script must produce.
 contract Gap1CutSelectorAudit is EventFixture {
     function _consolidatedEventSelectors() private pure returns (bytes4[] memory s) {
-        s = new bytes4[](13);
+        s = new bytes4[](14);
         s[0] = IEventFacet.createEvent.selector;
         s[1] = IEventFacet.resolveEvent.selector;
         s[2] = IEventFacet.emergencyResolveEvent.selector;
@@ -31,6 +31,7 @@ contract Gap1CutSelectorAudit is EventFixture {
         s[10] = IEventFacet.mergeEvent.selector;
         s[11] = IEventFacet.redeemEvent.selector;
         s[12] = IEventFacet.eventPoolOf.selector;
+        s[13] = IEventFacet.createEventWithFee.selector; // keyti-fqn8: create-time fee overload
     }
 
     /// @dev Every consolidated event selector must route to the single EventFacet impl.

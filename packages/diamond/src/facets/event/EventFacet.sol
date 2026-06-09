@@ -60,6 +60,10 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     /// @notice Basis-point denominator (100% = 10000). Mirrors `MarketFacet.BPS_DENOMINATOR`.
     uint256 internal constant BPS_DENOMINATOR = 10000;
 
+    /// @notice Hard ceiling on the create-time redemption fee (1000 bps = 10%). Mirrors
+    ///         `MarketFacet.MAX_REDEMPTION_FEE_BPS`; per-child fees are otherwise bounded there.
+    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
+
     // -----------------------------------------------------------------------
     // Lifecycle
     // -----------------------------------------------------------------------
@@ -71,51 +75,25 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         nonReentrant
         returns (uint256 eventId, uint256[] memory marketIds)
     {
-        LibPausable.enforceNotPaused(Modules.MARKET);
-        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
+        (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle);
+    }
 
-        if (bytes(name).length == 0) revert Event_EmptyName();
-        if (endTime <= block.timestamp) revert Event_InvalidEndTime();
-        if (oracle == address(0)) revert Event_ZeroOracle();
-        if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Event_OracleNotApproved();
-        // The oracle must resolve multi-outcome events: bind only to one that
-        // advertises IEventOracle. A binary-only oracle would leave the event
-        // unresolvable via resolveEvent (stuck until emergency).
-        if (!ERC165Checker.supportsInterface(oracle, type(IEventOracle).interfaceId)) {
-            revert Event_OracleNotEventCapable();
-        }
-
-        uint256 n = candidateQuestions.length;
-        if (n < MIN_CANDIDATES) revert Event_TooFewCandidates();
-        if (n > MAX_CANDIDATES) revert Event_TooManyCandidates();
-        for (uint256 i; i < n; ++i) {
-            if (bytes(candidateQuestions[i]).length == 0) revert IMarketFacet.Market_EmptyQuestion();
-        }
-
-        LibEventStorage.Layout storage es = LibEventStorage.layout();
-        eventId = ++es.eventCount;
-        LibEventStorage.EventData storage e = es.events[eventId];
-        e.name = name;
-        e.endTime = endTime;
-        e.creator = msg.sender;
-        e.oracle = oracle;
-        e.linked = true;
-        // v1: shared-pool events are redemption-fee-free (owner decision 2026-05-31).
-        // `redemptionFeeBps` stays 0 (struct default), so `redeemEvent` pays the full claim and
-        // IGNORES the global default fee. The general fee path in `redeemEvent` is retained for a
-        // configurable fee in v1.1.
-
+    /// @inheritdoc IEventFacet
+    function createEventWithFee(
+        string calldata name,
+        string[] calldata candidateQuestions,
+        uint256 endTime,
+        address oracle,
+        uint256 feeBps
+    ) external override nonReentrant returns (uint256 eventId, uint256[] memory marketIds) {
+        if (feeBps > MAX_REDEMPTION_FEE_BPS) revert IMarketFacet.Market_FeeTooHigh();
+        (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle);
+        // Overwrite each child's default snapshot (taken in `LibMarket.create`) with the explicit fee.
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
-        marketIds = new uint256[](n);
+        uint256 n = marketIds.length;
         for (uint256 i; i < n; ++i) {
-            uint256 marketId = LibMarket.create(candidateQuestions[i], endTime, address(0), eventId);
-            ms.markets[marketId].linkedChild = true;
-            marketIds[i] = marketId;
-            e.marketIds.push(marketId);
-            es.marketToEvent[marketId] = eventId;
+            ms.markets[marketIds[i]].snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
         }
-
-        emit EventCreated(eventId, msg.sender, endTime, name, marketIds, oracle);
     }
 
     /// @inheritdoc IEventFacet
@@ -181,6 +159,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         uint256 n = e.marketIds.length;
         uint256 winningIndex = e.winningIndex;
         uint256 grossClaim;
+        uint256 fee;
 
         for (uint256 i; i < n; ++i) {
             LibMarketStorage.MarketData storage m = ms.markets[e.marketIds[i]];
@@ -190,6 +169,13 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
             if (bal > 0) {
                 token.burn(msg.sender, bal);
                 grossClaim += bal;
+                // keyti-fqn8: redemption fee is a pure per-MARKET property — charge THIS child's effective
+                // fee on THIS child's claim, then sum. Resolution mirrors `MarketFacet._effectiveRedemptionFee`
+                // (`override ? perMarket : snapshottedDefault`); floor per child (favors the redeemer). The
+                // legacy event-level `e.redemptionFeeBps` is no longer read.
+                uint16 childBps =
+                    m.redemptionFeeOverridden ? m.perMarketRedemptionFeeBps : m.snapshottedDefaultRedemptionFeeBps;
+                fee += (bal * childBps) / BPS_DENOMINATOR;
             }
         }
         if (grossClaim == 0) revert Event_NothingToRedeem();
@@ -198,9 +184,8 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         // Accounting tripwire: must never fire if `eventPool == Σ nᵢ + M` holds.
         if (pool < grossClaim) revert Event_PoolInsolvent();
 
-        // Floor rounding (fee down → payout up) is intentional and matches MarketFacet.redeem; the pool is
-        // decremented by the FULL grossClaim so `fee + payout == grossClaim` and the pool still drains to 0.
-        uint256 fee = (grossClaim * e.redemptionFeeBps) / BPS_DENOMINATOR;
+        // The pool is decremented by the FULL grossClaim so `fee + payout == grossClaim` and the pool still
+        // drains to 0; `fee` is the sum of per-child floored fees accumulated in the loop above.
         payout = grossClaim - fee;
 
         LibEventStorage.layout().eventPool[eventId] = pool - grossClaim;
@@ -405,6 +390,57 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
+
+    /// @dev Shared create path for both `createEvent` overloads. Each child snapshots the system default
+    ///      redemption fee (via `LibMarket.create`, identical to a standalone binary market); the
+    ///      with-fee overload overwrites those snapshots. `redeemEvent` charges each child's effective
+    ///      fee — the legacy event-level `EventData.redemptionFeeBps` is no longer used (keyti-fqn8).
+    function _createEvent(string calldata name, string[] calldata candidateQuestions, uint256 endTime, address oracle)
+        private
+        returns (uint256 eventId, uint256[] memory marketIds)
+    {
+        LibPausable.enforceNotPaused(Modules.MARKET);
+        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
+
+        if (bytes(name).length == 0) revert Event_EmptyName();
+        if (endTime <= block.timestamp) revert Event_InvalidEndTime();
+        if (oracle == address(0)) revert Event_ZeroOracle();
+        if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Event_OracleNotApproved();
+        // The oracle must resolve multi-outcome events: bind only to one that
+        // advertises IEventOracle. A binary-only oracle would leave the event
+        // unresolvable via resolveEvent (stuck until emergency).
+        if (!ERC165Checker.supportsInterface(oracle, type(IEventOracle).interfaceId)) {
+            revert Event_OracleNotEventCapable();
+        }
+
+        uint256 n = candidateQuestions.length;
+        if (n < MIN_CANDIDATES) revert Event_TooFewCandidates();
+        if (n > MAX_CANDIDATES) revert Event_TooManyCandidates();
+        for (uint256 i; i < n; ++i) {
+            if (bytes(candidateQuestions[i]).length == 0) revert IMarketFacet.Market_EmptyQuestion();
+        }
+
+        LibEventStorage.Layout storage es = LibEventStorage.layout();
+        eventId = ++es.eventCount;
+        LibEventStorage.EventData storage e = es.events[eventId];
+        e.name = name;
+        e.endTime = endTime;
+        e.creator = msg.sender;
+        e.oracle = oracle;
+        e.linked = true;
+
+        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
+        marketIds = new uint256[](n);
+        for (uint256 i; i < n; ++i) {
+            uint256 marketId = LibMarket.create(candidateQuestions[i], endTime, address(0), eventId);
+            ms.markets[marketId].linkedChild = true;
+            marketIds[i] = marketId;
+            e.marketIds.push(marketId);
+            es.marketToEvent[marketId] = eventId;
+        }
+
+        emit EventCreated(eventId, msg.sender, endTime, name, marketIds, oracle);
+    }
 
     function _resolveChildren(LibEventStorage.EventData storage e, uint256 winningIndex) private {
         e.isResolved = true;

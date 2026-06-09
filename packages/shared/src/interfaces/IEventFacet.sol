@@ -158,6 +158,20 @@ interface IEventFacet {
         external
         returns (uint256 eventId, uint256[] memory marketIds);
 
+    /// @notice Create a shared-pool event whose children carry an explicit redemption fee.
+    /// @dev Companion to `createEvent`: snapshots `feeBps` into EVERY child market (plain `createEvent`
+    ///      snapshots `defaultRedemptionFeeBps`). `redeemEvent` charges each child's effective fee on its
+    ///      own claim. Reverts `IMarketFacet.Market_FeeTooHigh` if `feeBps` exceeds the hard cap
+    ///      (1000 bps = 10%). Per-child fees can later be tuned via `setPerMarketRedemptionFeeBps`.
+    /// @param feeBps   Redemption fee in basis points, `[0, 1000]`, applied to every child.
+    function createEventWithFee(
+        string calldata name,
+        string[] calldata candidateQuestions,
+        uint256 endTime,
+        address oracle,
+        uint256 feeBps
+    ) external returns (uint256 eventId, uint256[] memory marketIds);
+
     /// @notice Deposit `amount` USDC into the shared pool and mint `amount` YES of EVERY outcome.
     /// @param eventId Target shared-collateral event (unresolved, not ended).
     /// @param amount  USDC to deposit; must be non-zero.

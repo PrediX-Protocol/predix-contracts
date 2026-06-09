@@ -139,7 +139,9 @@ contract Gap1SolvencyAdversarial is EventFixture {
             }
 
             // CASH CONSERVATION: real money held == accounted pool. No fee pre-resolution.
-            assertEq(usdc.balanceOf(address(diamond)), eventFacet.eventPoolOf(eventId), "diamond cash diverged from pool");
+            assertEq(
+                usdc.balanceOf(address(diamond)), eventFacet.eventPoolOf(eventId), "diamond cash diverged from pool"
+            );
             assertEq(market.totalCollateralLocked(), eventFacet.eventPoolOf(eventId), "lockstep diverged from pool");
         }
 
@@ -286,13 +288,14 @@ contract Gap1SolvencyAdversarial is EventFixture {
     }
 
     // ---------------------------------------------------------------------
-    // 6. Fee rounding cannot strand pool dust across MULTIPLE redeemers at the MAX fee (15%).
-    //    Probes the "floor fee → dust → pool != Σpayout" hypothesis directly.
+    // 6. Fee rounding cannot strand pool dust across MULTIPLE redeemers at the MAX fee (10%).
+    //    keyti-fqn8: children snapshot the default fee at creation, so redeemEvent now charges it
+    //    per-child — this exercises the "floor fee → dust → pool != Σpayout" hypothesis on the live path.
     // ---------------------------------------------------------------------
 
     function test_MultiRedeemerMaxFee_PoolDrainsToZero_NoDust() public {
         vm.prank(admin);
-        market.setDefaultRedemptionFeeBps(1500); // 15% = MAX, worst case for rounding
+        market.setDefaultRedemptionFeeBps(1000); // 10% = MAX, worst case for rounding
 
         uint256 endTime = block.timestamp + 30 days;
         (uint256 eventId, uint256[] memory ids) = _createNCandidateEvent(3, endTime);
@@ -301,7 +304,7 @@ contract Gap1SolvencyAdversarial is EventFixture {
         _fundAndApprove(bob, 1_000e6);
         _fundAndApprove(carol, 1_000e6);
 
-        // Deliberately awkward amounts so grossClaim * 1500 / 10000 floors with a remainder per redeemer.
+        // Deliberately awkward amounts so grossClaim * 1000 / 10000 floors with a remainder per redeemer.
         vm.prank(alice);
         eventFacet.splitEvent(eventId, 10_000_001); // odd base unit
         vm.prank(bob);

@@ -33,7 +33,7 @@ abstract contract EventFixture is MarketFixture {
     }
 
     function _eventSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](13);
+        s = new bytes4[](14);
         s[0] = IEventFacet.createEvent.selector;
         s[1] = IEventFacet.resolveEvent.selector;
         s[2] = IEventFacet.emergencyResolveEvent.selector;
@@ -47,6 +47,7 @@ abstract contract EventFixture is MarketFixture {
         s[10] = IEventFacet.mergeEvent.selector;
         s[11] = IEventFacet.redeemEvent.selector;
         s[12] = IEventFacet.eventPoolOf.selector;
+        s[13] = IEventFacet.createEventWithFee.selector;
     }
 
     function _defaultQuestions(uint256 n) internal pure returns (string[] memory qs) {

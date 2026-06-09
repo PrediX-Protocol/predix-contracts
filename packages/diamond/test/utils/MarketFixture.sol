@@ -64,7 +64,7 @@ abstract contract MarketFixture is DiamondFixture {
     }
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](31);
+        s = new bytes4[](32);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -96,6 +96,7 @@ abstract contract MarketFixture is DiamondFixture {
         s[28] = IMarketFacet.totalCollateralLocked.selector;
         s[29] = IMarketFacet.setOutcomeTokenImpl.selector;
         s[30] = IMarketFacet.outcomeTokenImpl.selector;
+        s[31] = IMarketFacet.createMarketWithFee.selector;
     }
 
     function _createMarket(uint256 endTime) internal returns (uint256 id) {

@@ -24,11 +24,10 @@ library LibEventStorage {
         ///      children share `eventPool[eventId]` as one pooled balance. `false` = legacy per-child
         ///      event. Never reorder.
         bool linked;
-        /// @dev Append-only field added for Gap#1. Per-event redemption fee (bps) applied by
-        ///      `EventFacet.redeemEvent`. v1: never written, so it stays `0` (fee-free — owner
-        ///      decision 2026-05-31); the `redeemEvent` fee path is retained so v1.1 can introduce a
-        ///      non-zero linked fee. `uint16` suffices; a future setter must bound it by
-        ///      `MAX_REDEMPTION_FEE_BPS`. Never reorder.
+        /// @dev Append-only field, originally the per-event redemption fee. DEAD as of keyti-fqn8:
+        ///      `EventFacet.redeemEvent` now charges each CHILD's per-market fee, so this is never read
+        ///      or written (stays `0`). Retained only because diamond storage is append-only — never
+        ///      reorder or remove.
         uint16 redemptionFeeBps;
     }
 

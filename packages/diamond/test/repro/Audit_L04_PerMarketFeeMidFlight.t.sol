@@ -5,12 +5,12 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 
 import {MarketFixture} from "../utils/MarketFixture.sol";
 
-/// @notice Fix-lock for AUDIT-M-02 (Pass 2.1, was L-04 in Pass 1):
-///         `setPerMarketRedemptionFeeBps` now enforces `bps <=
-///         snapshottedDefaultRedemptionFeeBps` so the per-market override can
-///         only LOWER the effective fee, never raise it above the snapshot
-///         taken at market creation. The FINAL-H04 snapshot promise is now
-///         honoured for the override path too.
+/// @notice AUDIT-M-02 (Pass 2.1, was L-04) was the `bps <= snapshottedDefaultRedemptionFeeBps`
+///         ("override may only lower") rule. keyti-fqn8 (owner decision 2026-06-09) REVERSES it:
+///         admin may now raise OR lower the per-market fee freely within the hard cap
+///         (`MAX_REDEMPTION_FEE_BPS` = 1000 bps = 10%). The mid-flight-extraction risk is instead
+///         contained by freezing the fee once the market has ended (`Market_Ended`), so the value an
+///         in-flight redeemer pays is fixed before trading closes. This file locks THAT policy.
 contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
     uint256 internal id;
     uint256 internal endTime;
@@ -29,27 +29,27 @@ contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
         market.resolveMarket(id);
     }
 
-    /// @dev FIX-LOCK: with snapshot = 0, admin cannot set override > 0.
-    ///      Attempt to extract 15% must revert.
-    function test_Revert_OverrideAboveSnapshot_RejectsExtraction() public {
+    /// @dev keyti-fqn8: admin CAN now raise the override above the (zero) snapshot, up to the cap.
+    ///      Above the cap reverts `Market_FeeTooHigh`; once the market ends it reverts `Market_Ended`.
+    function test_OverrideAboveSnapshot_NowAllowed_CappedAndEndLocked() public {
         _split(alice, id, SPLIT_AMT);
         assertEq(market.effectiveRedemptionFeeBps(id), 0, "snapshot 0");
 
+        // Raise above the zero snapshot to the 10% cap — now allowed (was Market_FeeExceedsSnapshot).
         vm.prank(admin);
-        vm.expectRevert(IMarketFacet.Market_FeeExceedsSnapshot.selector);
-        market.setPerMarketRedemptionFeeBps(id, 1500);
+        market.setPerMarketRedemptionFeeBps(id, 1000);
+        assertEq(market.effectiveRedemptionFeeBps(id), 1000);
 
-        // Effective fee unchanged at 0.
-        assertEq(market.effectiveRedemptionFeeBps(id), 0);
+        // Above the cap is still rejected.
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_FeeTooHigh.selector);
+        market.setPerMarketRedemptionFeeBps(id, 1001);
 
-        _resolveYes();
-
-        uint256 aliceBefore = usdc.balanceOf(alice);
-        vm.prank(alice);
-        uint256 payout = market.redeem(id);
-        // Alice receives full payout — no fee extracted.
-        assertEq(payout, SPLIT_AMT, "no retroactive fee");
-        assertEq(usdc.balanceOf(alice) - aliceBefore, SPLIT_AMT);
+        // Once the market has ended, the fee is frozen — no last-second hike before redeem.
+        vm.warp(endTime);
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_Ended.selector);
+        market.setPerMarketRedemptionFeeBps(id, 500);
     }
 
     /// @dev FIX-LOCK: admin CAN lower the per-market fee below the snapshot,
@@ -72,10 +72,10 @@ contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
         market.setPerMarketRedemptionFeeBps(id2, 0);
         assertEq(market.effectiveRedemptionFeeBps(id2), 0);
 
-        // Try to raise above snapshot — must revert.
+        // keyti-fqn8: raising back up (within the 10% cap) is now allowed too.
         vm.prank(admin);
-        vm.expectRevert(IMarketFacet.Market_FeeExceedsSnapshot.selector);
-        market.setPerMarketRedemptionFeeBps(id2, 1500);
+        market.setPerMarketRedemptionFeeBps(id2, 1000);
+        assertEq(market.effectiveRedemptionFeeBps(id2), 1000);
     }
 
     /// @dev FIX-LOCK: setting override exactly equal to the snapshot is

@@ -79,8 +79,10 @@ contract LinkedEventGuardsTest is EventFixture {
         eventFacet.enableEventRefundMode(eventId);
     }
 
-    // --- F1 (audit Gap#1): per-market cap/fee setters MUST reject linked children (fail-loud).
-    //     Non-linked markets still accept them — covered by the existing MarketFacet unit suite. ---
+    // --- per-market CAP setter still rejects linked children (F1, audit Gap#1) — their collateral is
+    //     pooled at the event level so a per-child cap is meaningless. keyti-fqn8: the per-market FEE
+    //     setters NO LONGER reject linked children (fee is a unified per-market property; redeemEvent
+    //     charges each child's own effective fee). ---
 
     function test_Revert_SetPerMarketCap_OnLinkedChild() public {
         vm.prank(admin);
@@ -88,15 +90,18 @@ contract LinkedEventGuardsTest is EventFixture {
         market.setPerMarketCap(childIds[0], 1e6);
     }
 
-    function test_Revert_SetPerMarketRedemptionFeeBps_OnLinkedChild() public {
+    function test_SetPerMarketRedemptionFeeBps_OnLinkedChild_NowAllowed() public {
         vm.prank(admin);
-        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
         market.setPerMarketRedemptionFeeBps(childIds[0], 100);
+        assertEq(market.effectiveRedemptionFeeBps(childIds[0]), 100);
+        assertTrue(market.getMarket(childIds[0]).redemptionFeeOverridden);
     }
 
-    function test_Revert_ClearPerMarketRedemptionFee_OnLinkedChild() public {
+    function test_ClearPerMarketRedemptionFee_OnLinkedChild_NowAllowed() public {
         vm.prank(admin);
-        vm.expectRevert(IMarketFacet.Market_LinkedEvent.selector);
+        market.setPerMarketRedemptionFeeBps(childIds[0], 100);
+        vm.prank(admin);
         market.clearPerMarketRedemptionFee(childIds[0]);
+        assertFalse(market.getMarket(childIds[0]).redemptionFeeOverridden);
     }
 }

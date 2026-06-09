@@ -170,14 +170,27 @@ contract AttackScenarios is MarketFixture {
         market.splitPosition(id, 1);
     }
 
-    // ============ 9. Fee snapshot immutability ============
+    // ============ 9. Fee raise bounded by cap + endTime freeze (keyti-fqn8) ============
 
-    function test_Attack_FeeSnapshotCannotBeRaised() public {
-        // Default fee = 0 at create → snapshot = 0
-        // Admin tries to raise per-market override above snapshot
+    /// @dev keyti-fqn8 lets admin raise the per-market fee (centralization tradeoff accepted by owner),
+    ///      but bounds the power two ways: never above the 10% cap, and never after the market ends —
+    ///      so the fee an in-flight redeemer pays is frozen once trading closes.
+    function test_Attack_FeeRaiseBoundedByCapAndEndTime() public {
+        // Admin may raise the per-market fee up to the cap while the market is live.
         vm.prank(admin);
-        vm.expectRevert(IMarketFacet.Market_FeeExceedsSnapshot.selector);
-        market.setPerMarketRedemptionFeeBps(id, 1);
+        market.setPerMarketRedemptionFeeBps(id, 1000);
+        assertEq(market.effectiveRedemptionFeeBps(id), 1000);
+
+        // ...but never above the 10% cap.
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_FeeTooHigh.selector);
+        market.setPerMarketRedemptionFeeBps(id, 1001);
+
+        // ...and never after the market has ended.
+        vm.warp(endTime);
+        vm.prank(admin);
+        vm.expectRevert(IMarketFacet.Market_Ended.selector);
+        market.setPerMarketRedemptionFeeBps(id, 500);
     }
 
     // ============ 10. Oracle re-approval check at resolve ============

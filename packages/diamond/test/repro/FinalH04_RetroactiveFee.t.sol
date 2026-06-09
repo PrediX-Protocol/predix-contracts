@@ -26,8 +26,8 @@ contract FinalH04_RetroactiveFee is MarketFixture {
         market.resolveMarket(id);
     }
 
-    /// @dev Market created with default fee = 0. Admin hikes default to 1500
-    ///      bps (15%) before users redeem. Alice must still receive 100% of
+    /// @dev Market created with default fee = 0. Admin hikes default to 1000
+    ///      bps (10%, the keyti-fqn8 cap) before users redeem. Alice must still receive 100% of
     ///      her winning position because the fee was snapshotted to 0 at
     ///      creation.
     function test_RedemptionFee_SnapshottedAtCreate_NotRetroactive() public {
@@ -35,7 +35,7 @@ contract FinalH04_RetroactiveFee is MarketFixture {
         _resolveYes();
 
         vm.prank(admin);
-        market.setDefaultRedemptionFeeBps(1500);
+        market.setDefaultRedemptionFeeBps(1000);
 
         // View must also return the snapshot, not the live config.
         assertEq(market.effectiveRedemptionFeeBps(id), 0);

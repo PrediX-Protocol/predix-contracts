@@ -11,7 +11,7 @@ import {MarketFixture} from "../utils/MarketFixture.sol";
 /// @notice Protocol redemption fee: admin-gated default + per-market override + ceiling +
 ///         view collapse + redeem-path math + refund-path no-fee property.
 contract MarketRedemptionFeeTest is MarketFixture {
-    uint256 internal constant MAX_BPS = 1500;
+    uint256 internal constant MAX_BPS = 1000; // keyti-fqn8: hard cap 15% -> 10%
     uint256 internal constant BPS_DEN = 10_000;
 
     uint256 internal id;
@@ -267,7 +267,7 @@ contract MarketRedemptionFeeTest is MarketFixture {
     }
 
     function test_Redeem_FeeAtCeiling() public {
-        uint256 id2 = _createMarketWithDefault(MAX_BPS); // 15%
+        uint256 id2 = _createMarketWithDefault(MAX_BPS); // 10%
         _split(alice, id2, 1000e6);
         oracle.setResolution(id2, true);
         vm.warp(endTime + 1);
@@ -275,8 +275,8 @@ contract MarketRedemptionFeeTest is MarketFixture {
         uint256 feeRecipBefore = usdc.balanceOf(feeRecipient);
         vm.prank(alice);
         uint256 payout = market.redeem(id2);
-        assertEq(payout, 850e6);
-        assertEq(usdc.balanceOf(feeRecipient) - feeRecipBefore, 150e6);
+        assertEq(payout, 900e6);
+        assertEq(usdc.balanceOf(feeRecipient) - feeRecipBefore, 100e6);
     }
 
     function test_Redeem_RoundingDown_NoLeftover() public {

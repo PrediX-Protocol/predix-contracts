@@ -27,7 +27,7 @@ library LibMarketStorage {
         /// @dev Append-only fields added in v1.3 for per-market redemption fee override.
         ///      When `redemptionFeeOverridden == true`, `perMarketRedemptionFeeBps` is
         ///      used verbatim (including 0); otherwise the default from `LibConfigStorage`
-        ///      applies. `uint16` is sufficient because `MAX_REDEMPTION_FEE_BPS = 1500`.
+        ///      applies. `uint16` is sufficient because `MAX_REDEMPTION_FEE_BPS = 1000`.
         uint16 perMarketRedemptionFeeBps;
         bool redemptionFeeOverridden;
         /// @dev Append-only field added in v1.4. Snapshot of the global

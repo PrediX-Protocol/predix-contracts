@@ -59,10 +59,7 @@ interface IMarketFacet {
     ///        off-chain monitoring to distinguish routine stall recovery from
     ///        suspicious operator action.
     event MarketEmergencyResolved(
-        uint256 indexed marketId,
-        bool outcome,
-        address indexed resolver,
-        EmergencyReason.Reason reason
+        uint256 indexed marketId, bool outcome, address indexed resolver, EmergencyReason.Reason reason
     );
 
     /// @notice Emitted when a user redeems their position after resolution. `fee` is the
@@ -171,14 +168,6 @@ interface IMarketFacet {
     ///         mode). The effective fee for a market is snapshotted at creation
     ///         to protect users from retroactive mutation.
     error Market_FeeLockedAfterFinal();
-    /// @notice Reverts when admin tries to set a per-market redemption fee
-    ///         override above the snapshotted default fee. The override path
-    ///         can only LOWER the effective fee — never raise it — so the
-    ///         snapshot promise made to depositors at create-time is preserved.
-    ///         Admin can still call `setDefaultRedemptionFeeBps` to raise the
-    ///         global default, but it only applies to new markets (snapshot is
-    ///         captured at create).
-    error Market_FeeExceedsSnapshot();
     /// @notice Reverts from `sweepUnclaimed` when the market's tracked collateral
     ///         is less than the outstanding claim supply — indicates a prior
     ///         accounting violation and the sweep refuses to paper over it.
@@ -209,6 +198,16 @@ interface IMarketFacet {
     /// @param oracle    Address of an oracle previously added to the approved set.
     /// @return marketId Newly assigned market identifier (1-indexed, monotonic).
     function createMarket(string calldata question, uint256 endTime, address oracle) external returns (uint256 marketId);
+
+    /// @notice Create a binary market with an explicit redemption fee instead of the system default.
+    /// @dev Companion to `createMarket`: snapshots `feeBps` as the market's redemption fee at creation
+    ///      (plain `createMarket` snapshots `defaultRedemptionFeeBps`). Reverts `Market_FeeTooHigh` if
+    ///      `feeBps` exceeds the hard cap (1000 bps = 10%). The fee can later be changed via
+    ///      `setPerMarketRedemptionFeeBps` until the market ends.
+    /// @param feeBps   Redemption fee in basis points, `[0, 1000]`.
+    function createMarketWithFee(string calldata question, uint256 endTime, address oracle, uint256 feeBps)
+        external
+        returns (uint256 marketId);
 
     /// @notice Deposit `amount` USDC and receive `amount` YES + `amount` NO outcome tokens.
     /// @dev Reverts if the market is past its end time, resolved, in refund mode, or

@@ -38,9 +38,9 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     ///         fee recipient.
     uint256 internal constant GRACE_PERIOD = 365 days;
 
-    /// @notice Hard ceiling on redemption fees. 1500 bps = 15%. Both
-    ///         `defaultRedemptionFeeBps` and `perMarketRedemptionFeeBps` are bounded by this.
-    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1500;
+    /// @notice Hard ceiling on redemption fees. 1000 bps = 10%. Bounds `defaultRedemptionFeeBps`,
+    ///         every `perMarketRedemptionFeeBps`, and the optional create-time fee (keyti-fqn8).
+    uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
 
     /// @notice Basis-point denominator. 10000 = 100%.
     uint256 internal constant BPS_DENOMINATOR = 10000;
@@ -56,15 +56,20 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         nonReentrant
         returns (uint256 marketId)
     {
-        LibPausable.enforceNotPaused(Modules.MARKET);
-        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Market_NotCreator();
+        marketId = _createMarket(question, endTime, oracle);
+    }
 
-        if (bytes(question).length == 0) revert Market_EmptyQuestion();
-        if (endTime <= block.timestamp) revert Market_InvalidEndTime();
-        if (oracle == address(0)) revert Market_ZeroAddress();
-        if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Market_OracleNotApproved();
-
-        marketId = LibMarket.create(question, endTime, oracle, 0);
+    /// @inheritdoc IMarketFacet
+    function createMarketWithFee(string calldata question, uint256 endTime, address oracle, uint256 feeBps)
+        external
+        override
+        nonReentrant
+        returns (uint256 marketId)
+    {
+        if (feeBps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
+        marketId = _createMarket(question, endTime, oracle);
+        // Overwrite the default snapshot `LibMarket.create` took with the explicit create-time fee.
+        LibMarketStorage.layout().markets[marketId].snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
     }
 
     /// @inheritdoc IMarketFacet
@@ -453,34 +458,29 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
-    /// @dev Reverts for linked-event children: `EventFacet.redeemEvent` applies the
-    ///      event-level `redemptionFeeBps`, so a per-market override here would be a silent dead
-    ///      write (§Fail-loud). Audit Gap#1 F1.
+    /// @dev Unified per-market fee (keyti-fqn8): applies to standalone binary markets AND linked-event
+    ///      children — `EventFacet.redeemEvent` reads each child's effective fee. Admin may raise OR
+    ///      lower freely within `MAX_REDEMPTION_FEE_BPS`; locked once the market has ended so an
+    ///      in-flight redeemer's fee can never change after trading closes.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
-        if (m.linkedChild) revert Market_LinkedEvent();
         if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
-        // Per-market override may only LOWER the effective fee. Without this
-        // bound, admin could raise the per-market fee post-split up to
-        // MAX_REDEMPTION_FEE_BPS, bypassing the snapshotted default fee
-        // protection that exists for the default-fee path. Admin retains the
-        // ability to reduce per-market fees to zero.
-        if (bps > m.snapshottedDefaultRedemptionFeeBps) revert Market_FeeExceedsSnapshot();
+        if (block.timestamp >= m.endTime) revert Market_Ended();
         m.perMarketRedemptionFeeBps = bps;
         m.redemptionFeeOverridden = true;
         emit PerMarketRedemptionFeeUpdated(marketId, bps, true);
     }
 
     /// @inheritdoc IMarketFacet
-    /// @dev Reverts for linked-event children — symmetric with `setPerMarketRedemptionFeeBps`
-    ///      (a linked child's per-market fee is never read). Audit Gap#1 F1.
+    /// @dev Symmetric with `setPerMarketRedemptionFeeBps` — works on linked children and is locked
+    ///      once the market has ended. Restores the snapshotted default.
     function clearPerMarketRedemptionFee(uint256 marketId) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         LibMarketStorage.MarketData storage m = _market(marketId);
-        if (m.linkedChild) revert Market_LinkedEvent();
         if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
+        if (block.timestamp >= m.endTime) revert Market_Ended();
         m.perMarketRedemptionFeeBps = 0;
         m.redemptionFeeOverridden = false;
         emit PerMarketRedemptionFeeUpdated(marketId, 0, false);
@@ -586,6 +586,23 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
+
+    /// @dev Shared create path for both `createMarket` overloads. Snapshots the system default
+    ///      redemption fee (via `LibMarket.create`); the with-fee overload overwrites it afterward.
+    function _createMarket(string calldata question, uint256 endTime, address oracle)
+        private
+        returns (uint256 marketId)
+    {
+        LibPausable.enforceNotPaused(Modules.MARKET);
+        if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Market_NotCreator();
+
+        if (bytes(question).length == 0) revert Market_EmptyQuestion();
+        if (endTime <= block.timestamp) revert Market_InvalidEndTime();
+        if (oracle == address(0)) revert Market_ZeroAddress();
+        if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Market_OracleNotApproved();
+
+        marketId = LibMarket.create(question, endTime, oracle, 0);
+    }
 
     function _market(uint256 marketId) private view returns (LibMarketStorage.MarketData storage m) {
         m = LibMarketStorage.layout().markets[marketId];
