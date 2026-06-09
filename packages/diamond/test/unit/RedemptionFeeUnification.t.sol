@@ -110,12 +110,34 @@ contract RedemptionFeeUnificationTest is EventFixture {
     // Per-market setter reverts once the market has ended
     // -----------------------------------------------------------------------
 
-    function test_Revert_SetPerMarket_AfterEndTime() public {
-        uint256 id = _createMarket(endTime);
+    function test_Revert_SetPerMarket_RaiseAfterEndTime() public {
+        uint256 id = _createMarket(endTime); // snapshot 0
         vm.warp(endTime); // block.timestamp >= endTime
+        // A RAISE after the market ends is frozen (in-flight redeemer's fee can't increase).
         vm.expectRevert(IMarketFacet.Market_Ended.selector);
         vm.prank(admin);
         market.setPerMarketRedemptionFeeBps(id, 100);
+    }
+
+    /// @dev Remediation path (keyti-fqn8): after endTime the fee may still be LOWERED/waived — this is
+    ///      always user-favorable and lets admin undo a retroactive or mis-set fee before users redeem.
+    function test_SetPerMarket_LowerAfterEndTime_Allowed() public {
+        _setDefault(500); // snapshot 5%
+        uint256 id = _createMarket(endTime);
+        vm.warp(endTime + 1); // ended
+        _setPerMarket(id, 0); // waive to 0 after end — allowed
+        assertEq(market.effectiveRedemptionFeeBps(id), 0);
+    }
+
+    function test_SetPerMarket_LowerAfterResolved_Allowed() public {
+        _setDefault(500);
+        uint256 id = _createMarket(endTime);
+        oracle.setResolution(id, true);
+        vm.warp(endTime + 1);
+        market.resolveMarket(id);
+        // Even after resolution (before users redeem) admin can waive the fee — remediation.
+        _setPerMarket(id, 0);
+        assertEq(market.effectiveRedemptionFeeBps(id), 0);
     }
 
     function test_Revert_ClearPerMarket_AfterEndTime() public {

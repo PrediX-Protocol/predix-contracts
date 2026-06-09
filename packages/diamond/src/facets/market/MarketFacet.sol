@@ -459,15 +459,17 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
 
     /// @inheritdoc IMarketFacet
     /// @dev Unified per-market fee (keyti-fqn8): applies to standalone binary markets AND linked-event
-    ///      children — `EventFacet.redeemEvent` reads each child's effective fee. Admin may raise OR
-    ///      lower freely within `MAX_REDEMPTION_FEE_BPS`; locked once the market has ended so an
-    ///      in-flight redeemer's fee can never change after trading closes.
+    ///      children — `EventFacet.redeemEvent` reads each child's effective fee. Before the market ends,
+    ///      admin may raise OR lower freely within `MAX_REDEMPTION_FEE_BPS`. Once it has ended (which
+    ///      includes resolved / refund-mode, both of which require endTime passed) the fee may only be
+    ///      LOWERED: waiving is always user-favorable and is the remediation path for a retroactive or
+    ///      mis-set fee, while a RAISE stays frozen so an in-flight redeemer's fee can never increase
+    ///      after trading closes.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         if (bps > MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
-        if (m.isResolved || m.refundModeActive) revert Market_FeeLockedAfterFinal();
-        if (block.timestamp >= m.endTime) revert Market_Ended();
+        if (block.timestamp >= m.endTime && bps > _effectiveRedemptionFee(m)) revert Market_Ended();
         m.perMarketRedemptionFeeBps = bps;
         m.redemptionFeeOverridden = true;
         emit PerMarketRedemptionFeeUpdated(marketId, bps, true);

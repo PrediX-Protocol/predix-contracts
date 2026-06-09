@@ -47,11 +47,13 @@ contract FinalH04_RetroactiveFee is MarketFixture {
         assertEq(usdc.balanceOf(alice) - before, 100e6);
     }
 
-    function test_Revert_SetPerMarketRedemptionFee_AfterResolve() public {
+    function test_Revert_SetPerMarketRedemptionFee_RaiseAfterResolve() public {
         _split(alice, id, 100e6);
         _resolveYes();
 
-        vm.expectRevert(IMarketFacet.Market_FeeLockedAfterFinal.selector);
+        // keyti-fqn8: after a market is final the fee may only be LOWERED; a RAISE (500 > snapshot 0) is
+        // frozen via Market_Ended (resolved implies endTime passed).
+        vm.expectRevert(IMarketFacet.Market_Ended.selector);
         vm.prank(admin);
         market.setPerMarketRedemptionFeeBps(id, 500);
     }

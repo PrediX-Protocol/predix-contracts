@@ -45,11 +45,16 @@ contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
         vm.expectRevert(IMarketFacet.Market_FeeTooHigh.selector);
         market.setPerMarketRedemptionFeeBps(id, 1001);
 
-        // Once the market has ended, the fee is frozen — no last-second hike before redeem.
+        // After endTime the fee may only be LOWERED (remediation)...
         vm.warp(endTime);
         vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id, 300);
+        assertEq(market.effectiveRedemptionFeeBps(id), 300);
+
+        // ...a RAISE after endTime is frozen (no last-second hike before redeem).
+        vm.prank(admin);
         vm.expectRevert(IMarketFacet.Market_Ended.selector);
-        market.setPerMarketRedemptionFeeBps(id, 500);
+        market.setPerMarketRedemptionFeeBps(id, 800);
     }
 
     /// @dev FIX-LOCK: admin CAN lower the per-market fee below the snapshot,
@@ -90,14 +95,19 @@ contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
         assertEq(market.effectiveRedemptionFeeBps(id2), 800);
     }
 
-    /// @dev Sanity: the existing protection IS in place — admin cannot set
-    ///      override AFTER the market reaches a final state.
-    function test_OverrideLocked_AfterResolved() public {
+    /// @dev keyti-fqn8: after a market is final, the fee may still be LOWERED/waived (the remediation
+    ///      path), but a RAISE above the current effective fee is rejected (anti-hike survives post-end).
+    function test_OverrideLowerAllowed_RaiseRejected_AfterResolved() public {
         _split(alice, id, SPLIT_AMT);
         _resolveYes();
-        vm.expectRevert(IMarketFacet.Market_FeeLockedAfterFinal.selector);
+        // Waive to 0 even after resolution — allowed.
         vm.prank(admin);
         market.setPerMarketRedemptionFeeBps(id, 0);
+        assertEq(market.effectiveRedemptionFeeBps(id), 0);
+        // A raise above the current effective fee is frozen.
+        vm.expectRevert(IMarketFacet.Market_Ended.selector);
+        vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id, 100);
     }
 
     /// @dev Sanity: clearPerMarketRedemptionFee remains gated by final state

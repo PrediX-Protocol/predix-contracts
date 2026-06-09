@@ -186,8 +186,13 @@ contract AttackScenarios is MarketFixture {
         vm.expectRevert(IMarketFacet.Market_FeeTooHigh.selector);
         market.setPerMarketRedemptionFeeBps(id, 1001);
 
-        // ...and never after the market has ended.
+        // ...after the market ends the fee may only be LOWERED (remediation)...
         vm.warp(endTime);
+        vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id, 200);
+        assertEq(market.effectiveRedemptionFeeBps(id), 200);
+
+        // ...but a RAISE after the market ends is frozen.
         vm.prank(admin);
         vm.expectRevert(IMarketFacet.Market_Ended.selector);
         market.setPerMarketRedemptionFeeBps(id, 500);
