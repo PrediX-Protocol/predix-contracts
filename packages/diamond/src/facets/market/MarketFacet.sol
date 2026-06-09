@@ -456,22 +456,28 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     ///      children — `EventFacet.redeemEvent` reads each child's effective fee. Before the market ends,
     ///      admin may raise OR lower freely within `MAX_REDEMPTION_FEE_BPS`. Once it has ended (which
     ///      includes resolved / refund-mode, both of which require endTime passed) the fee may only be
-    ///      LOWERED: waiving is always user-favorable and is the remediation path for a retroactive or
-    ///      mis-set fee, while a RAISE stays frozen so an in-flight redeemer's fee can never increase
-    ///      after trading closes.
+    ///      STRICTLY lowered: waiving is always user-favorable and is the remediation path for a
+    ///      retroactive or mis-set fee, while a RAISE (or a no-op) stays frozen so an in-flight redeemer's
+    ///      fee can never increase after trading closes.
     function setPerMarketRedemptionFeeBps(uint256 marketId, uint16 bps) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         if (bps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
         LibMarketStorage.MarketData storage m = _market(marketId);
-        if (block.timestamp >= m.endTime && bps > _effectiveRedemptionFee(m)) revert Market_Ended();
+        // After the market ends the fee may only STRICTLY decrease: `>=` rejects a raise AND a no-op, so
+        // `redemptionFeeOverridden` is never latched without a real reduction (which `clear` cannot undo
+        // post-end). resolved / refund-mode both imply endTime passed.
+        if (block.timestamp >= m.endTime && bps >= _effectiveRedemptionFee(m)) revert Market_Ended();
         m.perMarketRedemptionFeeBps = bps;
         m.redemptionFeeOverridden = true;
         emit PerMarketRedemptionFeeUpdated(marketId, bps, true);
     }
 
     /// @inheritdoc IMarketFacet
-    /// @dev Symmetric with `setPerMarketRedemptionFeeBps` — works on linked children and is locked
-    ///      once the market has ended. Restores the snapshotted default.
+    /// @dev Resets the per-market override back to the snapshotted default; works on linked children.
+    ///      UNLIKE `setPerMarketRedemptionFeeBps`, clearing is FULLY locked once the market is final
+    ///      (resolved / refund) or ended — restoring the snapshot could RAISE the effective fee, which
+    ///      must never happen post-end. To waive a fee after the market ends, call
+    ///      `setPerMarketRedemptionFeeBps(marketId, lowerValue)` instead.
     function clearPerMarketRedemptionFee(uint256 marketId) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
         LibMarketStorage.MarketData storage m = _market(marketId);

@@ -98,13 +98,17 @@ contract Audit_L04_PerMarketFeeMidFlight is MarketFixture {
     /// @dev keyti-fqn8: after a market is final, the fee may still be LOWERED/waived (the remediation
     ///      path), but a RAISE above the current effective fee is rejected (anti-hike survives post-end).
     function test_OverrideLowerAllowed_RaiseRejected_AfterResolved() public {
+        // Give the market a non-zero fee before it ends (a raise is free pre-end) so the post-resolve
+        // waive is a real reduction — lowering an already-0 fee to 0 is a no-op, now rejected.
+        vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id, 500);
         _split(alice, id, SPLIT_AMT);
         _resolveYes();
-        // Waive to 0 even after resolution — allowed.
+        // Waive to 0 after resolution — a real reduction, allowed.
         vm.prank(admin);
         market.setPerMarketRedemptionFeeBps(id, 0);
         assertEq(market.effectiveRedemptionFeeBps(id), 0);
-        // A raise above the current effective fee is frozen.
+        // A raise (or no-op) is frozen.
         vm.expectRevert(IMarketFacet.Market_Ended.selector);
         vm.prank(admin);
         market.setPerMarketRedemptionFeeBps(id, 100);

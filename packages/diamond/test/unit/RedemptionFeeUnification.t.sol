@@ -131,6 +131,18 @@ contract RedemptionFeeUnificationTest is EventFixture {
         assertEq(market.effectiveRedemptionFeeBps(id), 0);
     }
 
+    /// @dev After end the fee must STRICTLY decrease — a no-op (bps == current effective) reverts rather
+    ///      than silently latching `redemptionFeeOverridden` (which `clear` can no longer undo post-end).
+    function test_Revert_SetPerMarket_NoOpAfterEndTime() public {
+        _setDefault(500); // snapshot 5%, no override
+        uint256 id = _createMarket(endTime);
+        vm.warp(endTime); // ended; effective == 500
+        vm.expectRevert(IMarketFacet.Market_Ended.selector);
+        vm.prank(admin);
+        market.setPerMarketRedemptionFeeBps(id, 500); // == effective → no-op → frozen
+        assertFalse(market.getMarket(id).redemptionFeeOverridden, "override flag not latched by a no-op");
+    }
+
     function test_SetPerMarket_LowerAfterResolved_Allowed() public {
         _setDefault(500);
         uint256 id = _createMarket(endTime);
