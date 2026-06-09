@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
+import {Vm} from "forge-std/Vm.sol";
+
 import {IEventFacet} from "@predix/shared/interfaces/IEventFacet.sol";
 import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 
@@ -251,5 +253,40 @@ contract RedemptionFeeUnificationTest is EventFixture {
         vm.expectRevert(IMarketFacet.Market_FeeTooHigh.selector);
         vm.prank(alice);
         eventFacet.createEventWithFee("E", qs, endTime, address(eventOracle), NEW_MAX + 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // ② create-time fee observable in MarketCreated (off-chain reads log, not view-call)
+    // -----------------------------------------------------------------------
+
+    /// @dev Decode redemptionFeeBps (last data field) from the first MarketCreated log.
+    function _feeFromMarketCreatedLog() internal returns (uint16 fee, bool found) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256("MarketCreated(uint256,address,address,address,address,uint256,string,uint16)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == sig) {
+                (,,,, fee) = abi.decode(logs[i].data, (address, address, uint256, string, uint16));
+                found = true;
+                break;
+            }
+        }
+    }
+
+    function test_CreateMarketWithFee_EmitsFeeInEvent() public {
+        vm.recordLogs();
+        vm.prank(alice);
+        market.createMarketWithFee("Q?", endTime, address(oracle), 750);
+        (uint16 fee, bool found) = _feeFromMarketCreatedLog();
+        assertTrue(found, "MarketCreated emitted");
+        assertEq(fee, 750, "explicit create-time fee in event");
+    }
+
+    function test_CreateMarket_EmitsDefaultFeeInEvent() public {
+        _setDefault(300);
+        vm.recordLogs();
+        _createMarket(endTime);
+        (uint16 fee, bool found) = _feeFromMarketCreatedLog();
+        assertTrue(found);
+        assertEq(fee, 300, "default fee in event when no explicit fee");
     }
 }

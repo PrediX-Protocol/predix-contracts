@@ -72,7 +72,7 @@ contract EventFacetTest is EventFixture {
         // token addresses are CREATE-derived and not predictable here.
         for (uint256 i; i < 3; ++i) {
             vm.expectEmit(true, true, true, false, address(diamond));
-            emit IMarketFacet.MarketCreated(i + 1, alice, address(0), address(0), address(0), endTime, "");
+            emit IMarketFacet.MarketCreated(i + 1, alice, address(0), address(0), address(0), endTime, "", 0);
         }
 
         vm.prank(alice);

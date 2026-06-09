@@ -34,8 +34,10 @@ library LibMarket {
     /// @param oracle    Oracle address for the market. May be `address(0)` for event
     ///                  children — resolution then comes exclusively from `EventFacet`.
     /// @param eventId   `0` for standalone markets; non-zero for event children.
+    /// @param feeBps    Redemption fee (bps) to snapshot for this market — caller passes the system
+    ///                  default or an explicit fee (already bounded by the caller to `MAX_REDEMPTION_FEE_BPS`).
     /// @return marketId Newly assigned market id (1-indexed, monotonic).
-    function create(string memory question, uint256 endTime, address oracle, uint256 eventId)
+    function create(string memory question, uint256 endTime, address oracle, uint256 eventId, uint256 feeBps)
         internal
         returns (uint256 marketId)
     {
@@ -60,12 +62,10 @@ library LibMarket {
         string memory idStr = Strings.toString(marketId);
         address yesAddr = Clones.clone(impl);
         address noAddr = Clones.clone(impl);
-        OutcomeTokenClone(yesAddr).initialize(
-            marketId, true, string.concat("PrediX YES #", idStr), string.concat("pxY-", idStr)
-        );
-        OutcomeTokenClone(noAddr).initialize(
-            marketId, false, string.concat("PrediX NO #", idStr), string.concat("pxN-", idStr)
-        );
+        OutcomeTokenClone(yesAddr)
+            .initialize(marketId, true, string.concat("PrediX YES #", idStr), string.concat("pxY-", idStr));
+        OutcomeTokenClone(noAddr)
+            .initialize(marketId, false, string.concat("PrediX NO #", idStr), string.concat("pxN-", idStr));
 
         LibMarketStorage.MarketData storage m = ms.markets[marketId];
         m.question = question;
@@ -75,10 +75,12 @@ library LibMarket {
         m.yesToken = yesAddr;
         m.noToken = noAddr;
         m.eventId = eventId;
-        if (cfg.defaultRedemptionFeeBps > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
-        m.snapshottedDefaultRedemptionFeeBps = uint16(cfg.defaultRedemptionFeeBps);
+        if (feeBps > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
+        m.snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
 
-        emit IMarketFacet.MarketCreated(marketId, msg.sender, oracle, yesAddr, noAddr, endTime, question);
+        emit IMarketFacet.MarketCreated(
+            marketId, msg.sender, oracle, yesAddr, noAddr, endTime, question, uint16(feeBps)
+        );
     }
 
     /// @notice Resolve a market's effective redemption fee (bps), clamped to the hard cap.

@@ -34,7 +34,9 @@ interface IMarketFacet {
     // Events
     // ---------------------------------------------------------------------
 
-    /// @notice Emitted on every successful `createMarket` call.
+    /// @notice Emitted on every successful market creation (binary + event child).
+    /// @dev `redemptionFeeBps` is the fee snapshotted at creation — lets off-chain consumers read a
+    ///      market's redemption fee straight from the log instead of an `effectiveRedemptionFeeBps` call.
     event MarketCreated(
         uint256 indexed marketId,
         address indexed creator,
@@ -42,7 +44,8 @@ interface IMarketFacet {
         address yesToken,
         address noToken,
         uint256 endTime,
-        string question
+        string question,
+        uint16 redemptionFeeBps
     );
 
     /// @notice Emitted on every successful `splitPosition` call.

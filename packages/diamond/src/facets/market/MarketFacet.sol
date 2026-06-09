@@ -52,7 +52,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         nonReentrant
         returns (uint256 marketId)
     {
-        marketId = _createMarket(question, endTime, oracle);
+        marketId = _createMarket(question, endTime, oracle, LibConfigStorage.layout().defaultRedemptionFeeBps);
     }
 
     /// @inheritdoc IMarketFacet
@@ -63,9 +63,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         returns (uint256 marketId)
     {
         if (feeBps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert Market_FeeTooHigh();
-        marketId = _createMarket(question, endTime, oracle);
-        // Overwrite the default snapshot `LibMarket.create` took with the explicit create-time fee.
-        LibMarketStorage.layout().markets[marketId].snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
+        marketId = _createMarket(question, endTime, oracle, feeBps);
     }
 
     /// @inheritdoc IMarketFacet
@@ -585,9 +583,9 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// @dev Shared create path for both `createMarket` overloads. Snapshots the system default
-    ///      redemption fee (via `LibMarket.create`); the with-fee overload overwrites it afterward.
-    function _createMarket(string calldata question, uint256 endTime, address oracle)
+    /// @dev Shared create path for both entry points. Snapshots `feeBps` (the system default for
+    ///      `createMarket`, an explicit fee for `createMarketWithFee`) via `LibMarket.create`.
+    function _createMarket(string calldata question, uint256 endTime, address oracle, uint256 feeBps)
         private
         returns (uint256 marketId)
     {
@@ -599,7 +597,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
         if (oracle == address(0)) revert Market_ZeroAddress();
         if (!LibConfigStorage.layout().approvedOracles[oracle]) revert Market_OracleNotApproved();
 
-        marketId = LibMarket.create(question, endTime, oracle, 0);
+        marketId = LibMarket.create(question, endTime, oracle, 0, feeBps);
     }
 
     function _market(uint256 marketId) private view returns (LibMarketStorage.MarketData storage m) {

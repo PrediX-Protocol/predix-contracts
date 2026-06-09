@@ -71,7 +71,8 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         nonReentrant
         returns (uint256 eventId, uint256[] memory marketIds)
     {
-        (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle);
+        (eventId, marketIds) =
+            _createEvent(name, candidateQuestions, endTime, oracle, LibConfigStorage.layout().defaultRedemptionFeeBps);
     }
 
     /// @inheritdoc IEventFacet
@@ -83,13 +84,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         uint256 feeBps
     ) external override nonReentrant returns (uint256 eventId, uint256[] memory marketIds) {
         if (feeBps > LibMarket.MAX_REDEMPTION_FEE_BPS) revert IMarketFacet.Market_FeeTooHigh();
-        (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle);
-        // Overwrite each child's default snapshot (taken in `LibMarket.create`) with the explicit fee.
-        LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
-        uint256 n = marketIds.length;
-        for (uint256 i; i < n; ++i) {
-            ms.markets[marketIds[i]].snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
-        }
+        (eventId, marketIds) = _createEvent(name, candidateQuestions, endTime, oracle, feeBps);
     }
 
     /// @inheritdoc IEventFacet
@@ -388,10 +383,13 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
     ///      redemption fee (via `LibMarket.create`, identical to a standalone binary market); the
     ///      with-fee overload overwrites those snapshots. `redeemEvent` charges each child's effective
     ///      fee — the legacy event-level `EventData.redemptionFeeBps` is no longer used (keyti-fqn8).
-    function _createEvent(string calldata name, string[] calldata candidateQuestions, uint256 endTime, address oracle)
-        private
-        returns (uint256 eventId, uint256[] memory marketIds)
-    {
+    function _createEvent(
+        string calldata name,
+        string[] calldata candidateQuestions,
+        uint256 endTime,
+        address oracle,
+        uint256 feeBps
+    ) private returns (uint256 eventId, uint256[] memory marketIds) {
         LibPausable.enforceNotPaused(Modules.MARKET);
         if (!LibAccessControl.hasRole(Roles.CREATOR_ROLE, msg.sender)) revert Event_NotCreator();
 
@@ -425,7 +423,7 @@ contract EventFacet is IEventFacet, TransientReentrancyGuard {
         LibMarketStorage.Layout storage ms = LibMarketStorage.layout();
         marketIds = new uint256[](n);
         for (uint256 i; i < n; ++i) {
-            uint256 marketId = LibMarket.create(candidateQuestions[i], endTime, address(0), eventId);
+            uint256 marketId = LibMarket.create(candidateQuestions[i], endTime, address(0), eventId, feeBps);
             ms.markets[marketId].linkedChild = true;
             marketIds[i] = marketId;
             e.marketIds.push(marketId);
