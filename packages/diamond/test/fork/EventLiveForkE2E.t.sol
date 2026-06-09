@@ -80,6 +80,12 @@ contract EventLiveForkE2E is Test {
     // -----------------------------------------------------------------------
 
     function test_Fork_LiveEventFacet_BytecodeMatchesSource() public {
+        // keyti-fqn8: this source tree's EventFacet is intentionally AHEAD of the live deployment — the
+        // per-child redemption-fee change (redeemEvent now routes through LibMarket.effectiveRedemptionFee,
+        // _createEvent threads feeBps) is pending the redemption-fee diamond cut. The bytecode-identity
+        // check below therefore diverges BY DESIGN until that cut deploys this EventFacet. Remove this skip
+        // once the redemption-fee cut is live on chain-130 (RedemptionFeeCutForkSim covers the pre-cut sim).
+        vm.skip(true, "source ahead of live EventFacet: redemption-fee cut (keyti-fqn8) not yet deployed");
         address liveFacet = loupe.facetAddress(IEventFacet.splitEvent.selector);
         bytes4[8] memory sels = [
             IEventFacet.createEvent.selector,
