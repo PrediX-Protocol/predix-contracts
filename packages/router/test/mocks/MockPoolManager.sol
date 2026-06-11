@@ -42,6 +42,12 @@ contract MockPoolManager {
         _slots[slotKey] = bytes32(uint256(sqrtPriceX96));
     }
 
+    /// @dev StateLibrary.getLiquidity reads `pools[poolId]` at `stateSlot + LIQUIDITY_OFFSET` (3); store the
+    ///      value there so `_hasPool`'s liquidity gate observes it via extsload.
+    function setPoolLiquidity(bytes32 stateSlot, uint128 liquidity) external {
+        _slots[bytes32(uint256(stateSlot) + 3)] = bytes32(uint256(liquidity));
+    }
+
     /// @dev StateLibrary.getSlot0 calls IPoolManager.extsload(slot).
     function extsload(bytes32 slot) external view returns (bytes32) {
         return _slots[slot];

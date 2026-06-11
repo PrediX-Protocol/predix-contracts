@@ -539,8 +539,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Returns true if the YES/USDC pool is initialized on the PoolManager.
     function _hasPool(address yesToken) internal view returns (bool) {
         PoolKey memory key = _buildPoolKey(yesToken);
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(key.toId());
-        return sqrtPriceX96 != 0;
+        PoolId poolId = key.toId();
+        // A set price alone isn't enough to route to the AMM: a registered + initialized pool with no active
+        // liquidity reverts NotEnoughLiquidity on swap (the v4 Quoter re-wraps it, so the FE surfaces "no AMM
+        // pool"), blocking market orders the CLOB could otherwise fill. Gate on liquidity so the router falls
+        // back to 100% CLOB when the AMM cannot fill.
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        if (sqrtPriceX96 == 0) return false;
+        return poolManager.getLiquidity(poolId) > 0;
     }
 
     /// @notice Construct the canonical `PoolKey` for a PrediX market from its YES token.

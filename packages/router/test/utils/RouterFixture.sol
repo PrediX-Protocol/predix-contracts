@@ -103,6 +103,18 @@ abstract contract RouterFixture is Test {
     }
 
     function _markPoolInitialized(address yesToken) internal {
+        bytes32 stateSlot = _poolStateSlot(yesToken);
+        poolManager.setPoolSlot0(stateSlot, 79228162514264337593543950336);
+        // Active liquidity so `_hasPool` (which now gates on liquidity, not just initialization) returns true.
+        poolManager.setPoolLiquidity(stateSlot, 1e18);
+    }
+
+    /// @dev Override a pool's mock liquidity — set to 0 to model an initialized-but-no-liquidity pool.
+    function _setPoolLiquidity(address yesToken, uint128 liquidity) internal {
+        poolManager.setPoolLiquidity(_poolStateSlot(yesToken), liquidity);
+    }
+
+    function _poolStateSlot(address yesToken) internal view returns (bytes32) {
         address quote = address(usdc);
         (Currency c0, Currency c1) = quote < yesToken
             ? (Currency.wrap(quote), Currency.wrap(yesToken))
@@ -111,8 +123,6 @@ abstract contract RouterFixture is Test {
             currency0: c0, currency1: c1, fee: LP_FEE_FLAG, tickSpacing: TICK_SPACING, hooks: IHooks(address(hook))
         });
         bytes32 poolId = keccak256(abi.encode(key));
-        bytes32 stateSlot = keccak256(abi.encodePacked(poolId, bytes32(uint256(6))));
-        uint160 sqrtPrice = 79228162514264337593543950336;
-        poolManager.setPoolSlot0(stateSlot, sqrtPrice);
+        return keccak256(abi.encodePacked(poolId, bytes32(uint256(6))));
     }
 }
