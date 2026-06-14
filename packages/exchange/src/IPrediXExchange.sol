@@ -78,6 +78,9 @@ interface IPrediXExchange {
     error NotTaker();
     error Exchange_EmptyArray();
     error Exchange_BatchTooLarge();
+    error Exchange_NothingToClaim();
+    error Exchange_RegistryNotSet();
+    error Exchange_ProtocolRecipientNotSet();
 
     // ============ Events ============
 
@@ -108,6 +111,33 @@ interface IPrediXExchange {
 
     /// @notice Emitted when maker-path synthetic match (MINT/MERGE) produces protocol surplus.
     event FeeCollected(uint256 indexed marketId, uint256 amount);
+
+    /// @notice Builder fee credited to a code's accrual ledger (per-fill or per-deposit).
+    event BuilderFeeAccrued(bytes32 indexed code, uint256 amount);
+    /// @notice Builder fee claimed out to the registry-defined recipient.
+    event BuilderFeeClaimed(bytes32 indexed code, address indexed recipient, uint256 amount);
+    /// @notice Exchange rebind to a BuilderRegistry.
+    event BuilderRegistrySet(address indexed prev, address indexed cur);
+
+    /// @notice Protocol fee charged on a single CLOB fill. `fee == rebate + treasury` (P1).
+    ///         `matchType` 0=COMPLEMENTARY 1=MINT 2=MERGE; `p` is the traded-side price.
+    event ProtocolFeeCharged(
+        uint256 indexed marketId,
+        address taker,
+        address maker,
+        bytes32 makerOrderId,
+        uint256 fee,
+        uint256 rebate,
+        uint256 treasury,
+        uint256 p,
+        uint8 matchType,
+        bytes32 takerBuilder,
+        bytes32 makerBuilder
+    );
+    /// @notice Accrued protocol-fee treasury cut swept to the recipient.
+    event ProtocolFeeSwept(address indexed recipient, uint256 amount);
+    /// @notice Protocol-fee recipient rotated.
+    event ProtocolFeeRecipientSet(address indexed prev, address indexed cur);
 
     /// @notice Emitted once per fillMarketOrder call — aggregate taker results.
     event TakerFilled(
