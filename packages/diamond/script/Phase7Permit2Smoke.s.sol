@@ -72,9 +72,11 @@ contract Phase7Permit2Smoke is Script {
         (bool ok, bytes memory ret) =
             vm.envAddress("NEW_DIAMOND").staticcall(abi.encodeWithSignature("getMarket(uint256)", marketId));
         require(ok, "getMarket failed");
-        // Decode MarketView struct - we only need yesToken (index 4) or noToken (index 5)
-        // Layout: (string,uint256,address,address,address,address,uint256,...)
-        (,,,, address yesTok, address noTok,,,,,,,,,) = abi.decode(
+        // Decode MarketView struct - we only need yesToken (index 4) or noToken (index 5).
+        // Layout (v1.7, 17 fields): (string,uint256,address,address,address,address,uint256,uint256,
+        //   uint256,bool,bool,bool,uint256,uint16,bool,uint16,uint16) — trailing uint16 protocolFeeRateBps
+        //   + uint16 protocolMakerRebateBps appended by the protocol-fee config layer.
+        (,,,, address yesTok, address noTok,,,,,,,,,,,) = abi.decode(
             ret,
             (
                 string,
@@ -91,7 +93,9 @@ contract Phase7Permit2Smoke is Script {
                 bool,
                 uint256,
                 uint16,
-                bool
+                bool,
+                uint16,
+                uint16
             )
         );
         return _eq(action, "sellYes") ? yesTok : noTok;
