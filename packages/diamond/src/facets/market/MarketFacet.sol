@@ -489,6 +489,51 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     }
 
     /// @inheritdoc IMarketFacet
+    function setDefaultProtocolFeeRateBps(uint256 bps) external override {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        if (bps > LibMarket.MAX_PROTOCOL_FEE_RATE_BPS) revert Market_FeeTooHigh();
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        uint256 previous = cfg.defaultProtocolFeeRateBps;
+        cfg.defaultProtocolFeeRateBps = uint16(bps);
+        emit DefaultProtocolFeeRateSet(previous, bps);
+    }
+
+    /// @inheritdoc IMarketFacet
+    /// @dev NO lower-after-end rule (UNLIKE `setPerMarketRedemptionFeeBps`): trades are blocked at
+    ///      `endTime` (`Exchange._validateMarketActive`), so a post-end protocol-fee change cannot affect
+    ///      any trade — the clause is vestigial (`PROTOCOL_FEE_DESIGN.md` §13.1). Just clamp at set-time;
+    ///      the read-time clamp + creation snapshot cover the same-block-hike risk.
+    function setPerMarketProtocolFeeRateBps(uint256 marketId, uint16 bps) external override {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        if (bps > LibMarket.MAX_PROTOCOL_FEE_RATE_BPS) revert Market_FeeTooHigh();
+        LibMarketStorage.MarketData storage m = _market(marketId);
+        m.protocolFeeRateBps = bps;
+        m.protocolFeeOverridden = true;
+        emit PerMarketProtocolFeeRateSet(marketId, bps, true);
+    }
+
+    /// @inheritdoc IMarketFacet
+    /// @dev Resets the override back to the creation snapshot. Idempotent. No final/end lock — restoring
+    ///      the snapshot post-end is harmless because no trade can occur after `endTime`.
+    function clearPerMarketProtocolFee(uint256 marketId) external override {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        LibMarketStorage.MarketData storage m = _market(marketId);
+        m.protocolFeeRateBps = 0;
+        m.protocolFeeOverridden = false;
+        emit PerMarketProtocolFeeRateSet(marketId, 0, false);
+    }
+
+    /// @inheritdoc IMarketFacet
+    function setProtocolMakerRebateBps(uint16 bps) external override {
+        LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        if (bps > LibMarket.MAX_PROTOCOL_MAKER_REBATE_BPS) revert Market_FeeTooHigh();
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        uint16 previous = cfg.protocolMakerRebateBps;
+        cfg.protocolMakerRebateBps = bps;
+        emit ProtocolMakerRebateSet(previous, bps);
+    }
+
+    /// @inheritdoc IMarketFacet
     /// @dev    No on-chain factory-binding check (e.g. asserting impl.factory() == diamond)
     ///         because `OutcomeTokenClone.factory` is `immutable`: the deployer of the master
     ///         encodes the diamond address into bytecode at construction. Admin handles that
@@ -525,7 +570,9 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
             refundModeActive: m.refundModeActive,
             eventId: m.eventId,
             perMarketRedemptionFeeBps: m.perMarketRedemptionFeeBps,
-            redemptionFeeOverridden: m.redemptionFeeOverridden
+            redemptionFeeOverridden: m.redemptionFeeOverridden,
+            protocolFeeRateBps: LibMarket.effectiveProtocolFee(m),
+            protocolMakerRebateBps: LibConfigStorage.layout().protocolMakerRebateBps
         });
     }
 
@@ -578,6 +625,12 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     /// @inheritdoc IMarketFacet
     function effectiveRedemptionFeeBps(uint256 marketId) external view override returns (uint256) {
         return _effectiveRedemptionFee(_market(marketId));
+    }
+
+    /// @inheritdoc IMarketFacet
+    function effectiveProtocolFee(uint256 marketId) external view override returns (uint16 rateBps, uint16 rebateBps) {
+        rateBps = LibMarket.effectiveProtocolFee(_market(marketId));
+        rebateBps = LibConfigStorage.layout().protocolMakerRebateBps;
     }
 
     /// @inheritdoc IMarketFacet

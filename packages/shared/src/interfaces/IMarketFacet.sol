@@ -28,6 +28,12 @@ interface IMarketFacet {
         uint256 eventId;
         uint16 perMarketRedemptionFeeBps;
         bool redemptionFeeOverridden;
+        /// @dev Append-only (v1.7). `protocolFeeRateBps` is the EFFECTIVE, read-time-clamped protocol-fee
+        ///      rate (override-resolved via `LibMarket.effectiveProtocolFee`), NOT the raw snapshot —
+        ///      the Exchange consumes it directly per fill, so the resolution happens here. `protocolMakerRebateBps`
+        ///      is the global maker-rebate knob. Both 0 at launch.
+        uint16 protocolFeeRateBps;
+        uint16 protocolMakerRebateBps;
     }
 
     // ---------------------------------------------------------------------
@@ -84,6 +90,17 @@ interface IMarketFacet {
     ///         `overridden == false` means the market reverted to the default; in that case
     ///         `bps` is reported as 0 for clarity.
     event PerMarketRedemptionFeeUpdated(uint256 indexed marketId, uint16 bps, bool overridden);
+
+    /// @notice Emitted when an admin updates the global default protocol-fee rate.
+    event DefaultProtocolFeeRateSet(uint256 previous, uint256 current);
+
+    /// @notice Emitted when an admin sets or clears a per-market protocol-fee rate override.
+    ///         `overridden == false` means the market reverted to its snapshot; in that case
+    ///         `bps` is reported as 0 for clarity (mirrors `PerMarketRedemptionFeeUpdated`).
+    event PerMarketProtocolFeeRateSet(uint256 indexed marketId, uint16 bps, bool overridden);
+
+    /// @notice Emitted when an admin updates the global protocol maker rebate.
+    event ProtocolMakerRebateSet(uint16 previous, uint16 current);
 
     /// @notice Emitted when an admin enables refund mode on an unresolved, ended market.
     event RefundModeEnabled(uint256 indexed marketId, address indexed enabler);
@@ -310,6 +327,25 @@ interface IMarketFacet {
     ///         the global default. Restricted to `ADMIN_ROLE`. Idempotent.
     function clearPerMarketRedemptionFee(uint256 marketId) external;
 
+    /// @notice Set the global default protocol-fee rate. Restricted to `ADMIN_ROLE`.
+    /// @param bps Rate in basis points; must be <= `MAX_PROTOCOL_FEE_RATE_BPS` (700). Launch default 0.
+    function setDefaultProtocolFeeRateBps(uint256 bps) external;
+
+    /// @notice Override the protocol-fee rate for a single market. Restricted to `ADMIN_ROLE`.
+    /// @dev Setting `bps = 0` explicitly charges 0% (distinct from clearing back to the snapshot —
+    ///      use `clearPerMarketProtocolFee` for that). NO lower-after-end rule (trades are blocked at
+    ///      `endTime`, so the post-end clause is vestigial — `PROTOCOL_FEE_DESIGN.md` §13.1): clamp at
+    ///      set-time + read-time only. Must be <= `MAX_PROTOCOL_FEE_RATE_BPS`.
+    function setPerMarketProtocolFeeRateBps(uint256 marketId, uint16 bps) external;
+
+    /// @notice Clear a per-market protocol-fee override so the market reverts to its creation snapshot.
+    ///         Restricted to `ADMIN_ROLE`. Idempotent.
+    function clearPerMarketProtocolFee(uint256 marketId) external;
+
+    /// @notice Set the global protocol maker rebate. Restricted to `ADMIN_ROLE`.
+    /// @param bps Rebate in basis points; must be <= `MAX_PROTOCOL_MAKER_REBATE_BPS` (2500). Launch 0.
+    function setProtocolMakerRebateBps(uint16 bps) external;
+
     /// @notice Set the OutcomeTokenClone master implementation (EIP-1167 template). Restricted to `ADMIN_ROLE`.
     ///         All future market creations will clone this address. Existing markets keep their
     ///         already-deployed token contracts and are unaffected by rotations.
@@ -365,4 +401,8 @@ interface IMarketFacet {
     /// @notice Effective redemption fee in basis points for `marketId`, collapsing the
     ///         per-market override / default decision into a single number.
     function effectiveRedemptionFeeBps(uint256 marketId) external view returns (uint256);
+
+    /// @notice Effective protocol-fee rate (clamped, override-resolved) and the global maker rebate for
+    ///         `marketId`, in basis points. The Exchange reads the same two values off `MarketView`.
+    function effectiveProtocolFee(uint256 marketId) external view returns (uint16 rateBps, uint16 rebateBps);
 }
