@@ -212,6 +212,18 @@ contract TakerFeeMintMergeTest is TakerFeeBase {
         (, uint256 cost) = _fillBuyYes(900_000, amountIn, TCODE);
         assertLe(cost, amountIn, "MINT clamp never overspends for any tiny budget");
     }
+
+    // MERGE: taker SELL_YES crosses a resting SELL_NO maker synthetically. p = 1e6 - makerPrice.
+    // maker SELL_NO @0.30 ⇒ taker USDC leg = 70 (1e8 - floor(1e8*0.30)); F = curve(1e8,700,700000) = 1.47.
+    function test_takerSell_MERGE_protocolFee_perFill() public {
+        _placeSellNo(bob, 300_000, 1e8);
+        _enableProtocol(700, 0);
+        uint256 takerBefore = _usdcBalance(taker);
+        _fillSellYes(1, 1e8, bytes32(0)); // accept any price
+        assertEq(exchange.accruedProtocolFee(), 1_470_000, "MERGE F = curve(1e8,700,700000)");
+        // taker leg gross = 70 USDC; F skimmed from the TAKER leg only
+        assertEq(_usdcBalance(taker) - takerBefore, 70e6 - 1_470_000, "taker net = leg - F (maker untouched)");
+    }
 }
 
 contract TakerMakerRebateTest is TakerFeeBase {
