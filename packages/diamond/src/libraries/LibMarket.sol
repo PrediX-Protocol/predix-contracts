@@ -37,6 +37,12 @@ library LibMarket {
     ///         rebate < 100% so `R <= F` per fill — that is a Sub-plan 03 charge-site guard, not here.)
     uint256 internal constant MAX_PROTOCOL_MAKER_REBATE_BPS = 2500;
 
+    /// @notice Hard ceiling on the flat market-creation fee (1,000 USDC, 6dp). Pure fat-finger / hostile-key
+    ///         guard — the operating value (set via `MarketInit` / `setMarketCreationFee`) is far smaller. This
+    ///         fee was previously the ONLY fee setter with no cap. Set-time clamp only (no read-time clamp, so a
+    ///         pre-existing larger value still charges as-is but cannot be raised) — confirm live value < cap.
+    uint256 internal constant MAX_MARKET_CREATION_FEE = 1_000e6;
+
     /// @notice Create a new binary market. Caller handles all input validation.
     /// @param question  Market question. Caller must ensure non-empty.
     /// @param endTime   Unix timestamp after which the market accepts no more splits.

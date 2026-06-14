@@ -413,6 +413,7 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
     /// @inheritdoc IMarketFacet
     function setMarketCreationFee(uint256 fee) external override {
         LibAccessControl.checkRole(Roles.ADMIN_ROLE);
+        if (fee > LibMarket.MAX_MARKET_CREATION_FEE) revert Market_FeeTooHigh();
         LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
         uint256 previous = cfg.marketCreationFee;
         cfg.marketCreationFee = fee;
@@ -573,6 +574,23 @@ contract MarketFacet is IMarketFacet, TransientReentrancyGuard {
             redemptionFeeOverridden: m.redemptionFeeOverridden,
             protocolFeeRateBps: LibMarket.effectiveProtocolFee(m),
             protocolMakerRebateBps: LibConfigStorage.layout().protocolMakerRebateBps
+        });
+    }
+
+    /// @inheritdoc IMarketFacet
+    function getFeeConfig(uint256 marketId) external view override returns (FeeConfig memory) {
+        LibConfigStorage.Layout storage cfg = LibConfigStorage.layout();
+        LibMarketStorage.MarketData storage m = _market(marketId); // reverts on unknown id
+        return FeeConfig({
+            feeRecipient: cfg.feeRecipient,
+            marketCreationFee: cfg.marketCreationFee,
+            maxMarketCreationFee: LibMarket.MAX_MARKET_CREATION_FEE,
+            redemptionFeeBps: LibMarket.effectiveRedemptionFee(m),
+            maxRedemptionFeeBps: uint16(LibMarket.MAX_REDEMPTION_FEE_BPS),
+            protocolFeeRateBps: LibMarket.effectiveProtocolFee(m),
+            maxProtocolFeeRateBps: uint16(LibMarket.MAX_PROTOCOL_FEE_RATE_BPS),
+            protocolMakerRebateBps: cfg.protocolMakerRebateBps,
+            maxProtocolMakerRebateBps: uint16(LibMarket.MAX_PROTOCOL_MAKER_REBATE_BPS)
         });
     }
 

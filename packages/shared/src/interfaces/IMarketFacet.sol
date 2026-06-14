@@ -36,6 +36,23 @@ interface IMarketFacet {
         uint16 protocolMakerRebateBps;
     }
 
+    /// @notice Aggregated, admin-facing snapshot of EVERY diamond-resident fee for one market — one read
+    ///         instead of stitching `getMarket` + the global config getters. Values are EFFECTIVE
+    ///         (resolved + read-time clamped); the `max*` fields echo the hard caps so a UI needn't hardcode
+    ///         them. Builder fees (per-code, `BuilderRegistry`) and hook swap fees (per-pool/time) are NOT
+    ///         diamond-resident — read those from their own contracts.
+    struct FeeConfig {
+        address feeRecipient;
+        uint256 marketCreationFee;
+        uint256 maxMarketCreationFee;
+        uint16 redemptionFeeBps;
+        uint16 maxRedemptionFeeBps;
+        uint16 protocolFeeRateBps;
+        uint16 maxProtocolFeeRateBps;
+        uint16 protocolMakerRebateBps;
+        uint16 maxProtocolMakerRebateBps;
+    }
+
     // ---------------------------------------------------------------------
     // Events
     // ---------------------------------------------------------------------
@@ -361,6 +378,10 @@ interface IMarketFacet {
 
     /// @notice Read a snapshot of a market's full state.
     function getMarket(uint256 marketId) external view returns (MarketView memory);
+
+    /// @notice One-call read of every diamond-resident fee for `marketId` (effective values + caps).
+    ///         Reverts if the market does not exist. View only.
+    function getFeeConfig(uint256 marketId) external view returns (FeeConfig memory);
 
     /// @notice Gas-optimised read of only the fields hot-path consumers (exchange, router,
     ///         hook keepers) need. Skips the `string question` allocation that dominates
