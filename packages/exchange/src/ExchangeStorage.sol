@@ -8,8 +8,11 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IPausableFacet} from "@predix/shared/interfaces/IPausableFacet.sol";
 import {Modules} from "@predix/shared/constants/Modules.sol";
 
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 import {IPrediXExchange} from "./IPrediXExchange.sol";
 import {PriceBitmap} from "./libraries/PriceBitmap.sol";
+import {LibBuilderFeeStorage} from "./libraries/LibBuilderFeeStorage.sol";
+import {LibProtocolFeeStorage} from "./libraries/LibProtocolFeeStorage.sol";
 
 /// @title ExchangeStorage
 /// @notice Shared storage layout + constants + storage-adjacent helpers
@@ -52,6 +55,10 @@ abstract contract ExchangeStorage {
     uint8 internal constant MAX_FILLS_PER_PLACE = 20;
     uint256 internal constant MAX_QUEUE_DEPTH_PER_PRICE = 200;
     uint256 internal constant MAX_BATCH_CANCEL = 50;
+
+    uint256 internal constant BPS_DENOMINATOR = 10_000;
+    /// @dev 1e16 = BPS_DENOMINATOR(1e4) * PRICE_PRECISION(1e6) * PRICE_PRECISION(1e6)
+    uint256 internal constant CURVE_DENOMINATOR = 1e16;
 
     // ======== Internal enums ========
 
@@ -248,5 +255,59 @@ abstract contract ExchangeStorage {
 
     function _noTokenFor(uint256 marketId) internal view returns (address) {
         return IMarketFacet(diamond).getMarket(marketId).noToken;
+    }
+
+    // ======== Fee helpers (functions only — NO new state) ========
+
+    /// @notice Flat fee = notional * bps / 10_000 (floor).
+    function _feeOn(uint256 notional, uint16 bps) internal pure returns (uint256) {
+        return (notional * uint256(bps)) / BPS_DENOMINATOR;
+    }
+
+    /// @notice Protocol-fee curve = fillShares * feeCoefBps * p * (1e6 - p) / 1e16.
+    /// @dev `p` is the traded side's own fill price (PRICE_PRECISION). Floors to 0 on
+    ///      dust (MatchMath (0,0) convention) — caller must not revert. Worst product
+    ///      fillShares(<=uint128) * 700 * 1e6 * 1e6 ~= 2^176 << 2^256, plain mul-div safe.
+    function _curveFee(uint256 fillShares, uint16 feeCoefBps, uint256 p) internal pure returns (uint256) {
+        return (fillShares * uint256(feeCoefBps) * p * (PRICE_PRECISION - p)) / CURVE_DENOMINATOR;
+    }
+
+    /// @notice (takerBps, makerBps) for a builder code. (0,0) if no registry / zero code / unregistered.
+    function _builderBps(bytes32 code) internal view returns (uint16 takerBps, uint16 makerBps) {
+        if (code == bytes32(0)) return (0, 0);
+        address reg = LibBuilderFeeStorage.layout().builderRegistry;
+        if (reg == address(0)) return (0, 0);
+        (takerBps, makerBps,) = IBuilderRegistry(reg).feeOf(code);
+    }
+
+    /// @notice Credit `amount` USDC of builder fee to `code`'s accrual ledger. No-op on zero.
+    function _accrueBuilderFee(bytes32 code, uint256 amount) internal {
+        if (amount == 0 || code == bytes32(0)) return;
+        LibBuilderFeeStorage.layout().accrued[code] += amount;
+        emit IPrediXExchange.BuilderFeeAccrued(code, amount);
+    }
+
+    /// @notice Charge an additive (prefunded) builder fee against an order's locked budget.
+    ///         Caps at the remaining budget so a post-placement rate rise cannot overdraw.
+    function _takeLockedFee(bytes32 orderId, uint256 notional, uint16 bps) internal returns (uint256 fee) {
+        fee = _feeOn(notional, bps);
+        uint256 locked = LibBuilderFeeStorage.layout().makerFeeLocked[orderId];
+        if (fee > locked) fee = locked;
+        LibBuilderFeeStorage.layout().makerFeeLocked[orderId] = locked - fee;
+    }
+
+    /// @notice Accrue the protocol-fee treasury cut T. No-op on zero.
+    function _accrueProtocol(uint256 amount) internal {
+        if (amount == 0) return;
+        LibProtocolFeeStorage.layout().accruedProtocolFee += amount;
+    }
+
+    /// @notice Charge an additive protocol fee against a BUY placer's reserve. Caps at
+    ///         the remaining budget (the marginal-clamp also bounds it, this is defense-in-depth).
+    function _takeProtocolBudget(bytes32 orderId, uint256 amount) internal returns (uint256 spent) {
+        spent = amount;
+        uint256 budget = LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId];
+        if (spent > budget) spent = budget;
+        LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId] = budget - spent;
     }
 }
