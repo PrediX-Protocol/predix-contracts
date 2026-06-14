@@ -66,7 +66,9 @@ contract MockDiamond {
             refundModeActive: false,
             eventId: 0,
             perMarketRedemptionFeeBps: 0,
-            redemptionFeeOverridden: false
+            redemptionFeeOverridden: false,
+            protocolFeeRateBps: 0,
+            protocolMakerRebateBps: 0
         });
     }
 
@@ -80,6 +82,11 @@ contract MockDiamond {
 
     function setMarketEndTime(uint256 marketId, uint256 endTime) external {
         _markets[marketId].endTime = endTime;
+    }
+
+    function setProtocolFee(uint256 marketId, uint16 rateBps, uint16 rebateBps) external {
+        _markets[marketId].protocolFeeRateBps = rateBps;
+        _markets[marketId].protocolMakerRebateBps = rebateBps;
     }
 
     function setModulePaused(bytes32 moduleId, bool value) external {
