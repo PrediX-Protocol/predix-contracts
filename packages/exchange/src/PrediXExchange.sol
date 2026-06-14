@@ -13,6 +13,9 @@ import {ExchangeStorage} from "./ExchangeStorage.sol";
 import {MakerPath} from "./mixins/MakerPath.sol";
 import {TakerPath} from "./mixins/TakerPath.sol";
 import {Views} from "./mixins/Views.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
+import {LibBuilderFeeStorage} from "./libraries/LibBuilderFeeStorage.sol";
+import {LibProtocolFeeStorage} from "./libraries/LibProtocolFeeStorage.sol";
 
 /// @title PrediXExchange
 /// @notice On-chain CLOB with 4-way waterfall matching for PrediX binary prediction markets.
@@ -104,6 +107,75 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         address previous = feeRecipient;
         feeRecipient = _feeRecipient;
         emit FeeRecipientUpdated(previous, _feeRecipient);
+    }
+
+    // ======== Admin: builder registry + protocol-fee recipient ========
+
+    function setBuilderRegistry(address registry) external onlyAdmin {
+        if (registry == address(0)) revert ZeroAddress();
+        address prev = LibBuilderFeeStorage.layout().builderRegistry;
+        LibBuilderFeeStorage.layout().builderRegistry = registry;
+        emit BuilderRegistrySet(prev, registry);
+    }
+
+    function setProtocolFeeRecipient(address recipient) external onlyAdmin {
+        if (recipient == address(0)) revert ZeroAddress();
+        address prev = LibProtocolFeeStorage.layout().protocolFeeRecipient;
+        LibProtocolFeeStorage.layout().protocolFeeRecipient = recipient;
+        emit ProtocolFeeRecipientSet(prev, recipient);
+    }
+
+    // ======== Builder fee: claim + deposit + view ========
+
+    /// @notice Claim accrued builder fee out to the registry-defined recipient. Permissionless.
+    function claimBuilderFee(bytes32 code) external nonReentrant returns (uint256 amount) {
+        LibBuilderFeeStorage.Layout storage l = LibBuilderFeeStorage.layout();
+        if (l.builderRegistry == address(0)) revert Exchange_RegistryNotSet();
+        amount = l.accrued[code];
+        if (amount == 0) revert Exchange_NothingToClaim();
+        address recipient = IBuilderRegistry(l.builderRegistry).recipientOf(code);
+        if (recipient == address(0)) revert ZeroAddress();
+        l.accrued[code] = 0; // CEI
+        IERC20(usdc).safeTransfer(recipient, amount);
+        emit BuilderFeeClaimed(code, recipient, amount);
+    }
+
+    /// @notice Donate / forward USDC into a builder's accrual ledger. code==0 MUST early-return
+    ///         BEFORE the pull (else untracked unclaimable USDC; breaks I3).
+    function depositBuilderFee(bytes32 code, uint256 amount) external {
+        if (code == bytes32(0)) return;
+        if (amount == 0) return;
+        IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
+        _accrueBuilderFee(code, amount);
+    }
+
+    function accruedBuilderFee(bytes32 code) external view returns (uint256) {
+        return LibBuilderFeeStorage.layout().accrued[code];
+    }
+
+    // ======== Protocol fee: deposit + sweep + view ========
+
+    /// @notice Forward an AMM-leg treasury cut into the protocol-fee accrual. amount==0 early-return.
+    function depositProtocolFee(uint256 amount) external {
+        if (amount == 0) return;
+        IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
+        _accrueProtocol(amount);
+    }
+
+    /// @notice Sweep the accrued treasury cut to the protocol-fee recipient. Permissionless, CEI.
+    function sweepProtocolFee() external nonReentrant returns (uint256 amount) {
+        LibProtocolFeeStorage.Layout storage l = LibProtocolFeeStorage.layout();
+        address recipient = l.protocolFeeRecipient;
+        if (recipient == address(0)) revert Exchange_ProtocolRecipientNotSet();
+        amount = l.accruedProtocolFee;
+        if (amount == 0) return 0;
+        l.accruedProtocolFee = 0; // CEI: zero BEFORE transfer
+        IERC20(usdc).safeTransfer(recipient, amount);
+        emit ProtocolFeeSwept(recipient, amount);
+    }
+
+    function accruedProtocolFee() external view returns (uint256) {
+        return LibProtocolFeeStorage.layout().accruedProtocolFee;
     }
 
     // ======== Admin: stale allowance cleanup ========
