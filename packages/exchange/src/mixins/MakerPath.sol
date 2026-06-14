@@ -40,6 +40,10 @@ abstract contract MakerPath is ExchangeStorage {
         uint256 takerPrice;
         address yesToken;
         address noToken;
+        // ---- fee context (Sub-plan 03; feeActive false ⇒ no maker-vs-maker fee ⇒ P10 byte-identity) ----
+        uint16 coefBps; // effective+clamped protocol-fee coef (off MarketView, placement-time)
+        uint16 rebateBps; // global maker rebate (off MarketView)
+        bool feeActive; // placer-centric master gate: coefBps>0 || placer makerBps>0
     }
 
     // ============ placeOrder ============
@@ -80,33 +84,32 @@ abstract contract MakerPath is ExchangeStorage {
         });
 
         // 3b. Prefund fee budgets BEFORE matching so the placer's true-aggression crosses can draw the
-        //     placer protocol reserve. orderMakerBps is snapshotted for both sides (consumed when this
-        //     order later RESTS and is filled). P10: skip entirely when both rates are 0.
-        {
-            (, uint16 makerBps) = _builderBps(builder);
-            uint16 coefBps = mkt.protocolFeeRateBps;
-            if (makerBps > 0 || coefBps > 0) {
-                bool isBuy = MatchMath.isBuy(side);
-                uint256 makerFeeLockedAmt;
-                uint256 protocolBudget;
-                // Maker builder fee is prefunded only for BUY makers (SELL fee is subtractive at fill).
-                if (makerBps > 0 && isBuy) {
-                    makerFeeLockedAmt = _feeOn(depositRequired, makerBps);
-                    if (makerFeeLockedAmt > 0) {
-                        IERC20(usdc).safeTransferFrom(msg.sender, address(this), makerFeeLockedAmt);
-                    }
+        //     placer protocol reserve. orderMakerBps is snapshotted (consumed when this order later RESTS
+        //     and is filled). P10: skip entirely when the protocol coef AND the placer's makerBps are both 0.
+        (, uint16 placerMakerBps) = _builderBps(builder);
+        uint16 coefBps = mkt.protocolFeeRateBps;
+        bool feeActive = placerMakerBps > 0 || coefBps > 0;
+        if (feeActive) {
+            bool isBuy = MatchMath.isBuy(side);
+            uint256 makerFeeLockedAmt;
+            uint256 protocolBudget;
+            // Maker builder fee is prefunded only for BUY makers (SELL fee is subtractive at fill).
+            if (placerMakerBps > 0 && isBuy) {
+                makerFeeLockedAmt = _feeOn(depositRequired, placerMakerBps);
+                if (makerFeeLockedAmt > 0) {
+                    IERC20(usdc).safeTransferFrom(msg.sender, address(this), makerFeeLockedAmt);
                 }
-                // Placer protocol reserve (BUY only) sized at the fee-maximizing crossable price (§13.1):
-                // the curve peaks at 0.5, so reserve at min(limitPrice, 0.5) to cover any crossed maker.
-                if (coefBps > 0 && isBuy) {
-                    uint256 pReserve = price < 500_000 ? price : 500_000;
-                    protocolBudget = _curveFee(amount, coefBps, pReserve);
-                    if (protocolBudget > 0) {
-                        IERC20(usdc).safeTransferFrom(msg.sender, address(this), protocolBudget);
-                    }
-                }
-                _prefundOrderFees(orderId, makerBps, makerFeeLockedAmt, protocolBudget);
             }
+            // Placer protocol reserve (BUY only) sized at the fee-maximizing crossable price (§13.1):
+            // the curve peaks at 0.5, so reserve at min(limitPrice, 0.5) to cover any crossed maker.
+            if (coefBps > 0 && isBuy) {
+                uint256 pReserve = price < 500_000 ? price : 500_000;
+                protocolBudget = _curveFee(amount, coefBps, pReserve);
+                if (protocolBudget > 0) {
+                    IERC20(usdc).safeTransferFrom(msg.sender, address(this), protocolBudget);
+                }
+            }
+            _prefundOrderFees(orderId, placerMakerBps, makerFeeLockedAmt, protocolBudget);
         }
 
         // 4. Try matching against resting makers
@@ -118,7 +121,10 @@ abstract contract MakerPath is ExchangeStorage {
             takerSide: side,
             takerPrice: price,
             yesToken: mkt.yesToken,
-            noToken: mkt.noToken
+            noToken: mkt.noToken,
+            coefBps: coefBps,
+            rebateBps: mkt.protocolMakerRebateBps,
+            feeActive: feeActive
         });
 
         // Phase A — direct opposite-side (COMPLEMENTARY)
@@ -329,8 +335,22 @@ abstract contract MakerPath is ExchangeStorage {
             }
             bool makerFullyFilled = maker.filled >= maker.amount;
 
+            // Fees (maker-vs-maker): placer pays protocol F + builder; resting maker gets rebate. Net USDC
+            // each side receives is returned. Fee-off ⇒ both collapse to the gross `usdcAmt` (P10).
+            uint256 makerUsdcOut;
+            uint256 takerUsdcOut;
+            if (ctx.feeActive) {
+                (makerUsdcOut, takerUsdcOut) = _applyCompFees(ctx, makerOrderId, fillAmt, usdcAmt, makerPrice);
+            } else if (MatchMath.isBuy(makerSide)) {
+                takerUsdcOut = usdcAmt; // maker BUY → placer SELL receives gross USDC
+            } else {
+                makerUsdcOut = usdcAmt; // maker SELL → receives gross USDC
+            }
+
             // Interactions.
-            _executeComplementaryFill(maker.side, fillAmt, usdcAmt, makerOwner, taker.owner, ctx.yesToken, ctx.noToken);
+            _executeComplementaryFill(
+                maker.side, fillAmt, makerUsdcOut, takerUsdcOut, makerOwner, taker.owner, ctx.yesToken, ctx.noToken
+            );
 
             if (takerIsBuy && ctx.takerPrice > makerPrice) {
                 _refundPriceImprovement(taker, fillAmt, ctx.takerPrice, makerPrice);
@@ -359,29 +379,104 @@ abstract contract MakerPath is ExchangeStorage {
         }
     }
 
-    /// @dev Token movements only — maker-state effects already applied by the caller.
+    /// @dev Token + NET-USDC movements; maker-state effects + fee accruals/draws already applied by the
+    ///      caller. `makerUsdcOut` = USDC to the maker (full net payout when maker is SELL; the rebate R
+    ///      when maker is BUY, 0 if none). `takerUsdcOut` = net USDC to the placer when the placer is SELL
+    ///      (maker BUY); 0 when the placer is BUY (it receives tokens). Fee-off ⇒ makerUsdcOut/takerUsdcOut
+    ///      collapse to the gross `usdcAmt` ⇒ byte-identical to the pre-fee transfers (P10).
     function _executeComplementaryFill(
         IPrediXExchange.Side makerSide,
         uint256 fillAmt,
-        uint256 usdcAmt,
+        uint256 makerUsdcOut,
+        uint256 takerUsdcOut,
         address makerOwner,
         address takerOwner,
         address yesToken,
         address noToken
     ) internal {
-        if (makerSide == IPrediXExchange.Side.SELL_YES) {
-            IERC20(usdc).safeTransfer(makerOwner, usdcAmt);
-            IERC20(yesToken).safeTransfer(takerOwner, fillAmt);
-        } else if (makerSide == IPrediXExchange.Side.BUY_YES) {
-            IERC20(yesToken).safeTransfer(makerOwner, fillAmt);
-            IERC20(usdc).safeTransfer(takerOwner, usdcAmt);
-        } else if (makerSide == IPrediXExchange.Side.SELL_NO) {
-            IERC20(usdc).safeTransfer(makerOwner, usdcAmt);
-            IERC20(noToken).safeTransfer(takerOwner, fillAmt);
+        address tok = (makerSide == IPrediXExchange.Side.SELL_YES || makerSide == IPrediXExchange.Side.BUY_YES)
+            ? yesToken
+            : noToken;
+        if (MatchMath.isBuy(makerSide)) {
+            // maker BUY → receives tokens (+ optional rebate USDC); placer SELL → receives net USDC.
+            IERC20(tok).safeTransfer(makerOwner, fillAmt);
+            if (makerUsdcOut > 0) IERC20(usdc).safeTransfer(makerOwner, makerUsdcOut);
+            IERC20(usdc).safeTransfer(takerOwner, takerUsdcOut);
         } else {
-            // BUY_NO
-            IERC20(noToken).safeTransfer(makerOwner, fillAmt);
-            IERC20(usdc).safeTransfer(takerOwner, usdcAmt);
+            // maker SELL → receives net USDC; placer BUY → receives tokens.
+            IERC20(usdc).safeTransfer(makerOwner, makerUsdcOut);
+            IERC20(tok).safeTransfer(takerOwner, fillAmt);
+        }
+    }
+
+    /// @dev Compute + book the protocol + builder fees for ONE maker-vs-maker COMPLEMENTARY fill. The placer
+    ///      (`ctx.takerId`) is the aggressor and pays the protocol fee `F` (true-aggression, `p = makerPrice`):
+    ///      drawn from its prefunded reserve when BUY, subtractive from its USDC payout when SELL. The resting
+    ///      maker receives the rebate `R`; treasury cut `T = F − R` accrues. BOTH builder fees use `makerBps`
+    ///      (both orders are limit/maker orders, role §1.1): the BUY leg is additive from `makerFeeLocked`,
+    ///      the SELL leg subtractive from its payout. Returns the NET USDC each side receives.
+    function _applyCompFees(
+        MatchCtx memory ctx,
+        bytes32 makerOrderId,
+        uint256 fillAmt,
+        uint256 usdcAmt,
+        uint256 makerPrice
+    ) internal returns (uint256 makerUsdcOut, uint256 takerUsdcOut) {
+        IPrediXExchange.Order storage maker = orders[makerOrderId];
+        address makerOwner = maker.owner;
+        bytes32 makerBuilder = maker.builder;
+        bool makerIsBuy = MatchMath.isBuy(maker.side);
+        bool placerIsBuy = MatchMath.isBuy(ctx.takerSide);
+
+        // Protocol fee F (placer pays). BUY placer draws its reserve; SELL placer pays subtractive.
+        uint256 charged;
+        uint256 fNominal = _curveFee(fillAmt, ctx.coefBps, makerPrice);
+        if (fNominal > 0) {
+            charged = placerIsBuy ? _takeProtocolBudget(ctx.takerId, fNominal) : fNominal;
+        }
+        uint256 rebate = _feeOn(charged, ctx.rebateBps);
+        uint256 treasury = charged - rebate;
+        if (treasury > 0) _accrueProtocol(treasury);
+
+        // Builder fees (both at makerBps): BUY leg additive (from makerFeeLocked), SELL leg subtractive.
+        uint256 placerBuilderFee;
+        uint256 makerBuilderFee;
+        uint16 placerBps = _orderMakerBps(ctx.takerId);
+        if (placerBps > 0) {
+            placerBuilderFee =
+                placerIsBuy ? _takeLockedFee(ctx.takerId, usdcAmt, placerBps) : _feeOn(usdcAmt, placerBps);
+            _accrueBuilderFee(orders[ctx.takerId].builder, placerBuilderFee);
+        }
+        uint16 makerBps = _orderMakerBps(makerOrderId);
+        if (makerBps > 0) {
+            makerBuilderFee = makerIsBuy ? _takeLockedFee(makerOrderId, usdcAmt, makerBps) : _feeOn(usdcAmt, makerBps);
+            _accrueBuilderFee(makerBuilder, makerBuilderFee);
+        }
+
+        if (makerIsBuy) {
+            // maker BUY (placer SELL): maker gets tokens + R; placer gets net USDC (F + builder subtractive).
+            makerUsdcOut = rebate;
+            takerUsdcOut = usdcAmt - charged - placerBuilderFee;
+        } else {
+            // maker SELL (placer BUY): maker gets net USDC + R; placer gets tokens (F + builder from reserve).
+            makerUsdcOut = usdcAmt - makerBuilderFee + rebate;
+            takerUsdcOut = 0;
+        }
+
+        if (charged > 0) {
+            emit IPrediXExchange.ProtocolFeeCharged(
+                ctx.marketId,
+                orders[ctx.takerId].owner,
+                makerOwner,
+                makerOrderId,
+                charged,
+                rebate,
+                treasury,
+                makerPrice,
+                0,
+                orders[ctx.takerId].builder,
+                makerBuilder
+            );
         }
     }
 

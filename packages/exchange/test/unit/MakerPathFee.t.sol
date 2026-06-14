@@ -97,20 +97,74 @@ contract MakerPathRefundTest is MakerFeeBase {
         assertEq(_usdcBalance(maker), mBefore, "cancel refunds deposit + both fee budgets fully");
     }
 
-    // Refund SITE-3: a BUY placer fully consumed by matching gets its unused fee budgets back (NOT to
-    // feeRecipient). Part 1 does not charge the placer on crosses, so both budgets round-trip in full.
-    function test_refund_site3_placerFullyConsumed_returnsBudgets() public {
-        registry.set(MCODE, 0, 50, mRecipient);
+    // Refund SITE-3 with price improvement: a BUY placer @0.50 crossing a cheaper SELL maker @0.30 consumes
+    // F(@0.30) < reserve(@0.50), so the unused reserve residual is refunded to the OWNER (3b + SITE-3).
+    function test_refund_site3_priceImprovement_refundsReserveResidual() public {
+        registry.set(MCODE, 0, 0, mRecipient); // placer no builder (isolate the protocol reserve refund)
         _enableProtocol(700, 0);
-        _placeSellYes(bob, 500_000, 1e8); // resting maker to cross (no builder)
+        _placeSellYes(bob, 300_000, 1e8); // resting SELL maker @0.30, no builder
         _giveUsdc(maker, 1000e6);
         uint256 mBefore = _usdcBalance(maker);
         vm.prank(maker);
         (, uint256 filled) = exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, MCODE);
         assertEq(filled, 1e8, "fully crossed");
-        assertEq(_usdcBalance(maker), mBefore - 50e6, "only notional spent; fee budgets refunded");
+        // notional @0.30 = 30; F @0.30 = curve(1e8,700,300000) = 1.47; reserve @0.50 = 1.75 → residual 0.28 refunded
+        assertEq(exchange.accruedProtocolFee(), 1_470_000, "T = F(@0.30), rebate 0");
+        assertEq(mBefore - _usdcBalance(maker), 30e6 + 1_470_000, "notional + F charged; reserve residual refunded");
         assertEq(_yesBalance(maker), 1e8, "received YES shares");
-        assertEq(exchange.accruedProtocolFee(), 0, "no maker-path protocol charge in part 1");
+    }
+}
+
+contract MakerVsMakerCompFeeTest is MakerFeeBase {
+    // 3b COMP, placer BUY vs resting SELL maker. Placer pays F (from reserve) + its builder fee; resting
+    // maker (SELL, no builder) gets gross USDC; treasury accrues T. Full conservation at @0.50 (reserve exact).
+    function test_comp_placerBuy_makerSell_conservation() public {
+        registry.set(MCODE, 0, 50, mRecipient); // placer builder makerBps 50
+        _enableProtocol(700, 0);
+        _placeSellYes(bob, 500_000, 1e8); // resting SELL maker, no builder
+        uint256 bobBefore = _usdcBalance(bob);
+        _giveUsdc(maker, 1000e6);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, MCODE);
+        // placer pays: notional 50 + F 1.75 (reserve) + builder 0.25 (makerFeeLocked) = 52
+        assertEq(mBefore - _usdcBalance(maker), 52e6, "placer spent notional + F + builder");
+        assertEq(_usdcBalance(bob) - bobBefore, 50e6, "SELL maker (no builder) gets gross notional");
+        assertEq(exchange.accruedProtocolFee(), 1_750_000, "T = F (rebate 0)");
+        assertEq(exchange.accruedBuilderFee(MCODE), 250_000, "placer builder fee at makerBps");
+        assertEq(_yesBalance(maker), 1e8, "placer received shares");
+    }
+
+    // 3b COMP, placer SELL vs resting BUY maker, with rebate. Maker (BUY) receives R via a NEW USDC transfer;
+    // placer (SELL) payout reduced by F. R + T == F.
+    function test_comp_placerSell_makerBuy_rebate() public {
+        // bob places BUY BEFORE protocol is on ⇒ no reserve prefund ⇒ isolates the rebate transfer (no
+        // SITE-1 reserve refund to conflate the delta when bob is fully filled).
+        _placeBuyYes(bob, 500_000, 1e8); // deposit 50 only (coef 0 at placement)
+        _enableProtocol(700, 2000); // now coef 700, rebate 20% for the cross
+        uint256 bobBefore = _usdcBalance(bob);
+        _giveYesNo(maker, 1e8);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 1e8, bytes32(0));
+        // F = curve(1e8,700,500000) = 1.75; R = 0.35; T = 1.40. placer SELL net = 50 - 1.75 = 48.25.
+        assertEq(_usdcBalance(maker) - mBefore, 50e6 - 1_750_000, "placer SELL payout net of F");
+        assertEq(_usdcBalance(bob) - bobBefore, 350_000, "resting BUY maker receives R (new transfer)");
+        assertEq(exchange.accruedProtocolFee(), 1_400_000, "T = F - R");
+        assertEq(_yesBalance(bob), 1e8, "maker received shares");
+    }
+
+    function test_comp_P10_makerVsMaker_byteIdentical() public {
+        // coef 0 + no builders ⇒ feeActive false ⇒ no fee, gross transfers
+        _placeSellYes(bob, 500_000, 1e8);
+        uint256 bobBefore = _usdcBalance(bob);
+        _giveUsdc(maker, 1000e6);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, bytes32(0));
+        assertEq(mBefore - _usdcBalance(maker), 50e6, "only notional");
+        assertEq(_usdcBalance(bob) - bobBefore, 50e6, "maker gross");
+        assertEq(exchange.accruedProtocolFee(), 0);
     }
 
     // Refund SITE-1: a resting BUY fully filled by a taker refunds the unused protocol reserve (the maker
