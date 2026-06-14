@@ -33,6 +33,11 @@ abstract contract TakerPath is ExchangeStorage {
         address noToken;
         bool takerIsBuy;
         bytes32 takerBuilder;
+        // ---- fee context (Sub-plan 03; all 0 ⇒ feeActive=false ⇒ P10 byte-identity) ----
+        uint16 takerBps; // taker builder rate (live from registry)
+        uint16 protocolCoefBps; // effective+clamped protocol-fee coef (off MarketView)
+        uint16 rebateBps; // global maker rebate (off MarketView)
+        bool feeActive; // master gate: takerBps>0 || protocolCoefBps>0
     }
 
     /// @dev Accumulated taker-side output across the fill loop. Settled once
@@ -42,6 +47,9 @@ abstract contract TakerPath is ExchangeStorage {
     struct TakerDeltas {
         uint256 usdcOut;
         uint256 tokenOut;
+        // ---- SELL-path fee accumulators (skimmed from usdcOut once post-loop) ----
+        uint256 protocolFeeAccum; // Σ per-fill protocol fee F (SELL)
+        uint256 takerBuilderAccum; // Σ per-fill taker builder fee (SELL)
     }
 
     // ======== Entry ========
@@ -72,6 +80,7 @@ abstract contract TakerPath is ExchangeStorage {
         IMarketFacet.MarketView memory mkt = _loadMarket(marketId);
         _validateMarketActive(mkt);
 
+        (uint16 tBps,) = _builderBps(takerBuilder);
         TakerCtx memory ctx = TakerCtx({
             marketId: marketId,
             takerSide: takerSide,
@@ -81,7 +90,11 @@ abstract contract TakerPath is ExchangeStorage {
             yesToken: mkt.yesToken,
             noToken: mkt.noToken,
             takerIsBuy: MatchMath.isBuy(takerSide),
-            takerBuilder: takerBuilder
+            takerBuilder: takerBuilder,
+            takerBps: tBps,
+            protocolCoefBps: mkt.protocolFeeRateBps,
+            rebateBps: mkt.protocolMakerRebateBps,
+            feeActive: (tBps > 0 || mkt.protocolFeeRateBps > 0)
         });
 
         address inputToken = _inputTokenFor(ctx);
@@ -100,7 +113,16 @@ abstract contract TakerPath is ExchangeStorage {
 
             if (source == FillSource.NONE || fillAmount == 0) break;
 
-            (uint256 outDelta, uint256 inDelta) = source == FillSource.COMPLEMENTARY
+            // Marginal-fill clamp (BUY only): at a fixed price the fee is LINEAR in
+            // fill-size, so reduce `fillAmount` until notional + builder + protocol
+            // fee fits the fee-inclusive USDC `remaining`. This RETIRES the multiplicative
+            // builder spend-cap (§13.1 NEW-ISSUE A — all-subtractive `remaining`).
+            if (ctx.takerIsBuy && ctx.feeActive) {
+                fillAmount = _clampBuyFill(fillAmount, makerPrice, source, ctx, remaining);
+                if (fillAmount == 0) break; // sub-tick: no marginal fill fits the budget
+            }
+
+            (uint256 outDelta, uint256 inDelta, uint256 protocolFee) = source == FillSource.COMPLEMENTARY
                 ? _executeComplementaryTakerFill(ctx, makerPrice, makerOrderId, fillAmount, deltas)
                 : _executeSyntheticTakerFill(ctx, makerPrice, makerOrderId, fillAmount, deltas);
 
@@ -120,9 +142,29 @@ abstract contract TakerPath is ExchangeStorage {
             }
 
             filled += outDelta;
-            cost += inDelta;
+            if (ctx.takerIsBuy) {
+                // BUY: `cost` (USDC) folds notional + per-fill builder + per-fill protocol fee.
+                uint256 builderFee = ctx.feeActive ? _feeOn(inDelta, ctx.takerBps) : 0;
+                if (builderFee > 0) _accrueBuilderFee(ctx.takerBuilder, builderFee);
+                cost += inDelta + builderFee + protocolFee;
+            } else {
+                // SELL: `cost` is SHARES consumed (NOT fee-reduced). Per-fill F + builder fee
+                // were accumulated into `deltas` by the execute helper; skimmed once post-loop.
+                cost += inDelta;
+            }
             remaining = amountIn > cost ? amountIn - cost : 0;
             matchCount++;
+        }
+
+        // SELL: skim accumulated protocol fee + taker builder fee from `usdcOut` once.
+        // §13 underflow proof: each Fᵢ < fill USDC (coef·(1e6−p)/1e10 ≤ 7%); builder ≤ usdc.
+        // Protocol treasury cut T was accrued per-fill inside the helper; taker builder accrues here.
+        if (!ctx.takerIsBuy && ctx.feeActive) {
+            uint256 sellFees = deltas.protocolFeeAccum + deltas.takerBuilderAccum;
+            if (sellFees > 0) {
+                deltas.usdcOut -= sellFees;
+                _accrueBuilderFee(ctx.takerBuilder, deltas.takerBuilderAccum);
+            }
         }
 
         _settleTakerDeltas(ctx, deltas);
@@ -243,18 +285,19 @@ abstract contract TakerPath is ExchangeStorage {
         bytes32 makerOrderId,
         uint256 matchAmount,
         TakerDeltas memory deltas
-    ) internal returns (uint256 outDelta, uint256 inDelta) {
+    ) internal returns (uint256 outDelta, uint256 inDelta, uint256 protocolFee) {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
         // Rounding shared with preview via MatchMath.computeFillDeltas.
         // Returns (0, 0) on dust → skip before state mutation.
         (inDelta, outDelta) = MatchMath.computeFillDeltas(price, matchAmount, ctx.takerIsBuy, false);
-        if (outDelta == 0) return (0, 0);
+        if (outDelta == 0) return (0, 0, 0);
         uint256 usdcAmount = ctx.takerIsBuy ? inDelta : outDelta;
 
         address makerOwner = makerOrder.owner;
         IPrediXExchange.Side makerSide = makerOrder.side;
+        bytes32 makerBuilder = makerOrder.builder; // cache before CEI writes
 
         // Effects: settle maker order state before external transfer (CEI).
         makerOrder.filled += uint128(matchAmount);
@@ -265,15 +308,44 @@ abstract contract TakerPath is ExchangeStorage {
         }
         bool fullyFilled = makerOrder.filled >= makerOrder.amount;
 
+        // --- Protocol-fee compute + treasury accrual (COMP `p` = price; shares leg = matchAmount). ---
+        uint256 rebate;
+        if (ctx.feeActive) {
+            protocolFee = _curveFee(matchAmount, ctx.protocolCoefBps, price);
+            rebate = _feeOn(protocolFee, ctx.rebateBps); // R = F * rebateBps / 10_000
+            _accrueProtocol(protocolFee - rebate); // T = F - R
+        }
+
         // Interactions: maker paid per-fill, taker output accumulated in deltas.
         if (ctx.takerIsBuy) {
+            // maker is SELL → receives USDC. Maker builder fee is SUBTRACTIVE.
             deltas.tokenOut += matchAmount;
-            IERC20(usdc).safeTransfer(makerOwner, usdcAmount);
+            uint256 makerFee;
+            if (ctx.feeActive) {
+                uint16 makerBps = _orderMakerBps(makerOrderId);
+                if (makerBps > 0) {
+                    makerFee = _feeOn(usdcAmount, makerBps); // <= usdcAmount (makerBps <= 50)
+                    _accrueBuilderFee(makerBuilder, makerFee);
+                }
+            }
+            IERC20(usdc).safeTransfer(makerOwner, usdcAmount - makerFee); // net of subtractive builder fee
+            if (rebate > 0) IERC20(usdc).safeTransfer(makerOwner, rebate); // inline rebate (separate transfer)
+            // Taker pays `protocolFee` (+ builder fee): folded into `cost` by the loop via the return value.
         } else {
+            // maker is BUY → receives tokens. Maker builder fee is ADDITIVE (prefunded). Taker is charged
+            // `F` + builder fee, accumulated into `deltas` and skimmed from `usdcOut` once post-loop.
             deltas.usdcOut += usdcAmount;
-            IERC20(ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken).safeTransfer(
-                makerOwner, matchAmount
-            );
+            if (ctx.feeActive) {
+                deltas.protocolFeeAccum += protocolFee;
+                deltas.takerBuilderAccum += _feeOn(usdcAmount, ctx.takerBps);
+                uint16 makerBps = _orderMakerBps(makerOrderId);
+                if (makerBps > 0) {
+                    _accrueBuilderFee(makerBuilder, _takeLockedFee(makerOrderId, usdcAmount, makerBps));
+                }
+            }
+            IERC20(ctx.takerSide == IPrediXExchange.Side.SELL_YES ? ctx.yesToken : ctx.noToken)
+                .safeTransfer(makerOwner, matchAmount);
+            if (rebate > 0) IERC20(usdc).safeTransfer(makerOwner, rebate); // NEW USDC transfer (maker is BUY)
         }
 
         emit IPrediXExchange.OrderMatched(
@@ -283,9 +355,24 @@ abstract contract TakerPath is ExchangeStorage {
             IPrediXExchange.MatchType.COMPLEMENTARY,
             matchAmount,
             price,
-            makerOrder.builder,
+            makerBuilder,
             ctx.takerBuilder
         );
+        if (ctx.feeActive && protocolFee > 0) {
+            emit IPrediXExchange.ProtocolFeeCharged(
+                ctx.marketId,
+                ctx.taker,
+                makerOwner,
+                makerOrderId,
+                protocolFee,
+                rebate,
+                protocolFee - rebate,
+                price,
+                0,
+                ctx.takerBuilder,
+                makerBuilder
+            );
+        }
 
         if (fullyFilled) {
             _onMakerFullyFilled(ctx.marketId, makerSide, _priceToIndex(price), makerOrderId, makerOwner);
@@ -307,20 +394,29 @@ abstract contract TakerPath is ExchangeStorage {
         bytes32 makerOrderId,
         uint256 matchAmount,
         TakerDeltas memory deltas
-    ) internal returns (uint256 outDelta, uint256 inDelta) {
+    ) internal returns (uint256 outDelta, uint256 inDelta, uint256 protocolFee) {
         IPrediXExchange.Order storage makerOrder = orders[makerOrderId];
         if (makerOrder.owner == ctx.taker) revert IPrediXExchange.SelfMatchNotAllowed();
 
         address makerOwner = makerOrder.owner;
         IPrediXExchange.Side makerSide = makerOrder.side;
+        bytes32 makerBuilder = makerOrder.builder; // cache before CEI writes
         uint8 priceIdx = _priceToIndex(makerOrder.price);
         bool fullyFilled;
 
         (inDelta, outDelta) = MatchMath.computeFillDeltas(makerPrice, matchAmount, ctx.takerIsBuy, true);
-        if (outDelta == 0) return (0, 0);
+        if (outDelta == 0) return (0, 0, 0);
+
+        // Taker-path synthetic price (both branches): p = 1e6 - makerPrice. Shares leg = matchAmount.
+        uint256 rebate;
+        if (ctx.feeActive) {
+            protocolFee = _curveFee(matchAmount, ctx.protocolCoefBps, PRICE_PRECISION - makerPrice);
+            rebate = _feeOn(protocolFee, ctx.rebateBps);
+            _accrueProtocol(protocolFee - rebate);
+        }
 
         if (ctx.takerIsBuy) {
-            // MINT — combined USDC funds splitPosition, distribute YES/NO.
+            // MINT — combined USDC funds splitPosition, distribute YES/NO. Maker is BUY (additive builder).
             // inDelta = taker USDC contribution; maker fronts the complement.
             uint256 makerUsdc = matchAmount - inDelta;
             if (makerOrder.depositLocked < makerUsdc) revert IPrediXExchange.InsufficientLiquidity();
@@ -337,15 +433,30 @@ abstract contract TakerPath is ExchangeStorage {
                 : (ctx.noToken, ctx.yesToken);
 
             deltas.tokenOut += matchAmount;
-            IERC20(makerOut).safeTransfer(makerOwner, matchAmount);
+            IERC20(makerOut).safeTransfer(makerOwner, matchAmount); // MINT helper unchanged (§13.1)
+
+            if (ctx.feeActive) {
+                uint16 makerBps = _orderMakerBps(makerOrderId);
+                if (makerBps > 0) {
+                    _accrueBuilderFee(makerBuilder, _takeLockedFee(makerOrderId, makerUsdc, makerBps));
+                }
+                if (rebate > 0) IERC20(usdc).safeTransfer(makerOwner, rebate); // NEW caller-side R (no surplus)
+            }
+            // Taker pays `protocolFee` (+ builder fee): folded into `cost` by the loop via the return value.
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MINT, matchAmount, makerPrice,
-                makerOrder.builder, ctx.takerBuilder
+                makerOrderId,
+                bytes32(0),
+                ctx.marketId,
+                IPrediXExchange.MatchType.MINT,
+                matchAmount,
+                makerPrice,
+                makerBuilder,
+                ctx.takerBuilder
             );
         } else {
-            // MERGE — combined YES+NO funds mergePositions, distribute USDC.
-            // outDelta = taker USDC share; maker gets the complement.
+            // MERGE — combined YES+NO funds mergePositions, distribute USDC. Both SELL (subtractive builder).
+            // outDelta = taker USDC share; maker gets the complement. Skim F from the TAKER leg ONLY.
             uint256 makerUsdcShare = matchAmount - outDelta;
             if (makerOrder.depositLocked < matchAmount) revert IPrediXExchange.InsufficientLiquidity();
 
@@ -356,11 +467,46 @@ abstract contract TakerPath is ExchangeStorage {
             IMarketFacet(diamond).mergePositions(ctx.marketId, matchAmount);
 
             deltas.usdcOut += outDelta;
-            IERC20(usdc).safeTransfer(makerOwner, makerUsdcShare);
+            uint256 makerFee;
+            if (ctx.feeActive) {
+                // Taker leg: F + builder accumulated, skimmed from usdcOut once post-loop.
+                deltas.protocolFeeAccum += protocolFee;
+                deltas.takerBuilderAccum += _feeOn(outDelta, ctx.takerBps);
+                // Maker leg: subtractive builder fee; maker payout untouched by F.
+                uint16 makerBps = _orderMakerBps(makerOrderId);
+                if (makerBps > 0) {
+                    makerFee = _feeOn(makerUsdcShare, makerBps);
+                    _accrueBuilderFee(makerBuilder, makerFee);
+                }
+            }
+            IERC20(usdc).safeTransfer(makerOwner, makerUsdcShare - makerFee);
+            if (rebate > 0) IERC20(usdc).safeTransfer(makerOwner, rebate);
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, bytes32(0), ctx.marketId, IPrediXExchange.MatchType.MERGE, matchAmount, makerPrice,
-                makerOrder.builder, ctx.takerBuilder
+                makerOrderId,
+                bytes32(0),
+                ctx.marketId,
+                IPrediXExchange.MatchType.MERGE,
+                matchAmount,
+                makerPrice,
+                makerBuilder,
+                ctx.takerBuilder
+            );
+        }
+
+        if (ctx.feeActive && protocolFee > 0) {
+            emit IPrediXExchange.ProtocolFeeCharged(
+                ctx.marketId,
+                ctx.taker,
+                makerOwner,
+                makerOrderId,
+                protocolFee,
+                rebate,
+                protocolFee - rebate,
+                PRICE_PRECISION - makerPrice,
+                ctx.takerIsBuy ? 1 : 2,
+                ctx.takerBuilder,
+                makerBuilder
             );
         }
 
@@ -378,13 +524,48 @@ abstract contract TakerPath is ExchangeStorage {
             IERC20(usdc).safeTransfer(ctx.recipient, d.usdcOut);
         }
         if (d.tokenOut > 0) {
-            address outToken = ctx.takerIsBuy
-                ? (ctx.takerSide == IPrediXExchange.Side.BUY_YES ? ctx.yesToken : ctx.noToken)
-                : usdc;
+            address outToken =
+                ctx.takerIsBuy ? (ctx.takerSide == IPrediXExchange.Side.BUY_YES ? ctx.yesToken : ctx.noToken) : usdc;
             if (outToken != usdc) {
                 IERC20(outToken).safeTransfer(ctx.recipient, d.tokenOut);
             }
         }
+    }
+
+    // ======== Marginal BUY clamp (§13.1 / REVIEW_FIXES F3-1) ========
+
+    /// @notice Total USDC cost (notional + protocol fee + taker builder fee) of buying `s` shares at a
+    ///         fixed taker price `pEff`. Each leg floors independently, so the analytic `sMax` can drift
+    ///         1-2 wei over `remaining`; the caller floor-corrects against this exact total.
+    function _fillTotalCost(uint256 s, uint256 pEff, uint16 coefBps, uint16 takerBps) internal pure returns (uint256) {
+        uint256 notional = (s * pEff) / PRICE_PRECISION;
+        return notional + _curveFee(s, coefBps, pEff) + _feeOn(notional, takerBps);
+    }
+
+    /// @notice Clamp a budget-bound BUY fill so notional + protocol + builder fee fits `remaining` (USDC).
+    /// @dev The cost is LINEAR in `s` at a fixed price, so the max affordable `s` is a closed-form
+    ///      division plus a ≤2-iteration floor-correction. Returns 0 when even one share over-spends
+    ///      (sub-tick marginal fill → caller stops the loop). `pEff` = COMP `price` / SYN `1e6-makerPrice`.
+    function _clampBuyFill(
+        uint256 fillAmount,
+        uint256 makerPrice,
+        FillSource source,
+        TakerCtx memory ctx,
+        uint256 remaining
+    ) internal pure returns (uint256) {
+        uint256 pEff = source == FillSource.COMPLEMENTARY ? makerPrice : (PRICE_PRECISION - makerPrice);
+        // Fast path: the full fill already fits — no clamp.
+        if (_fillTotalCost(fillAmount, pEff, ctx.protocolCoefBps, ctx.takerBps) <= remaining) return fillAmount;
+        // total(s)*1e16 = s * pEff * (1e10 + takerBps*1e6 + coef*(1e6 - pEff))  ⇒  sMax = remaining*1e16 / denom
+        uint256 denom =
+            pEff * (1e10 + uint256(ctx.takerBps) * 1e6 + uint256(ctx.protocolCoefBps) * (PRICE_PRECISION - pEff));
+        uint256 s = denom == 0 ? fillAmount : (remaining * 1e16) / denom;
+        if (s > fillAmount) s = fillAmount;
+        // Floor-correction: independent floors can leave total() 1-2 wei over `remaining`.
+        while (s > 0 && _fillTotalCost(s, pEff, ctx.protocolCoefBps, ctx.takerBps) > remaining) {
+            --s;
+        }
+        return s;
     }
 
     // ======== Token resolution ========

@@ -280,6 +280,12 @@ abstract contract ExchangeStorage {
         (takerBps, makerBps,) = IBuilderRegistry(reg).feeOf(code);
     }
 
+    /// @notice Maker builder-bps snapshot for an order (0 if unset). Snapshotted at placeOrder (Task 8);
+    ///         read by the taker/maker fill sites to charge the resting maker's builder fee.
+    function _orderMakerBps(bytes32 orderId) internal view returns (uint16) {
+        return LibBuilderFeeStorage.layout().orderMakerBps[orderId];
+    }
+
     /// @notice Credit `amount` USDC of builder fee to `code`'s accrual ledger. No-op on zero.
     function _accrueBuilderFee(bytes32 code, uint256 amount) internal {
         if (amount == 0 || code == bytes32(0)) return;
