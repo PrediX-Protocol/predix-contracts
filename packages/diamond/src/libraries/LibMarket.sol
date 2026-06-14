@@ -28,6 +28,15 @@ library LibMarket {
     ///         `MarketFacet` and `EventFacet` (keyti-fqn8).
     uint256 internal constant MAX_REDEMPTION_FEE_BPS = 1000;
 
+    /// @notice Hard ceiling on the protocol (platform) fee rate (700 bps = 7%, Polymarket crypto-0.07
+    ///         parity; CEO-chosen). Single source shared by `MarketFacet` and read-time clamp here.
+    uint256 internal constant MAX_PROTOCOL_FEE_RATE_BPS = 700;
+
+    /// @notice Hard ceiling on the global protocol maker rebate (2500 bps = 25%). Enforced by
+    ///         `MarketFacet.setProtocolMakerRebateBps`. (The Exchange additionally requires the live
+    ///         rebate < 100% so `R <= F` per fill — that is a Sub-plan 03 charge-site guard, not here.)
+    uint256 internal constant MAX_PROTOCOL_MAKER_REBATE_BPS = 2500;
+
     /// @notice Create a new binary market. Caller handles all input validation.
     /// @param question  Market question. Caller must ensure non-empty.
     /// @param endTime   Unix timestamp after which the market accepts no more splits.
@@ -78,6 +87,11 @@ library LibMarket {
         if (feeBps > type(uint16).max) revert IMarketFacet.Market_FeeTooHigh();
         m.snapshottedDefaultRedemptionFeeBps = uint16(feeBps);
 
+        // Protocol-fee snapshot: unlike the redemption fee (threaded via the `feeBps` param above),
+        // the protocol fee has no per-create caller override, so freeze the current system default
+        // directly. Protects users from a retroactive admin rate hike applied after creation.
+        m.snapshottedProtocolFeeRateBps = cfg.defaultProtocolFeeRateBps;
+
         emit IMarketFacet.MarketCreated(
             marketId, msg.sender, oracle, yesAddr, noAddr, endTime, question, uint16(feeBps)
         );
@@ -90,5 +104,14 @@ library LibMarket {
     function effectiveRedemptionFee(LibMarketStorage.MarketData storage m) internal view returns (uint16) {
         uint16 raw = m.redemptionFeeOverridden ? m.perMarketRedemptionFeeBps : m.snapshottedDefaultRedemptionFeeBps;
         return raw > MAX_REDEMPTION_FEE_BPS ? uint16(MAX_REDEMPTION_FEE_BPS) : raw;
+    }
+
+    /// @notice Resolve a market's effective protocol-fee rate (bps), clamped to the hard cap.
+    /// @dev Mirrors `effectiveRedemptionFee`: override wins over the snapshotted default; the read-time
+    ///      clamp guarantees a stored value can never charge above `MAX_PROTOCOL_FEE_RATE_BPS`. Single read
+    ///      path consumed by `MarketFacet` (view + `getMarket` widening) and, downstream, the Exchange.
+    function effectiveProtocolFee(LibMarketStorage.MarketData storage m) internal view returns (uint16) {
+        uint16 raw = m.protocolFeeOverridden ? m.protocolFeeRateBps : m.snapshottedProtocolFeeRateBps;
+        return raw > MAX_PROTOCOL_FEE_RATE_BPS ? uint16(MAX_PROTOCOL_FEE_RATE_BPS) : raw;
     }
 }
