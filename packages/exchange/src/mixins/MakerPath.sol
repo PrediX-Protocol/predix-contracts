@@ -574,6 +574,12 @@ abstract contract MakerPath is ExchangeStorage {
 
             _executeMintFill(taker, maker, fillAmt, makerUsdc + takerUsdc, ctx.yesToken, ctx.noToken);
 
+            // Fees (maker-vs-maker MINT, both BUY): placer pays F from its reserve at p = takerPrice (§13.1);
+            // resting maker gets R via a new transfer; both builder fees additive. _executeMintFill unchanged.
+            if (ctx.feeActive) {
+                _applyMintFees(ctx, makerOrderId, makerOwner, fillAmt, makerUsdc, takerUsdc);
+            }
+
             newRemaining -= fillAmt;
             newFillCount++;
 
@@ -626,6 +632,52 @@ abstract contract MakerPath is ExchangeStorage {
         if (depositSum > fillAmt) {
             uint256 surplus = depositSum - fillAmt;
             IERC20(usdc).safeTransfer(taker.owner, surplus);
+        }
+    }
+
+    /// @dev Fees for ONE maker-vs-maker MINT fill (both BUY). Placer (aggressor) pays F from its prefunded
+    ///      reserve at `p = ctx.takerPrice` (the placer's own limit — §13.1, NOT 1e6−makerPrice); the resting
+    ///      maker gets the rebate R via a NEW USDC transfer (it otherwise receives only tokens); both builder
+    ///      fees are additive (both BUY) from each side's `makerFeeLocked`. Must NOT touch the MINT surplus.
+    function _applyMintFees(
+        MatchCtx memory ctx,
+        bytes32 makerOrderId,
+        address makerOwner,
+        uint256 fillAmt,
+        uint256 makerUsdc,
+        uint256 takerUsdc
+    ) internal {
+        uint256 charged;
+        uint256 fNominal = _curveFee(fillAmt, ctx.coefBps, ctx.takerPrice);
+        if (fNominal > 0) charged = _takeProtocolBudget(ctx.takerId, fNominal);
+        uint256 rebate = _feeOn(charged, ctx.rebateBps);
+        uint256 treasury = charged - rebate;
+        if (treasury > 0) _accrueProtocol(treasury);
+
+        uint16 placerBps = _orderMakerBps(ctx.takerId);
+        if (placerBps > 0) {
+            _accrueBuilderFee(orders[ctx.takerId].builder, _takeLockedFee(ctx.takerId, takerUsdc, placerBps));
+        }
+        uint16 makerBps = _orderMakerBps(makerOrderId);
+        if (makerBps > 0) {
+            _accrueBuilderFee(orders[makerOrderId].builder, _takeLockedFee(makerOrderId, makerUsdc, makerBps));
+        }
+
+        if (rebate > 0) IERC20(usdc).safeTransfer(makerOwner, rebate);
+        if (charged > 0) {
+            emit IPrediXExchange.ProtocolFeeCharged(
+                ctx.marketId,
+                orders[ctx.takerId].owner,
+                makerOwner,
+                makerOrderId,
+                charged,
+                rebate,
+                treasury,
+                ctx.takerPrice,
+                1,
+                orders[ctx.takerId].builder,
+                orders[makerOrderId].builder
+            );
         }
     }
 
@@ -720,7 +772,7 @@ abstract contract MakerPath is ExchangeStorage {
             bool makerFullyFilled = maker.filled >= maker.amount;
 
             // Interactions.
-            _executeMergeFill(taker, maker, fillAmt, ctx.takerPrice, makerPrice);
+            _executeMergeFill(ctx, makerOrderId, fillAmt, makerPrice);
 
             newRemaining -= fillAmt;
             newFillCount++;
@@ -757,28 +809,81 @@ abstract contract MakerPath is ExchangeStorage {
     ///      so `makerPayout ≤ fillAmt` and `takerPayout ≥ takerLimit` hold by
     ///      construction; both are re-asserted with custom-error reverts
     ///      below for defense-in-depth.
-    function _executeMergeFill(
-        IPrediXExchange.Order storage taker,
-        IPrediXExchange.Order storage maker,
-        uint256 fillAmt,
-        uint256 takerPrice,
-        uint256 makerPrice
-    ) internal {
-        IMarketFacet(diamond).mergePositions(taker.marketId, fillAmt);
+    function _executeMergeFill(MatchCtx memory ctx, bytes32 makerOrderId, uint256 fillAmt, uint256 makerPrice)
+        internal
+    {
+        IMarketFacet(diamond).mergePositions(ctx.marketId, fillAmt);
 
         // Shared rounding with preview + taker path. `outDelta` is the taker's
         // USDC share (= `fillAmt - makerShare`) by construction.
         (, uint256 takerPayout) = MatchMath.computeFillDeltas(makerPrice, fillAmt, false, true);
         uint256 makerPayout = fillAmt - takerPayout;
 
-        // Sanity: taker receives at least its limit price. `_tryMerge`'s
-        // invariant implies this; the assert protects against a future caller
-        // that skips the invariant check.
-        uint256 takerLimit = (fillAmt * takerPrice) / PRICE_PRECISION;
-        if (takerPayout < takerLimit) revert IPrediXExchange.InsufficientLiquidity();
+        // Sanity (on the GROSS payout, before fees): taker receives at least its limit price.
+        if (takerPayout < (fillAmt * ctx.takerPrice) / PRICE_PRECISION) revert IPrediXExchange.InsufficientLiquidity();
 
-        IERC20(usdc).safeTransfer(taker.owner, takerPayout);
-        IERC20(usdc).safeTransfer(maker.owner, makerPayout);
+        // Fees (maker-vs-maker MERGE, both SELL): skim placer F from the TAKER leg only; resting maker gets R;
+        // both builder fees subtractive. Fee-off ⇒ gross payouts (P10 byte-identity).
+        if (ctx.feeActive) {
+            (takerPayout, makerPayout) = _applyMergeFees(ctx, makerOrderId, fillAmt, takerPayout, makerPrice);
+        }
+
+        IERC20(usdc).safeTransfer(orders[ctx.takerId].owner, takerPayout);
+        IERC20(usdc).safeTransfer(orders[makerOrderId].owner, makerPayout);
+    }
+
+    /// @dev Fees for ONE maker-vs-maker MERGE fill (both SELL). The placer (aggressor) pays F skimmed from the
+    ///      TAKER leg ONLY (`p = 1e6 − makerPrice`); the resting maker's payout is untouched by F but gets the
+    ///      rebate R; both builder fees are subtractive from each side's USDC payout. Returns net payouts.
+    function _applyMergeFees(
+        MatchCtx memory ctx,
+        bytes32 makerOrderId,
+        uint256 fillAmt,
+        uint256 takerPayout,
+        uint256 makerPrice
+    ) internal returns (uint256 takerNet, uint256 makerNet) {
+        uint256 makerPayout = fillAmt - takerPayout;
+        takerNet = takerPayout;
+        makerNet = makerPayout;
+        uint256 p = PRICE_PRECISION - makerPrice; // placer's synthetic SELL price
+        uint256 charged = _curveFee(fillAmt, ctx.coefBps, p);
+        {
+            uint256 rebate = _feeOn(charged, ctx.rebateBps);
+            if (charged > rebate) _accrueProtocol(charged - rebate);
+            takerNet -= charged; // skim F from TAKER leg only
+            makerNet += rebate; // resting maker gets R
+            if (charged > 0) {
+                emit IPrediXExchange.ProtocolFeeCharged(
+                    ctx.marketId,
+                    orders[ctx.takerId].owner,
+                    orders[makerOrderId].owner,
+                    makerOrderId,
+                    charged,
+                    rebate,
+                    charged - rebate,
+                    p,
+                    2,
+                    orders[ctx.takerId].builder,
+                    orders[makerOrderId].builder
+                );
+            }
+        }
+        {
+            uint16 placerBps = _orderMakerBps(ctx.takerId);
+            if (placerBps > 0) {
+                uint256 fee = _feeOn(takerPayout, placerBps);
+                _accrueBuilderFee(orders[ctx.takerId].builder, fee);
+                takerNet -= fee;
+            }
+        }
+        {
+            uint16 makerBps = _orderMakerBps(makerOrderId);
+            if (makerBps > 0) {
+                uint256 fee = _feeOn(makerPayout, makerBps);
+                _accrueBuilderFee(orders[makerOrderId].builder, fee);
+                makerNet -= fee;
+            }
+        }
     }
 
     // ============ Helpers ============

@@ -166,6 +166,52 @@ contract MakerVsMakerCompFeeTest is MakerFeeBase {
         assertEq(_usdcBalance(bob) - bobBefore, 50e6, "maker gross");
         assertEq(exchange.accruedProtocolFee(), 0);
     }
+}
+
+contract MakerVsMakerSyntheticFeeTest is MakerFeeBase {
+    // 3c MINT (both BUY): placer BUY_YES + resting BUY_NO MINT at 0.50/0.50. Placer pays F from reserve at
+    // p = takerPrice (0.50); both get tokens; placer builder fee additive. Maker (no builder) untouched.
+    function test_mint_makerVsMaker_conservation() public {
+        _placeBuyNo(bob, 500_000, 1e8); // resting BUY_NO @0.50, no builder (before protocol → no reserve)
+        _enableProtocol(700, 0);
+        registry.set(MCODE, 0, 50, mRecipient);
+        _giveUsdc(maker, 1000e6);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, MCODE); // MINT vs bob
+        assertEq(exchange.accruedProtocolFee(), 1_750_000, "MINT T = F at p=takerPrice 0.50");
+        assertEq(exchange.accruedBuilderFee(MCODE), 250_000, "placer builder fee additive (makerBps on takerUsdc)");
+        assertEq(_yesBalance(maker), 1e8, "placer got YES shares");
+        assertEq(_noBalance(bob), 1e8, "resting maker got NO shares");
+    }
+
+    // 3d MERGE (both SELL): placer SELL_YES + resting SELL_NO @0.30 MERGE. Placer pays F skimmed from the
+    // TAKER leg only (p = 1e6-makerPrice = 0.70) + its builder fee; maker leg untouched by F.
+    function test_merge_makerVsMaker_conservation() public {
+        _placeSellNo(bob, 300_000, 1e8); // resting SELL_NO @0.30, no builder
+        _enableProtocol(700, 0);
+        registry.set(MCODE, 0, 50, mRecipient);
+        uint256 bobBefore = _usdcBalance(bob);
+        _giveYesNo(maker, 1e8);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 1e8, MCODE); // MERGE vs bob
+        // taker leg = 70 (1e8 - floor(1e8*0.30)); F = curve(1e8,700,700000) = 1.47; placer builder = 70*0.5% = 0.35
+        assertEq(exchange.accruedProtocolFee(), 1_470_000, "MERGE T = F at p=1e6-makerPrice 0.70");
+        assertEq(exchange.accruedBuilderFee(MCODE), 350_000, "placer builder fee subtractive from taker leg");
+        assertEq(_usdcBalance(maker) - mBefore, 70e6 - 1_470_000 - 350_000, "placer leg net of F + builder");
+        assertEq(_usdcBalance(bob) - bobBefore, 30e6, "maker leg untouched by F (no builder, no rebate)");
+    }
+
+    function test_synthetic_P10_byteIdentical() public {
+        // MINT with fees off ⇒ byte-identical
+        _placeBuyNo(bob, 500_000, 1e8);
+        _giveUsdc(maker, 1000e6);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, bytes32(0));
+        assertEq(mBefore - _usdcBalance(maker), 50e6, "only notional minted");
+        assertEq(exchange.accruedProtocolFee(), 0);
+    }
 
     // Refund SITE-1: a resting BUY fully filled by a taker refunds the unused protocol reserve (the maker
     // is the resting side, not the aggressor, so its placerProtocolFeeBudget is never consumed).
