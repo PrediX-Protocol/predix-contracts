@@ -41,6 +41,15 @@ library LibMarketStorage {
         ///      `MarketFacet` to route split/merge to the pool and to reject per-child
         ///      redeem/refund/sweep. `false` for standalone markets and legacy per-child event children.
         bool linkedChild;
+        /// @dev Append-only fields added in v1.7 for the per-market protocol (platform) fee,
+        ///      mirroring the redemption-fee trio above. When `protocolFeeOverridden == true`,
+        ///      `protocolFeeRateBps` is used verbatim (including 0); otherwise
+        ///      `snapshottedProtocolFeeRateBps` (the global default frozen at creation) applies.
+        ///      Resolved by `LibMarket.effectiveProtocolFee` with a read-time clamp to
+        ///      `MAX_PROTOCOL_FEE_RATE_BPS`. `uint16` suffices (cap = 700). NEVER REORDER.
+        uint16 protocolFeeRateBps;
+        bool protocolFeeOverridden;
+        uint16 snapshottedProtocolFeeRateBps;
     }
 
     struct Layout {

@@ -29,6 +29,17 @@ library LibConfigStorage {
         ///      `MarketFacet.setOutcomeTokenImpl`. NEVER REORDER — namespaced
         ///      storage append-only contract.
         address outcomeTokenImpl;
+        /// @dev Append-only fields added in v1.7 to back the protocol (platform) fee.
+        ///      `defaultProtocolFeeRateBps` is the system-wide default protocol-fee rate
+        ///      (bps), snapshotted per market at creation by `LibMarket.create` exactly
+        ///      like `defaultRedemptionFeeBps`. `protocolMakerRebateBps` is the global
+        ///      share of each charged protocol fee rebated to the resting maker. BOTH
+        ///      launch at 0 (preserves the −78% cost wedge; P10 byte-identity). Hard-capped
+        ///      at `LibMarket.MAX_PROTOCOL_FEE_RATE_BPS` (700) / `MAX_PROTOCOL_MAKER_REBATE_BPS`
+        ///      (2500) by `MarketFacet`. Charged in the Exchange/Router, configured here.
+        ///      NEVER REORDER — namespaced storage append-only contract.
+        uint16 defaultProtocolFeeRateBps;
+        uint16 protocolMakerRebateBps;
     }
 
     function layout() internal pure returns (Layout storage l) {
