@@ -229,9 +229,13 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
 
         for (uint256 i; i < len;) {
             if (_tryCancel(orderIds[i])) {
-                unchecked { ++cancelledCount; }
+                unchecked {
+                    ++cancelledCount;
+                }
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -285,6 +289,18 @@ contract PrediXExchange is IPrediXExchange, MakerPath, TakerPath, Views, Transie
         address taker
     ) external view override returns (uint256 filled, uint256 cost) {
         return _previewFillMarketOrder(marketId, takerSide, limitPrice, amountIn, maxFills, taker);
+    }
+
+    /// @inheritdoc IPrediXExchange
+    function previewProtocolFee(
+        uint256 marketId,
+        Side takerSide,
+        uint256 limitPrice,
+        uint256 amountIn,
+        uint256 maxFills,
+        address taker
+    ) external view override returns (uint256 protocolFee) {
+        return _previewProtocolFee(marketId, takerSide, limitPrice, amountIn, maxFills, taker);
     }
 
     /// @inheritdoc IPrediXExchange

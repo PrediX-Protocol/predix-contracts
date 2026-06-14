@@ -28,13 +28,46 @@ abstract contract Views is ExchangeStorage {
         uint256 maxFills,
         address taker
     ) internal view virtual returns (uint256 filled, uint256 cost) {
-        if (amountIn == 0) return (0, 0);
+        (filled, cost,) = _simulateFill(marketId, takerSide, limitPrice, amountIn, maxFills, taker);
+    }
 
-        // Match `_fillMarketOrder` validation so a successful preview implies the
-        // real call would not revert on market state.
+    /// @notice Protocol fee `ΣF` the real fill would charge (BUY marginal clamp / per-fill SELL). The builder
+    ///         fee is EXCLUDED (the router + plain-preview path pass `builder = bytes32(0)`); a `*WithFee` FE
+    ///         variant would cover the builder case. For integrator/FE net-of-fee quoting (§13.1).
+    function _previewProtocolFee(
+        uint256 marketId,
+        IPrediXExchange.Side takerSide,
+        uint256 limitPrice,
+        uint256 amountIn,
+        uint256 maxFills,
+        address taker
+    ) internal view returns (uint256 protocolFee) {
+        (,, protocolFee) = _simulateFill(marketId, takerSide, limitPrice, amountIn, maxFills, taker);
+    }
+
+    /// @dev Shared simulation core for both preview entry points. Mirrors the taker-path EXECUTE exactly:
+    ///      same `MatchMath.computeFillDeltas` rounding, the same shared `_clampBuyFill` for budget-bound BUYs,
+    ///      the same protocol-fee curve per fill — so the router's `_convergeCap` keeps its monotone fixed
+    ///      point (§13.1). Protocol-fee-inclusive (rate read off `MarketView`), builder fee EXCLUDED. BUY:
+    ///      `cost` folds `inDelta + F` and the marginal clamp bounds it. SELL: `cost` stays SHARES (NOT
+    ///      fee-reduced; the SELL fee is skimmed from `usdcOut` at execute), `F` accumulates into `protocolFee`.
+    ///      `coef == 0` ⇒ byte-identical to the pre-fee preview (P10).
+    function _simulateFill(
+        uint256 marketId,
+        IPrediXExchange.Side takerSide,
+        uint256 limitPrice,
+        uint256 amountIn,
+        uint256 maxFills,
+        address taker
+    ) internal view returns (uint256 filled, uint256 cost, uint256 protocolFee) {
+        if (amountIn == 0) return (0, 0, 0);
+
+        // Match `_fillMarketOrder` validation so a successful preview implies the real call would not revert.
         IMarketFacet.MarketView memory mkt = _loadMarket(marketId);
         _validateMarketActive(mkt);
 
+        uint16 coef = mkt.protocolFeeRateBps; // builder excluded (router passes builder=0)
+        bool feeActive = coef > 0;
         uint256 effectiveMaxFills = maxFills == 0 ? DEFAULT_MAX_FILLS : maxFills;
         uint256 remaining = amountIn;
         bool takerIsBuy = MatchMath.isBuy(takerSide);
@@ -52,16 +85,27 @@ abstract contract Views is ExchangeStorage {
 
             if (source == FillSource.NONE || fillAmount == 0) break;
 
-            // Preview and execute share `MatchMath.computeFillDeltas` so their
-            // rounding cannot drift. Dust-filter short-circuit: a zero return
-            // collapses the fill into the "break" path that stops the waterfall.
+            // Marginal BUY clamp — identical to execute (shared `_clampBuyFill`, builder bps 0).
+            if (takerIsBuy && feeActive) {
+                fillAmount = _clampBuyFill(fillAmount, makerPrice, source, coef, 0, remaining);
+                if (fillAmount == 0) break;
+            }
+
+            // Preview and execute share `MatchMath.computeFillDeltas` so their rounding cannot drift.
             (uint256 inDelta, uint256 outDelta) =
                 MatchMath.computeFillDeltas(makerPrice, fillAmount, takerIsBuy, source == FillSource.SYNTHETIC);
 
             if (outDelta == 0) break;
 
             filled += outDelta;
-            cost += inDelta;
+            if (feeActive) {
+                uint256 pEff = source == FillSource.SYNTHETIC ? (PRICE_PRECISION - makerPrice) : makerPrice;
+                uint256 f = _curveFee(fillAmount, coef, pEff);
+                protocolFee += f;
+                cost += takerIsBuy ? inDelta + f : inDelta; // BUY fee-inclusive; SELL `cost` stays shares
+            } else {
+                cost += inDelta;
+            }
             remaining = amountIn > cost ? amountIn - cost : 0;
 
             visitedOrderIds[visited] = makerOrderId;

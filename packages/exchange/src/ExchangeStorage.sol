@@ -11,6 +11,7 @@ import {Modules} from "@predix/shared/constants/Modules.sol";
 import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 import {IPrediXExchange} from "./IPrediXExchange.sol";
 import {PriceBitmap} from "./libraries/PriceBitmap.sol";
+import {MatchMath} from "./libraries/MatchMath.sol";
 import {LibBuilderFeeStorage} from "./libraries/LibBuilderFeeStorage.sol";
 import {LibProtocolFeeStorage} from "./libraries/LibProtocolFeeStorage.sol";
 
@@ -345,5 +346,50 @@ abstract contract ExchangeStorage {
             LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId] = 0;
             IERC20(usdc).safeTransfer(to, protoResidual);
         }
+    }
+
+    // ======== Marginal BUY clamp (§13.1 / REVIEW_FIXES F3-1) — shared by TakerPath (execute) + Views (preview) ========
+
+    /// @notice EXACT total USDC cost (notional + protocol fee + taker builder fee) of buying `s` shares
+    ///         against a maker at `makerPrice`. `inDelta` is read from `MatchMath.computeFillDeltas` — the SAME
+    ///         function the execute path charges — so the clamp basis is byte-identical to the executed cost
+    ///         for BOTH COMPLEMENTARY (`inDelta = floor(s*makerPrice/1e6)`) and SYNTHETIC MINT
+    ///         (`inDelta = s - floor(s*makerPrice/1e6)`, NOT `floor(s*(1e6-makerPrice)/1e6)` — those differ by
+    ///         up to 1 wei and a naive `pEff` basis under-charges → overspend revert). Curve `p` = the taker's
+    ///         traded-side price (COMP `makerPrice`; SYN `1e6-makerPrice`). `takerBps`=0 on the router/preview path.
+    function _fillTotalCost(uint256 s, uint256 makerPrice, bool isSynthetic, uint16 coefBps, uint16 takerBps)
+        internal
+        pure
+        returns (uint256)
+    {
+        (uint256 inDelta,) = MatchMath.computeFillDeltas(makerPrice, s, true, isSynthetic);
+        uint256 pCurve = isSynthetic ? (PRICE_PRECISION - makerPrice) : makerPrice;
+        return inDelta + _curveFee(s, coefBps, pCurve) + _feeOn(inDelta, takerBps);
+    }
+
+    /// @notice Clamp a budget-bound BUY fill so notional + protocol + builder fee fits `remaining` (USDC).
+    /// @dev Monotone in `s`: a closed-form `pEff` estimate plus a floor-correction down to the EXACT
+    ///      `_fillTotalCost`. Returns 0 when even the marginal share over-spends (caller stops the loop).
+    ///      Shared so the preview mirrors execute EXACTLY (else the router's `_convergeCap` diverges, §13.1).
+    function _clampBuyFill(
+        uint256 fillAmount,
+        uint256 makerPrice,
+        FillSource source,
+        uint16 coefBps,
+        uint16 takerBps,
+        uint256 remaining
+    ) internal pure returns (uint256) {
+        bool isSyn = source != FillSource.COMPLEMENTARY;
+        if (_fillTotalCost(fillAmount, makerPrice, isSyn, coefBps, takerBps) <= remaining) {
+            return fillAmount;
+        }
+        uint256 pEff = isSyn ? (PRICE_PRECISION - makerPrice) : makerPrice;
+        uint256 denom = pEff * (1e10 + uint256(takerBps) * 1e6 + uint256(coefBps) * (PRICE_PRECISION - pEff));
+        uint256 s = denom == 0 ? fillAmount : (remaining * 1e16) / denom;
+        if (s > fillAmount) s = fillAmount;
+        while (s > 0 && _fillTotalCost(s, makerPrice, isSyn, coefBps, takerBps) > remaining) {
+            --s;
+        }
+        return s;
     }
 }

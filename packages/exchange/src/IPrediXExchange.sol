@@ -228,6 +228,18 @@ interface IPrediXExchange {
         address taker
     ) external view returns (uint256 filled, uint256 cost);
 
+    /// @notice Protocol fee `ΣF` the matching `fillMarketOrder` would charge (BUY marginal clamp / per-fill
+    ///         SELL). Builder fee excluded (router/plain path uses `builder=0`). For integrator net-of-fee
+    ///         quoting: BUY net shares = `previewFillMarketOrder.filled`; SELL net USDC = `filled − protocolFee`.
+    function previewProtocolFee(
+        uint256 marketId,
+        Side takerSide,
+        uint256 limitPrice,
+        uint256 amountIn,
+        uint256 maxFills,
+        address taker
+    ) external view returns (uint256 protocolFee);
+
     function getBestPrices(uint256 marketId)
         external
         view
