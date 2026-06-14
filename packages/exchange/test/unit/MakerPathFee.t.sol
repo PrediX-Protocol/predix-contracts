@@ -14,6 +14,7 @@ import {MockBuilderRegistry} from "../mocks/MockBuilderRegistry.sol";
 abstract contract MakerFeeBase is ExchangeTestBase {
     MockBuilderRegistry internal registry;
     address internal maker = makeAddr("makerFee");
+    address internal mk2 = makeAddr("makerFee2");
     address internal taker = makeAddr("takerFee2");
     address internal mRecipient = makeAddr("mRecipient");
     address internal treasury = makeAddr("protoTreasury2");
@@ -164,6 +165,51 @@ contract MakerVsMakerCompFeeTest is MakerFeeBase {
         exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, bytes32(0));
         assertEq(mBefore - _usdcBalance(maker), 50e6, "only notional");
         assertEq(_usdcBalance(bob) - bobBefore, 50e6, "maker gross");
+        assertEq(exchange.accruedProtocolFee(), 0);
+    }
+}
+
+contract MakerVsMakerMintMergeFeeTest is MakerFeeBase {
+    // 3c MINT (both BUY): placer BUY_YES vs resting BUY_NO. Placer pays F at p=takerPrice from its reserve +
+    // its builder fee from makerFeeLocked; resting maker (no builder) gets tokens. _executeMintFill unchanged.
+    function test_mint_placerBuy_makerBuy_conservation() public {
+        _placeBuyNo(mk2, 500_000, 1e8); // resting BUY_NO before protocol on ⇒ no reserve; no builder
+        registry.set(MCODE, 0, 50, mRecipient);
+        _enableProtocol(700, 0);
+        _giveUsdc(maker, 1000e6);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, MCODE); // MINT cross
+        assertEq(mBefore - _usdcBalance(maker), 52e6, "placer spent notional(50)+F(1.75)+builder(0.25)");
+        assertEq(exchange.accruedProtocolFee(), 1_750_000, "T = F at p=takerPrice (rebate 0)");
+        assertEq(exchange.accruedBuilderFee(MCODE), 250_000, "placer builder fee (additive)");
+        assertEq(_yesBalance(maker), 1e8, "placer got YES");
+        assertEq(_noBalance(mk2), 1e8, "maker got NO");
+    }
+
+    // 3d MERGE (both SELL): placer SELL_YES vs resting SELL_NO. Placer pays F (skimmed from taker leg, p=
+    // 1e6-makerPrice); resting maker gets R added to its leg. Both no builder ⇒ isolate protocol fee + rebate.
+    function test_merge_placerSell_makerSell_rebate() public {
+        _enableProtocol(700, 2000); // coef 700, rebate 20%
+        _placeSellNo(mk2, 500_000, 1e8); // resting SELL_NO maker, no builder (SELL prefunds nothing)
+        uint256 mk2Before = _usdcBalance(mk2);
+        _giveYesNo(maker, 1e8);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.SELL_YES, 500_000, 1e8, bytes32(0)); // MERGE cross
+        // takerPayout 50, makerPayout 50; F=1.75 skimmed from taker leg; R=0.35 added to maker leg; T=1.40.
+        assertEq(_usdcBalance(maker) - mBefore, 50e6 - 1_750_000, "placer SELL_YES net of F");
+        assertEq(_usdcBalance(mk2) - mk2Before, 50e6 + 350_000, "maker SELL_NO payout + R");
+        assertEq(exchange.accruedProtocolFee(), 1_400_000, "T = F - R");
+    }
+
+    function test_mint_P10_feeOff() public {
+        _placeBuyNo(mk2, 500_000, 1e8);
+        _giveUsdc(maker, 1000e6);
+        uint256 mBefore = _usdcBalance(maker);
+        vm.prank(maker);
+        exchange.placeOrder(MARKET_ID, IPrediXExchange.Side.BUY_YES, 500_000, 1e8, bytes32(0));
+        assertEq(mBefore - _usdcBalance(maker), 50e6, "MINT only notional (P10)");
         assertEq(exchange.accruedProtocolFee(), 0);
     }
 }
