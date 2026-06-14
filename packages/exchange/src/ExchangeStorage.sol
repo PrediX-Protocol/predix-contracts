@@ -162,6 +162,9 @@ abstract contract ExchangeStorage {
                 emit IPrediXExchange.FeeCollected(marketId, uint256(residual));
             }
         }
+        // Refund SITE-1: return any unused prefunded fee budgets to the order owner. Dust force-clean flows
+        // through here too (`_forceCleanDustMaker` → `_onMakerFullyFilled`), so do NOT refund again there.
+        _refundOrderFeeBudgets(orderId, owner_);
         _decrementOrderCount(marketId, owner_);
         _removeFromQueue(marketId, side, priceIdx, orderId);
     }
@@ -315,5 +318,32 @@ abstract contract ExchangeStorage {
         uint256 budget = LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId];
         if (spent > budget) spent = budget;
         LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId] = budget - spent;
+    }
+
+    /// @notice Record a freshly placed order's fee context: snapshot the maker builder bps (consumed when
+    ///         the order later RESTS and is filled) and lock the prefunded BUY budgets the caller pulled.
+    ///         The caller (`MakerPath._placeOrder`) computes + pulls the USDC; this only writes storage.
+    function _prefundOrderFees(bytes32 orderId, uint16 makerBps, uint256 makerFeeLockedAmt, uint256 protocolBudget)
+        internal
+    {
+        if (makerBps > 0) LibBuilderFeeStorage.layout().orderMakerBps[orderId] = makerBps;
+        if (makerFeeLockedAmt > 0) LibBuilderFeeStorage.layout().makerFeeLocked[orderId] = makerFeeLockedAmt;
+        if (protocolBudget > 0) LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId] = protocolBudget;
+    }
+
+    /// @notice Refund any unused prefunded fee budgets (builder `makerFeeLocked` + placer protocol reserve)
+    ///         for `orderId` to `to`. Zeroes BEFORE transfer (CEI). Shared by the 3 refund sites (cancel /
+    ///         fully-filled / placer-fully-consumed) so a placer/maker never loses its own unused prefund.
+    function _refundOrderFeeBudgets(bytes32 orderId, address to) internal {
+        uint256 feeResidual = LibBuilderFeeStorage.layout().makerFeeLocked[orderId];
+        if (feeResidual > 0) {
+            LibBuilderFeeStorage.layout().makerFeeLocked[orderId] = 0;
+            IERC20(usdc).safeTransfer(to, feeResidual);
+        }
+        uint256 protoResidual = LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId];
+        if (protoResidual > 0) {
+            LibProtocolFeeStorage.layout().placerProtocolFeeBudget[orderId] = 0;
+            IERC20(usdc).safeTransfer(to, protoResidual);
+        }
     }
 }

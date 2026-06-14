@@ -79,6 +79,36 @@ abstract contract MakerPath is ExchangeStorage {
             builder: builder
         });
 
+        // 3b. Prefund fee budgets BEFORE matching so the placer's true-aggression crosses can draw the
+        //     placer protocol reserve. orderMakerBps is snapshotted for both sides (consumed when this
+        //     order later RESTS and is filled). P10: skip entirely when both rates are 0.
+        {
+            (, uint16 makerBps) = _builderBps(builder);
+            uint16 coefBps = mkt.protocolFeeRateBps;
+            if (makerBps > 0 || coefBps > 0) {
+                bool isBuy = MatchMath.isBuy(side);
+                uint256 makerFeeLockedAmt;
+                uint256 protocolBudget;
+                // Maker builder fee is prefunded only for BUY makers (SELL fee is subtractive at fill).
+                if (makerBps > 0 && isBuy) {
+                    makerFeeLockedAmt = _feeOn(depositRequired, makerBps);
+                    if (makerFeeLockedAmt > 0) {
+                        IERC20(usdc).safeTransferFrom(msg.sender, address(this), makerFeeLockedAmt);
+                    }
+                }
+                // Placer protocol reserve (BUY only) sized at the fee-maximizing crossable price (§13.1):
+                // the curve peaks at 0.5, so reserve at min(limitPrice, 0.5) to cover any crossed maker.
+                if (coefBps > 0 && isBuy) {
+                    uint256 pReserve = price < 500_000 ? price : 500_000;
+                    protocolBudget = _curveFee(amount, coefBps, pReserve);
+                    if (protocolBudget > 0) {
+                        IERC20(usdc).safeTransferFrom(msg.sender, address(this), protocolBudget);
+                    }
+                }
+                _prefundOrderFees(orderId, makerBps, makerFeeLockedAmt, protocolBudget);
+            }
+        }
+
         // 4. Try matching against resting makers
         uint256 remaining = amount;
         uint256 fillCount;
@@ -127,6 +157,9 @@ abstract contract MakerPath is ExchangeStorage {
                 IERC20(usdc).safeTransfer(feeRecipient, uint256(residual));
                 emit IPrediXExchange.FeeCollected(marketId, uint256(residual));
             }
+            // Refund SITE-3: the placer's own unused fee prefund returns to the OWNER (msg.sender), NOT
+            // feeRecipient — only the deposit-rounding residual above is protocol dust.
+            _refundOrderFeeBudgets(orderId, msg.sender);
         }
 
         emit IPrediXExchange.OrderPlaced(orderId, marketId, msg.sender, side, price, amount, builder);
@@ -180,6 +213,9 @@ abstract contract MakerPath is ExchangeStorage {
         } else {
             IERC20(mkt.noToken).safeTransfer(orderOwner, uint256(lockedRefund));
         }
+
+        // Refund SITE-2: return any unused prefunded fee budgets to the order owner.
+        _refundOrderFeeBudgets(orderId, orderOwner);
     }
 
     // ============ Phase A — COMPLEMENTARY matching ============
@@ -304,8 +340,14 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.COMPLEMENTARY, fillAmt, makerPrice,
-                maker.builder, orders[ctx.takerId].builder
+                makerOrderId,
+                ctx.takerId,
+                ctx.marketId,
+                IPrediXExchange.MatchType.COMPLEMENTARY,
+                fillAmt,
+                makerPrice,
+                maker.builder,
+                orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -441,8 +483,14 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MINT, fillAmt, makerPrice,
-                maker.builder, orders[ctx.takerId].builder
+                makerOrderId,
+                ctx.takerId,
+                ctx.marketId,
+                IPrediXExchange.MatchType.MINT,
+                fillAmt,
+                makerPrice,
+                maker.builder,
+                orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
@@ -583,8 +631,14 @@ abstract contract MakerPath is ExchangeStorage {
             newFillCount++;
 
             emit IPrediXExchange.OrderMatched(
-                makerOrderId, ctx.takerId, ctx.marketId, IPrediXExchange.MatchType.MERGE, fillAmt, makerPrice,
-                maker.builder, orders[ctx.takerId].builder
+                makerOrderId,
+                ctx.takerId,
+                ctx.marketId,
+                IPrediXExchange.MatchType.MERGE,
+                fillAmt,
+                makerPrice,
+                maker.builder,
+                orders[ctx.takerId].builder
             );
 
             if (makerFullyFilled) {
