@@ -172,6 +172,48 @@ contract TakerFeeSellTest is TakerFeeBase {
     }
 }
 
+contract TakerFeeMintMergeTest is TakerFeeBase {
+    // MINT: taker BUY_YES crosses a resting BUY_NO maker synthetically. p = 1e6 - makerPrice.
+    // maker BUY_NO @0.30 ⇒ taker pays inDelta = 100sh*0.70 = 70 USDC; F = curve(1e8,700,700000)=1.47.
+    function test_takerBuy_MINT_protocolFee_perFill() public {
+        _placeBuyNo(bob, 300_000, 1e8);
+        _enableProtocol(700, 0);
+        (, uint256 cost) = _fillBuyYes(900_000, 100e6, bytes32(0));
+        assertEq(exchange.accruedProtocolFee(), 1_470_000, "MINT F = curve(1e8,700,700000)");
+        assertEq(cost, 70e6 + 1_470_000, "cost = inDelta(0.70) + F");
+    }
+
+    // MINT rebate: maker (BUY) gets R as a NEW caller-side USDC transfer.
+    function test_takerBuy_MINT_rebate_callerSideTransfer() public {
+        _placeBuyNo(bob, 300_000, 1e8);
+        _enableProtocol(700, 2000); // R = 1.47*0.2 = 0.294
+        uint256 makerBefore = _usdcBalance(bob);
+        _fillBuyYes(900_000, 100e6, bytes32(0));
+        assertEq(_usdcBalance(bob) - makerBefore, 294_000, "maker (BUY) receives R via new transfer");
+        assertEq(exchange.accruedProtocolFee(), 1_470_000 - 294_000, "T = F - R");
+    }
+
+    // REGRESSION (review CRITICAL): SYN-MINT clamp must use the real inDelta basis (s - floor(s*makerPrice/1e6)),
+    // not floor(s*(1e6-makerPrice)/1e6). A budget-exact MINT BUY at a gap price must NOT revert (no overspend).
+    function test_takerBuy_MINT_marginalClamp_noRevert_gapPrice() public {
+        _placeBuyNo(bob, 170_000, 1e8); // 0.17 — produces a 1-wei flooring gap on fractional fills
+        _setTakerBuilder(11);
+        _enableProtocol(251, 0);
+        // tiny budget forces the clamp to a fractional-share marginal fill (where the 1-wei gap bites)
+        (, uint256 cost) = _fillBuyYes(900_000, 237, TCODE);
+        assertLe(cost, 237, "clamp never overspends amountIn (no panic 0x11 underflow)");
+    }
+
+    function testFuzz_takerBuy_MINT_clamp_neverOverspends(uint256 amountInRaw) public {
+        _placeBuyNo(bob, 170_000, 1e9);
+        _setTakerBuilder(11);
+        _enableProtocol(251, 0);
+        uint256 amountIn = bound(amountInRaw, 100, 50_000); // tiny budgets stress the marginal clamp
+        (, uint256 cost) = _fillBuyYes(900_000, amountIn, TCODE);
+        assertLe(cost, amountIn, "MINT clamp never overspends for any tiny budget");
+    }
+}
+
 contract TakerMakerRebateTest is TakerFeeBase {
     // taker BUY vs SELL maker; coef 700 rebate 2000 (20%). F=1.75, R=0.35, T=1.40. Maker (SELL) gets usdc + R.
     function test_comp_takerBuy_makerSell_rebate_R_inline() public {

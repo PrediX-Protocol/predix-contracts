@@ -534,18 +534,27 @@ abstract contract TakerPath is ExchangeStorage {
 
     // ======== Marginal BUY clamp (§13.1 / REVIEW_FIXES F3-1) ========
 
-    /// @notice Total USDC cost (notional + protocol fee + taker builder fee) of buying `s` shares at a
-    ///         fixed taker price `pEff`. Each leg floors independently, so the analytic `sMax` can drift
-    ///         1-2 wei over `remaining`; the caller floor-corrects against this exact total.
-    function _fillTotalCost(uint256 s, uint256 pEff, uint16 coefBps, uint16 takerBps) internal pure returns (uint256) {
-        uint256 notional = (s * pEff) / PRICE_PRECISION;
-        return notional + _curveFee(s, coefBps, pEff) + _feeOn(notional, takerBps);
+    /// @notice EXACT total USDC cost (notional + protocol fee + taker builder fee) of buying `s` shares
+    ///         against a maker at `makerPrice`. `inDelta` is read from `MatchMath.computeFillDeltas` —
+    ///         the SAME function the execute path charges — so the clamp basis is byte-identical to the
+    ///         executed cost for BOTH COMPLEMENTARY (`inDelta = floor(s*makerPrice/1e6)`) and SYNTHETIC
+    ///         MINT (`inDelta = s - floor(s*makerPrice/1e6)`, NOT `floor(s*(1e6-makerPrice)/1e6)` — those
+    ///         differ by up to 1 wei and a naive `pEff` basis under-charges → overspend revert). The
+    ///         curve `p` is the taker's traded-side price (COMP `makerPrice`; SYN `1e6-makerPrice`).
+    function _fillTotalCost(uint256 s, uint256 makerPrice, bool isSynthetic, uint16 coefBps, uint16 takerBps)
+        internal
+        pure
+        returns (uint256)
+    {
+        (uint256 inDelta,) = MatchMath.computeFillDeltas(makerPrice, s, true, isSynthetic);
+        uint256 pCurve = isSynthetic ? (PRICE_PRECISION - makerPrice) : makerPrice;
+        return inDelta + _curveFee(s, coefBps, pCurve) + _feeOn(inDelta, takerBps);
     }
 
     /// @notice Clamp a budget-bound BUY fill so notional + protocol + builder fee fits `remaining` (USDC).
-    /// @dev The cost is LINEAR in `s` at a fixed price, so the max affordable `s` is a closed-form
-    ///      division plus a ≤2-iteration floor-correction. Returns 0 when even one share over-spends
-    ///      (sub-tick marginal fill → caller stops the loop). `pEff` = COMP `price` / SYN `1e6-makerPrice`.
+    /// @dev The cost is monotone in `s`, so the max affordable `s` is a closed-form estimate (using the
+    ///      `pEff` linear approximation) plus a floor-correction down to the EXACT `_fillTotalCost`. Returns
+    ///      0 when even the marginal share over-spends (sub-tick → caller stops the loop).
     function _clampBuyFill(
         uint256 fillAmount,
         uint256 makerPrice,
@@ -553,16 +562,20 @@ abstract contract TakerPath is ExchangeStorage {
         TakerCtx memory ctx,
         uint256 remaining
     ) internal pure returns (uint256) {
-        uint256 pEff = source == FillSource.COMPLEMENTARY ? makerPrice : (PRICE_PRECISION - makerPrice);
-        // Fast path: the full fill already fits — no clamp.
-        if (_fillTotalCost(fillAmount, pEff, ctx.protocolCoefBps, ctx.takerBps) <= remaining) return fillAmount;
-        // total(s)*1e16 = s * pEff * (1e10 + takerBps*1e6 + coef*(1e6 - pEff))  ⇒  sMax = remaining*1e16 / denom
+        bool isSyn = source != FillSource.COMPLEMENTARY;
+        // Fast path: the full fill already fits (checked against the EXACT cost) — no clamp.
+        if (_fillTotalCost(fillAmount, makerPrice, isSyn, ctx.protocolCoefBps, ctx.takerBps) <= remaining) {
+            return fillAmount;
+        }
+        // Analytic estimate: total(s)*1e16 ≈ s * pEff * (1e10 + takerBps*1e6 + coef*(1e6 - pEff)).
+        // pEff is the linear price; the exact floor-correction below removes the ≤1-2 wei flooring drift.
+        uint256 pEff = isSyn ? (PRICE_PRECISION - makerPrice) : makerPrice;
         uint256 denom =
             pEff * (1e10 + uint256(ctx.takerBps) * 1e6 + uint256(ctx.protocolCoefBps) * (PRICE_PRECISION - pEff));
         uint256 s = denom == 0 ? fillAmount : (remaining * 1e16) / denom;
         if (s > fillAmount) s = fillAmount;
-        // Floor-correction: independent floors can leave total() 1-2 wei over `remaining`.
-        while (s > 0 && _fillTotalCost(s, pEff, ctx.protocolCoefBps, ctx.takerBps) > remaining) {
+        // Floor-correction against the EXACT cost (bounded: the estimate over-shoots by ≤1-2 wei of cost).
+        while (s > 0 && _fillTotalCost(s, makerPrice, isSyn, ctx.protocolCoefBps, ctx.takerBps) > remaining) {
             --s;
         }
         return s;
