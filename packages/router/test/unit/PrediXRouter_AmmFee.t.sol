@@ -254,6 +254,76 @@ contract PrediXRouter_AmmFee is RouterFixture {
         assertEq(usdc.balanceOf(address(router)), 0, "canary - over-reserve refunded");
     }
 
+    // ===== Task 5: buyNo combined fee + balance-delta p =====
+
+    // Proportional quoters: sell YES @0.5 (mintAmount sizing) + buy YES effective 0.5 (reserve estimate),
+    // so _computeBuyNoMintAmount + _reserveProtocolFee are deterministic. mintAmount = ammSpend*2 cushioned.
+    function _setBuyNoQuoters() internal {
+        quoter.setExactInResult(address(yes1) < address(usdc), 500_000); // sell: 0.5 USDC per 1e6 YES
+        quoter.setExactInResult(address(usdc) < address(yes1), 2e6); // buy: 2 YES per 1e6 USDC (effective 0.5)
+    }
+
+    function _mintFor(uint256 ammSpend) internal pure returns (uint256) {
+        return ((ammSpend * 2) * 9950) / 10_000; // size = ammSpend/0.5; × BUY_NO_PRECISION_CUSHION_BPS
+    }
+
+    function _queueYesSell(uint256 mintAmount) internal {
+        uint256 proceeds = mintAmount / 2; // spot 0.5
+        if (address(yes1) < address(usdc)) {
+            poolManager.queueSwapResult(-int128(uint128(mintAmount)), int128(uint128(proceeds)));
+        } else {
+            poolManager.queueSwapResult(int128(uint128(proceeds)), -int128(uint128(mintAmount)));
+        }
+    }
+
+    // builder 100bps, coef 0: builder fee on the full usdcRemaining; NO out is gross; balance-delta p; no strand.
+    function test_buyNo_ammLeg_builderFee_balanceDeltaP() public {
+        uint256 usdcIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        _setBuyNoQuoters();
+        uint256 mint = _mintFor(usdcIn - (usdcIn * 100) / 10_000); // ammSpend = 99 (no reserve at coef 0)
+        _queueYesSell(mint);
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(ammFilled, mint, "amm filled = mintAmount");
+        assertEq(noOut, ammFilled, "net NO = gross (fee paid in USDC)");
+        assertEq(exchange.accruedBuilder(BUILDER), 1e6, "builder fee on full usdcRemaining (100)");
+        assertEq(exchange.accruedProtocol(), 0, "coef 0 => no protocol fee");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary - no strand");
+    }
+
+    // coef 700, no builder: reserve at p=0.5 holds room; protocol fee = curve(mint, 700, balance-delta p=0.5).
+    function test_buyNo_ammLeg_protocolFee_balanceDeltaP() public {
+        uint256 usdcIn = 100e6;
+        diamond.setProtocolFeeRate(MARKET_ID, 700);
+        _setBuyNoQuoters();
+        uint256 reserve = router.exposed_curveFee(200e6, 700, 500_000); // yesEst 200 @0.5 = 3.5
+        uint256 mint = _mintFor(usdcIn - reserve);
+        _queueYesSell(mint);
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(ammFilled, mint, "amm filled");
+        assertEq(noOut, ammFilled, "net NO = gross");
+        assertEq(exchange.accruedProtocol(), router.exposed_curveFee(mint, 700, 500_000), "protocol fee (p=0.5)");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary - reserve surplus refunded");
+    }
+
+    function test_buyNo_noFees_byteIdentical() public {
+        uint256 usdcIn = 100e6;
+        _setBuyNoQuoters();
+        uint256 mint = _mintFor(usdcIn);
+        _queueYesSell(mint);
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(ammFilled, mint, "P10: full mint");
+        assertEq(noOut, ammFilled);
+        assertEq(exchange.accruedProtocol(), 0, "no protocol fee");
+        assertEq(exchange.accruedBuilder(bytes32(0)), 0, "no builder fee");
+    }
+
     // ===== Task 7: no-strand / no-double-charge guards (buyYes path) =====
 
     // No pool → AMM leg skipped → no AMM fee, CLOB-only, canary holds.
