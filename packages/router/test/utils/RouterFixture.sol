@@ -12,6 +12,7 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockDiamond} from "../mocks/MockDiamond.sol";
@@ -20,6 +21,8 @@ import {MockHook} from "../mocks/MockHook.sol";
 import {MockPoolManager} from "../mocks/MockPoolManager.sol";
 import {MockV4Quoter} from "../mocks/MockV4Quoter.sol";
 import {MockPermit2} from "../mocks/MockPermit2.sol";
+import {MockBuilderRegistry} from "../mocks/MockBuilderRegistry.sol";
+import {PrediXRouterHarness} from "./PrediXRouterHarness.sol";
 
 /// @dev Deploys the 8 mocks + a `PrediXRouter` wired against them. Children inherit via
 ///      `setUp()` and use `router` / `usdc` / `yes1` / `no1` / `MARKET_ID` + mocks directly.
@@ -41,8 +44,11 @@ abstract contract RouterFixture is Test {
     MockPoolManager internal poolManager;
     MockV4Quoter internal quoter;
     MockPermit2 internal permit2;
+    MockBuilderRegistry internal builderRegistry;
 
-    PrediXRouter internal router;
+    PrediXRouterHarness internal router;
+
+    bytes32 internal constant BUILDER = keccak256("acme");
 
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
@@ -58,8 +64,10 @@ abstract contract RouterFixture is Test {
         poolManager = new MockPoolManager();
         quoter = new MockV4Quoter();
         permit2 = new MockPermit2();
+        builderRegistry = new MockBuilderRegistry();
+        builderRegistry.setBuilder(BUILDER, 0, 0, address(0xB111D)); // default 0 bps; tests bump per-case
 
-        router = new PrediXRouter(
+        router = new PrediXRouterHarness(
             IPoolManager(address(poolManager)),
             address(diamond),
             address(usdc),
@@ -68,7 +76,8 @@ abstract contract RouterFixture is Test {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             LP_FEE_FLAG,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderRegistry))
         );
 
         diamond.setMarket(MARKET_ID, address(yes1), address(no1), block.timestamp + 30 days, false, false);

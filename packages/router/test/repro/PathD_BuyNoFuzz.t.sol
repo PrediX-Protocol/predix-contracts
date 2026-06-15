@@ -61,11 +61,7 @@ contract PathD_BuyNoFuzz is RouterFixture {
         uint256 flashProceeds;
     }
 
-    function _simulatePathD(uint256 usdcIn, uint256 spot, uint256 liq)
-        internal
-        pure
-        returns (PathDOutcome memory out)
-    {
+    function _simulatePathD(uint256 usdcIn, uint256 spot, uint256 liq) internal pure returns (PathDOutcome memory out) {
         // Phase 1 — `_clobBuyNoLimit` consumes 2 sell-dir quotes: spot probe at
         // $1 then effective at mintEstimate.
         uint256 effNo = 1e6 - spot;
@@ -141,11 +137,9 @@ contract PathD_BuyNoFuzz is RouterFixture {
     ///        - usdcIn is above MIN_TRADE_AMOUNT and within reasonable trade size
     ///        - spot avoids the unity edge (handled separately)
     ///        - liq spans both "deep" (≥10x usdcIn) and "thin" (≥1x) regimes
-    function testFuzz_PathD_BuyNo_AlgebraicallyFeasible(
-        uint256 usdcInRaw,
-        uint256 spotRaw,
-        uint256 liqFactorRaw
-    ) public {
+    function testFuzz_PathD_BuyNo_AlgebraicallyFeasible(uint256 usdcInRaw, uint256 spotRaw, uint256 liqFactorRaw)
+        public
+    {
         uint256 usdcIn = bound(usdcInRaw, 1_000, 100_000e6);
         uint256 spot = bound(spotRaw, 50_000, 950_000); // 5% to 95%
         uint256 liqFactor = bound(liqFactorRaw, 1, 100);
@@ -169,7 +163,7 @@ contract PathD_BuyNoFuzz is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 noOut,, uint256 ammFilled) =
-            router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, block.timestamp + 1 hours);
+            router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         // Trade succeeded — Path D iteration plus final safety quote closed
         // the budget invariant under this curve.
@@ -194,10 +188,7 @@ contract PathD_BuyNoFuzz is RouterFixture {
     ///      spot values — at high spot, size far exceeds `usdcIn`, so a
     ///      usdcIn-scaled `liq` would understate the pool depth needed to
     ///      hit the "deep" regime.
-    function testFuzz_PathD_BuyNo_DeepPool_HiddenCostBounded(
-        uint256 usdcInRaw,
-        uint256 spotRaw
-    ) public {
+    function testFuzz_PathD_BuyNo_DeepPool_HiddenCostBounded(uint256 usdcInRaw, uint256 spotRaw) public {
         uint256 usdcIn = bound(usdcInRaw, 1_000_000, 100_000e6);
         // Mid-band spot: extreme YES prices (>60%) compound the safety loop's
         // contraction toward the cushioned fixed point because the convergence
@@ -221,7 +212,7 @@ contract PathD_BuyNoFuzz is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, block.timestamp + 1 hours);
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         uint256 effNo = 1e6 - spot;
         uint256 ceiling = (usdcIn * 1e6) / effNo;

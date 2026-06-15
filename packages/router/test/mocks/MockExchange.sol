@@ -30,6 +30,11 @@ contract MockExchange {
 
     uint256 public lastLimitPrice;
     uint256 public lastMaxFills;
+    bytes32 public lastTakerBuilder;
+
+    // AMM-leg fee accrual ledgers (mirror Sub-plan 03 Exchange semantics) so tests assert forwarded amounts.
+    mapping(bytes32 => uint256) public accruedBuilder;
+    uint256 public accruedProtocol;
 
     /// @dev Opt-in cap-aware order book. When a book is set for (market, side),
     ///      preview/fill walk the price tranches respecting the taker `limitPrice`
@@ -46,9 +51,12 @@ contract MockExchange {
     mapping(uint256 => mapping(IPrediXExchangeView.Side => Tranche[])) internal _book;
     mapping(uint256 => mapping(IPrediXExchangeView.Side => bool)) internal _bookSet;
 
-    function setBook(uint256 marketId, IPrediXExchangeView.Side side, uint256[] calldata prices, uint256[] calldata shares)
-        external
-    {
+    function setBook(
+        uint256 marketId,
+        IPrediXExchangeView.Side side,
+        uint256[] calldata prices,
+        uint256[] calldata shares
+    ) external {
         require(prices.length == shares.length, "len");
         delete _book[marketId][side];
         for (uint256 i; i < prices.length; ++i) {
@@ -60,13 +68,11 @@ contract MockExchange {
     /// @dev Walk the book respecting cap + budget + maxFills. BUY taker spends
     ///      USDC (budget = amountIn USDC, output = shares); SELL taker spends
     ///      shares (budget = amountIn shares, output = USDC).
-    function _walkBook(
-        uint256 marketId,
-        IPrediXExchangeView.Side side,
-        uint256 cap,
-        uint256 amountIn,
-        uint256 maxFills
-    ) internal view returns (uint256 filled, uint256 cost) {
+    function _walkBook(uint256 marketId, IPrediXExchangeView.Side side, uint256 cap, uint256 amountIn, uint256 maxFills)
+        internal
+        view
+        returns (uint256 filled, uint256 cost)
+    {
         Tranche[] storage book = _book[marketId][side];
         bool takerIsBuy = side == IPrediXExchangeView.Side.BUY_YES || side == IPrediXExchangeView.Side.BUY_NO;
         uint256 fills;
@@ -125,12 +131,13 @@ contract MockExchange {
         address recipient,
         uint256 maxFills,
         uint256 deadline,
-        bytes32 /* takerBuilder */
+        bytes32 takerBuilder
     ) external returns (uint256 filled, uint256 cost) {
         if (revertOnFill) revert ExchangePaused();
         require(block.timestamp <= deadline, "MockExchange: deadline");
         lastLimitPrice = limitPrice;
         lastMaxFills = maxFills;
+        lastTakerBuilder = takerBuilder;
 
         if (_bookSet[marketId][takerSide]) {
             (filled, cost) = _walkBook(marketId, takerSide, limitPrice, amountIn, maxFills);
@@ -226,5 +233,20 @@ contract MockExchange {
             book[i].shares = shares - take;
             fills++;
         }
+    }
+
+    // ======== AMM-leg fee deposits (Sub-plan 03 surface; router forwards into these) ========
+
+    function depositBuilderFee(bytes32 code, uint256 amount) external {
+        if (code == bytes32(0)) return;
+        if (amount == 0) return;
+        IERC20(usdc).transferFrom(msg.sender, address(this), amount);
+        accruedBuilder[code] += amount;
+    }
+
+    function depositProtocolFee(uint256 amount) external {
+        if (amount == 0) return;
+        IERC20(usdc).transferFrom(msg.sender, address(this), amount);
+        accruedProtocol += amount;
     }
 }

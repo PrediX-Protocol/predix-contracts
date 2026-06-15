@@ -17,7 +17,7 @@ contract PrediXRouter_SellNo is RouterFixture {
         uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellNo(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+            router.sellNo(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(usdcOut, 50e6);
         assertEq(clobFilled, 50e6);
         assertEq(ammFilled, 0);
@@ -41,7 +41,7 @@ contract PrediXRouter_SellNo is RouterFixture {
 
         _approveNoAsAlice(noIn);
         vm.prank(alice);
-        (uint256 usdcOut,, uint256 ammFilled) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+        (uint256 usdcOut,, uint256 ammFilled) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(usdcOut, noIn - costQuote, "usdcOut = noIn - cost");
         assertEq(ammFilled, noIn - costQuote);
         assertEq(hook.commitCount(), 3);
@@ -61,7 +61,7 @@ contract PrediXRouter_SellNo is RouterFixture {
         _approveNoAsAlice(noIn);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
-        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_SellNo_ExactInUnfilled_NoLiquidity() public {
@@ -72,7 +72,7 @@ contract PrediXRouter_SellNo is RouterFixture {
         _approveNoAsAlice(100e6);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, 100e6));
-        router.sellNo(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.sellNo(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_HappyPath_SellNo_ClobMostly_AmmDustSkipped() public {
@@ -85,7 +85,7 @@ contract PrediXRouter_SellNo is RouterFixture {
         _approveNoAsAlice(noIn);
         vm.prank(alice);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+            router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 55e6, "clobFilled");
         assertEq(ammFilled, 0, "ammFilled dust skipped");
@@ -97,6 +97,6 @@ contract PrediXRouter_SellNo is RouterFixture {
     function test_Revert_ZeroAmount() public {
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.ZeroAmount.selector);
-        router.sellNo(MARKET_ID, 0, 0, alice, 5, _deadline());
+        router.sellNo(MARKET_ID, 0, 0, alice, 5, _deadline(), bytes32(0));
     }
 }

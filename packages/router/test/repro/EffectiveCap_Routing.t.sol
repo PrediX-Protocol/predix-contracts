@@ -63,7 +63,7 @@ contract EffectiveCap_Routing is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 0, "no CLOB");
         assertEq(ammFilled, 230e6, "AMM filled budget");
@@ -97,7 +97,7 @@ contract EffectiveCap_Routing is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 10, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 10, _deadline(), bytes32(0));
 
         // $40 → 100 YES @ $0.40; remaining $60 → 125 YES @ $0.48. Cap = $0.50
         // so both tranches eligible and the budget is fully consumed by CLOB
@@ -153,7 +153,7 @@ contract EffectiveCap_Routing is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 10, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 10, _deadline(), bytes32(0));
 
         // Converged cap $0.52 excludes the $0.54 order: CLOB delivers only the
         // 100 YES @ $0.40; the $60 tail goes to the AMM (115.38e6 YES) instead
@@ -178,7 +178,7 @@ contract EffectiveCap_Routing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         // No-impact: effective == spot == $0.40.
         assertEq(exchange.lastLimitPrice(), 400_000, "deep-pool cap collapses to spot");
@@ -210,7 +210,7 @@ contract EffectiveCap_Routing is RouterFixture {
         _approveYesAsAlice(yesIn);
         vm.prank(alice);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline());
+            router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 0, "no CLOB");
         assertEq(ammFilled, 55e6, "AMM filled");
@@ -245,7 +245,7 @@ contract EffectiveCap_Routing is RouterFixture {
 
         _approveNoAsAlice(noIn);
         vm.prank(alice);
-        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(exchange.lastLimitPrice(), 480_000, "min = 1 - effective yes-buy = 0.48");
     }

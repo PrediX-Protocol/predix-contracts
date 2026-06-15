@@ -7,6 +7,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 import {PrediXRouter} from "../../src/PrediXRouter.sol";
 import {IPrediXRouter} from "../../src/interfaces/IPrediXRouter.sol";
@@ -18,6 +19,7 @@ import {MockHook} from "../mocks/MockHook.sol";
 import {MockPoolManager} from "../mocks/MockPoolManager.sol";
 import {MockV4Quoter} from "../mocks/MockV4Quoter.sol";
 import {MockPermit2} from "../mocks/MockPermit2.sol";
+import {MockBuilderRegistry} from "../mocks/MockBuilderRegistry.sol";
 
 /// @title PrediXRouterConstructorTest
 /// @notice Constructor-input validation for the Router. Targets the deployer-typo
@@ -38,6 +40,7 @@ contract PrediXRouterConstructorTest is Test {
     MockPoolManager internal poolManager;
     MockV4Quoter internal quoter;
     MockPermit2 internal permit2;
+    MockBuilderRegistry internal builderRegistry;
 
     function setUp() public {
         usdc = new MockERC20("USD Coin", "USDC", 6);
@@ -47,6 +50,7 @@ contract PrediXRouterConstructorTest is Test {
         poolManager = new MockPoolManager();
         quoter = new MockV4Quoter();
         permit2 = new MockPermit2();
+        builderRegistry = new MockBuilderRegistry();
     }
 
     function _newRouter(address permit2Addr) internal returns (PrediXRouter) {
@@ -59,7 +63,8 @@ contract PrediXRouterConstructorTest is Test {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(permit2Addr),
             LP_FEE_FLAG,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderRegistry))
         );
     }
 
@@ -87,8 +92,7 @@ contract PrediXRouterConstructorTest is Test {
     function test_CanonicalPermit2_Constant() public {
         // Off-chain tooling and `verifyPostDeploy` rely on this exact value.
         assertEq(
-            PrediXRouter(_newRouter(address(permit2))).CANONICAL_PERMIT2(),
-            0x000000000022D473030F116dDEE9F6B43aC78BA3
+            PrediXRouter(_newRouter(address(permit2))).CANONICAL_PERMIT2(), 0x000000000022D473030F116dDEE9F6B43aC78BA3
         );
     }
 
@@ -103,7 +107,8 @@ contract PrediXRouterConstructorTest is Test {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             0, // canonical pool shape requires the v4 dynamic-fee flag
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderRegistry))
         );
     }
 
@@ -118,7 +123,8 @@ contract PrediXRouterConstructorTest is Test {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             LP_FEE_FLAG,
-            0
+            0,
+            IBuilderRegistry(address(builderRegistry))
         );
     }
 }

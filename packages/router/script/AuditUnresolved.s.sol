@@ -23,11 +23,17 @@ contract AuditUnresolved is Script {
             if (m.eventId != 0) continue;
             if (m.isResolved || m.refundModeActive) continue;
             if (m.endTime > now_) continue;
-            console2.log(string.concat(
-                "  id=", vm.toString(i),
-                " end=", vm.toString(m.endTime),
-                " (ago ", vm.toString(now_ - m.endTime), "s)"
-            ));
+            console2.log(
+                string.concat(
+                    "  id=",
+                    vm.toString(i),
+                    " end=",
+                    vm.toString(m.endTime),
+                    " (ago ",
+                    vm.toString(now_ - m.endTime),
+                    "s)"
+                )
+            );
             binaryCount++;
         }
         console2.log("  total binary to resolve:", binaryCount);
@@ -39,11 +45,17 @@ contract AuditUnresolved is Script {
             if (e.isResolved || e.refundModeActive) continue;
             string memory status = e.endTime > now_ ? "future" : "ENDED";
             string memory line = string.concat(
-                "  eid=", vm.toString(eid),
-                " end=", vm.toString(e.endTime),
-                " status=", status,
-                " children=", vm.toString(e.marketIds.length),
-                " name=\"", e.name, "\""
+                "  eid=",
+                vm.toString(eid),
+                " end=",
+                vm.toString(e.endTime),
+                " status=",
+                status,
+                " children=",
+                vm.toString(e.marketIds.length),
+                " name=\"",
+                e.name,
+                "\""
             );
             console2.log(line);
             if (e.endTime <= now_) eventCount++;

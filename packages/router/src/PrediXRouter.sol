@@ -24,6 +24,7 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IPausableFacet} from "@predix/shared/interfaces/IPausableFacet.sol";
 import {Modules} from "@predix/shared/constants/Modules.sol";
 import {TransientReentrancyGuard} from "@predix/shared/utils/TransientReentrancyGuard.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 import {IPrediXRouter} from "./interfaces/IPrediXRouter.sol";
 import {IPrediXExchangeView} from "./interfaces/IPrediXExchangeView.sol";
@@ -175,6 +176,10 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///         {lpFeeFlag} for the rationale and the open question.
     int24 public immutable tickSpacing;
 
+    /// @notice Builder Program registry (Sub-plan 01). The router reads only `feeOf(code).takerBps`
+    ///         for the AMM-leg builder fee. Immutable — a registry rotation is a router redeploy.
+    IBuilderRegistry public immutable builderRegistry;
+
     // =========================================================================
     // Constructor
     // =========================================================================
@@ -197,11 +202,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IV4Quoter _quoter,
         IAllowanceTransfer _permit2,
         uint24 _lpFeeFlag,
-        int24 _tickSpacing
+        int24 _tickSpacing,
+        IBuilderRegistry _builderRegistry
     ) {
         if (
             address(_poolManager) == address(0) || _diamond == address(0) || _usdc == address(0) || _hook == address(0)
                 || _exchange == address(0) || address(_quoter) == address(0) || address(_permit2) == address(0)
+                || address(_builderRegistry) == address(0)
         ) revert ZeroAddress();
 
         // Canonical pool shape: the hook's `registerMarketPool` rejects
@@ -229,6 +236,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         permit2 = _permit2;
         lpFeeFlag = _lpFeeFlag;
         tickSpacing = _tickSpacing;
+        builderRegistry = _builderRegistry;
 
         IERC20(_usdc).forceApprove(_diamond, type(uint256).max);
         IERC20(_usdc).forceApprove(_exchange, type(uint256).max);
@@ -266,11 +274,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 minYesOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external nonReentrant returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(usdcIn, recipient, deadline, marketId);
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), usdcIn);
-        return _buyYesExecute(marketId, usdcIn, minYesOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _buyYesExecute(marketId, usdcIn, minYesOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -280,11 +289,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 minUsdcOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external nonReentrant returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(yesIn, recipient, deadline, marketId);
         IERC20(yesToken).safeTransferFrom(msg.sender, address(this), yesIn);
-        return _sellYesExecute(marketId, yesIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _sellYesExecute(marketId, yesIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -294,11 +304,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 minNoOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external nonReentrant returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(usdcIn, recipient, deadline, marketId);
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), usdcIn);
-        return _buyNoExecute(marketId, usdcIn, minNoOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _buyNoExecute(marketId, usdcIn, minNoOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -308,11 +319,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 minUsdcOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external nonReentrant returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(noIn, recipient, deadline, marketId);
         IERC20(noToken).safeTransferFrom(msg.sender, address(this), noIn);
-        return _sellNoExecute(marketId, noIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _sellNoExecute(marketId, noIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -324,11 +336,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external nonReentrant returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(usdcIn, recipient, deadline, marketId);
         _consumePermit(permitSingle, signature, uint160(usdcIn), usdc);
-        return _buyYesExecute(marketId, usdcIn, minYesOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _buyYesExecute(marketId, usdcIn, minYesOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -340,11 +353,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external nonReentrant returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(yesIn, recipient, deadline, marketId);
         _consumePermit(permitSingle, signature, uint160(yesIn), yesToken);
-        return _sellYesExecute(marketId, yesIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _sellYesExecute(marketId, yesIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -356,11 +370,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external nonReentrant returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(usdcIn, recipient, deadline, marketId);
         _consumePermit(permitSingle, signature, uint160(usdcIn), usdc);
-        return _buyNoExecute(marketId, usdcIn, minNoOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _buyNoExecute(marketId, usdcIn, minNoOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -372,11 +387,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external nonReentrant returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         (address yesToken, address noToken) = _preEntry(noIn, recipient, deadline, marketId);
         _consumePermit(permitSingle, signature, uint160(noIn), noToken);
-        return _sellNoExecute(marketId, noIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken);
+        return _sellNoExecute(marketId, noIn, minUsdcOut, recipient, maxFills, deadline, yesToken, noToken, builder);
     }
 
     /// @inheritdoc IPrediXRouter
@@ -623,11 +639,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 limitPrice,
         uint256 amountIn,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, builder
             ) returns (
             uint256 _filled, uint256 _cost
         ) {
@@ -709,11 +726,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 limitPrice,
         uint256 amountIn,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) internal returns (uint256 filled, uint256 amountInRemaining) {
         try IPrediXExchangeView(exchange)
             .fillMarketOrder(
-                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, bytes32(0)
+                marketId, side, limitPrice, amountIn, address(this), address(this), maxFills, deadline, builder
             ) returns (
             uint256 _filled, uint256 _cost
         ) {
@@ -950,6 +968,20 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     /// @notice Saturating `1e6 - price` used to derive virtual NO prices from YES prices.
     function _complementPrice(uint256 yesPrice) internal pure returns (uint256) {
         return yesPrice >= PRICE_PRECISION ? 0 : PRICE_PRECISION - yesPrice;
+    }
+
+    /// @notice Flat-bps fee on a USDC amount — the AMM-leg builder fee. `bps` is the builder's taker
+    ///         rate read from the registry (a true rate, capped at 100 bps by the registry).
+    function _feeOn(uint256 amount, uint16 bps) internal pure returns (uint256) {
+        return (amount * bps) / BPS_DENOMINATOR;
+    }
+
+    /// @notice Protocol-fee price curve: `shares × coef × p × (1e6 − p) / 1e16` (`PROTOCOL_FEE_DESIGN.md`
+    ///         §1; divisor 1e16, NOT 1e12). `coefBps` is the COEFFICIENT, `p` the traded-side price in 1e6
+    ///         units. Returns 0 on coef==0 (launch) or p out of (0,1e6).
+    function _curveFee(uint256 shares, uint16 coefBps, uint256 p) internal pure returns (uint256) {
+        if (coefBps == 0 || p == 0 || p >= PRICE_PRECISION) return 0;
+        return (shares * uint256(coefBps) * p * (PRICE_PRECISION - p)) / 1e16;
     }
 
     /// @notice Fee-adjusted AMM effective price for buying YES at `usdcSize` USDC in.
@@ -1349,14 +1381,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         address yesToken,
-        address noToken
+        address noToken,
+        bytes32 builder
     ) internal returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
         uint256 clobLimit = _convergeCap(
             marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills
         );
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
-            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline);
+            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline, builder);
 
         bool hasAmm = _hasPool(yesToken);
         if (usdcRemaining > 0 && hasAmm) {
@@ -1370,7 +1403,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IERC20(yesToken).safeTransfer(recipient, yesOut);
         _finalizeAndAssertAllZero(yesToken, noToken);
 
-        emit Trade(marketId, msg.sender, recipient, TradeType.BUY_YES, usdcIn, yesOut, clobFilled, ammFilled);
+        emit Trade(marketId, msg.sender, recipient, TradeType.BUY_YES, usdcIn, yesOut, clobFilled, ammFilled, builder);
     }
 
     /// @notice Shared core flow for {sellYes} / {sellYesWithPermit}. `yesIn` must already be
@@ -1383,7 +1416,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         address yesToken,
-        address noToken
+        address noToken,
+        bytes32 builder
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(yesToken, exchange);
 
@@ -1392,7 +1426,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 yesRemaining;
         (, yesRemaining) =
-            _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, deadline);
+            _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, deadline, builder);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
         if (yesRemaining > 0 && _hasPool(yesToken)) {
@@ -1406,7 +1440,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IERC20(usdc).safeTransfer(recipient, usdcOut);
         _finalizeAndAssertAllZero(yesToken, noToken);
 
-        emit Trade(marketId, msg.sender, recipient, TradeType.SELL_YES, yesIn, usdcOut, clobFilled, ammFilled);
+        emit Trade(marketId, msg.sender, recipient, TradeType.SELL_YES, yesIn, usdcOut, clobFilled, ammFilled, builder);
     }
 
     /// @notice Shared core flow for {buyNo} / {buyNoWithPermit}.
@@ -1418,14 +1452,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         address yesToken,
-        address noToken
+        address noToken,
+        bytes32 builder
     ) internal returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
         uint256 clobLimit = _convergeCap(
             marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills
         );
         uint256 usdcRemaining;
         (clobFilled, usdcRemaining) =
-            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline);
+            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline, builder);
 
         if (usdcRemaining > 0 && _hasPool(yesToken)) {
             ammFilled = _executeAmmBuyNo(marketId, yesToken, noToken, usdcRemaining, msg.sender);
@@ -1438,7 +1473,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IERC20(noToken).safeTransfer(recipient, noOut);
         _finalizeAndAssertAllZero(yesToken, noToken);
 
-        emit Trade(marketId, msg.sender, recipient, TradeType.BUY_NO, usdcIn, noOut, clobFilled, ammFilled);
+        emit Trade(marketId, msg.sender, recipient, TradeType.BUY_NO, usdcIn, noOut, clobFilled, ammFilled, builder);
     }
 
     /// @notice Shared core flow for {sellNo} / {sellNoWithPermit}.
@@ -1450,7 +1485,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 maxFills,
         uint256 deadline,
         address yesToken,
-        address noToken
+        address noToken,
+        bytes32 builder
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(noToken, exchange);
 
@@ -1458,7 +1494,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _convergeCap(marketId, IPrediXExchangeView.Side.SELL_NO, CapKind.SELL_NO, yesToken, noIn, maxFills);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 noRemaining;
-        (, noRemaining) = _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline);
+        (, noRemaining) =
+            _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline, builder);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
         if (noRemaining > 0 && _hasPool(yesToken)) {
@@ -1472,7 +1509,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IERC20(usdc).safeTransfer(recipient, usdcOut);
         _finalizeAndAssertAllZero(yesToken, noToken);
 
-        emit Trade(marketId, msg.sender, recipient, TradeType.SELL_NO, noIn, usdcOut, clobFilled, ammFilled);
+        emit Trade(marketId, msg.sender, recipient, TradeType.SELL_NO, noIn, usdcOut, clobFilled, ammFilled, builder);
     }
 
     function _isClobGracefulError(bytes4 sel) private pure returns (bool) {

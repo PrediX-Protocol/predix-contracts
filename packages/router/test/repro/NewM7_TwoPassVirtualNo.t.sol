@@ -35,12 +35,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
     ///      Single-iter variant: iter 1 already satisfies budget so the loop
     ///      breaks after 1 iteration. Final safety quote confirms feasibility
     ///      at the cushioned size.
-    function _queueSellSequence(
-        uint256 clobSpot,
-        uint256 computeSpot,
-        uint256 iter1,
-        uint256 finalSafety
-    ) internal {
+    function _queueSellSequence(uint256 clobSpot, uint256 computeSpot, uint256 iter1, uint256 finalSafety) internal {
         bool sellIsZeroForOne = address(yes1) < address(usdc);
         // 5 entries: [clobCap spot probe, clobCap effective at mintEstimate,
         // Pass 1 spot, iter 1, final safety]. For these tests the clobCap
@@ -116,7 +111,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(noOut, expectedMint, "sized-down mint");
         assertEq(ammFilled, expectedMint, "ammFilled");
@@ -141,7 +136,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(noOut, expectedMint, "post-Path-D noOut");
         // Pin monotonic improvement across the historical cushion evolution.
@@ -163,7 +158,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         uint256 gasBefore = gasleft();
-        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         uint256 gasUsed = gasBefore - gasleft();
         assertLt(gasUsed, 1_100_000, "buyNo gas under 1.1M ceiling");
     }
@@ -178,7 +173,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, uint256(40e6)));
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_NewM7_PriceImpactExceedsBudget_SizeDown() public {
@@ -207,7 +202,7 @@ contract NewM7_TwoPassVirtualNo is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint, "sized-down mintAmount");
     }
 }

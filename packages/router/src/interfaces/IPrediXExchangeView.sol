@@ -48,4 +48,16 @@ interface IPrediXExchangeView {
         uint256 maxFills,
         address taker
     ) external view returns (uint256 filled, uint256 cost);
+
+    /// @notice Forward an AMM-leg builder fee into the Exchange's builder-fee accrual ledger.
+    /// @dev Pulls `amount` USDC from the router via `safeTransferFrom` (the router pre-approved the
+    ///      exchange for max USDC in its constructor) and credits `code`'s accrual. `code == 0` or
+    ///      `amount == 0` early-returns on the Exchange side (no pull). Implemented in Sub-plan 03.
+    function depositBuilderFee(bytes32 code, uint256 amount) external;
+
+    /// @notice Forward an AMM-leg protocol-fee treasury cut into the Exchange's protocol-fee accrual.
+    /// @dev Pulls `amount` USDC from the router and credits `accruedProtocolFee` (swept later by
+    ///      `sweepProtocolFee`). `amount == 0` early-returns. AMM has NO maker rebate — 100% is the
+    ///      treasury cut `T`. Implemented in Sub-plan 03.
+    function depositProtocolFee(uint256 amount) external;
 }

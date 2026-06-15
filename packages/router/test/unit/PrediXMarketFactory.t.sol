@@ -38,12 +38,7 @@ contract PrediXMarketFactoryTest is Test {
         diamond.setRole(CREATOR_ROLE, creator, true);
 
         factory = new PrediXMarketFactory(
-            IPoolManager(poolManager),
-            address(diamond),
-            usdc,
-            hook,
-            LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            60
+            IPoolManager(poolManager), address(diamond), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60
         );
     }
 
@@ -59,7 +54,9 @@ contract PrediXMarketFactoryTest is Test {
 
     function test_Revert_constructor_ZeroPoolManager() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(address(0)), address(diamond), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
+        new PrediXMarketFactory(
+            IPoolManager(address(0)), address(diamond), usdc, hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60
+        );
     }
 
     function test_Revert_constructor_ZeroDiamond() public {
@@ -69,12 +66,16 @@ contract PrediXMarketFactoryTest is Test {
 
     function test_Revert_constructor_ZeroUsdc() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), address(0), hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
+        new PrediXMarketFactory(
+            IPoolManager(poolManager), address(diamond), address(0), hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60
+        );
     }
 
     function test_Revert_constructor_ZeroHook() public {
         vm.expectRevert(PrediXMarketFactory.ZeroAddress.selector);
-        new PrediXMarketFactory(IPoolManager(poolManager), address(diamond), usdc, address(0), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
+        new PrediXMarketFactory(
+            IPoolManager(poolManager), address(diamond), usdc, address(0), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60
+        );
     }
 
     /// @dev Audit R-NEW-14: factory must enforce the same `lpFeeFlag != 0` /

@@ -126,6 +126,10 @@ interface IPrediXRouter {
     // =========================================================================
 
     /// @notice Emitted once per successful `buy*` / `sell*` call. `clobFilled + ammFilled == amountOut`.
+    /// @dev `builder` is the integrator code passed at entry. The CLOB-leg builder + protocol fees fire
+    ///      per-fill `BuilderFeeAccrued` / `ProtocolFeeCharged` in the Exchange; the AMM-leg carve has no
+    ///      such per-fill event, so `builder` here is the off-chain attribution anchor for the AMM leg
+    ///      (`PROTOCOL_FEE_DESIGN.md` §13.1).
     event Trade(
         uint256 indexed marketId,
         address indexed trader,
@@ -134,7 +138,8 @@ interface IPrediXRouter {
         uint256 amountIn,
         uint256 amountOut,
         uint256 clobFilled,
-        uint256 ammFilled
+        uint256 ammFilled,
+        bytes32 builder
     );
 
     /// @notice Emitted when the router returns unused input to `msg.sender` at the end of a trade.
@@ -161,7 +166,8 @@ interface IPrediXRouter {
         uint256 minYesOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Sell `yesIn` YES tokens for at least `minUsdcOut` USDC on `marketId`.
@@ -171,20 +177,22 @@ interface IPrediXRouter {
         uint256 minUsdcOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Spend `usdcIn` USDC to acquire at least `minNoOut` NO tokens on `marketId`.
     /// @dev Executed via the virtual-NO path: split USDC → YES+NO, swap YES→USDC on the v4
-    ///      pool, deliver NO to `recipient`, refund USDC. A 3% safety margin is applied to
-    ///      the Quoter-derived mint amount to absorb price impact between quote and execute.
+    ///      pool, deliver NO to `recipient`, refund USDC. A 0.5% precision cushion
+    ///      (`BUY_NO_PRECISION_CUSHION_BPS=9950`) absorbs price impact between quote and execute.
     function buyNo(
         uint256 marketId,
         uint256 usdcIn,
         uint256 minNoOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Sell `noIn` NO tokens for at least `minUsdcOut` USDC on `marketId`.
@@ -196,7 +204,8 @@ interface IPrediXRouter {
         uint256 minUsdcOut,
         address recipient,
         uint256 maxFills,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 builder
     ) external returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled);
 
     // =========================================================================
@@ -213,7 +222,8 @@ interface IPrediXRouter {
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Permit2 variant of {sellYes}. See {buyYesWithPermit} for pulling semantics.
@@ -225,7 +235,8 @@ interface IPrediXRouter {
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Permit2 variant of {buyNo}. See {buyYesWithPermit} for pulling semantics.
@@ -237,7 +248,8 @@ interface IPrediXRouter {
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled);
 
     /// @notice Permit2 variant of {sellNo}. See {buyYesWithPermit} for pulling semantics.
@@ -249,7 +261,8 @@ interface IPrediXRouter {
         uint256 maxFills,
         uint256 deadline,
         IAllowanceTransfer.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes32 builder
     ) external returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled);
 
     // =========================================================================

@@ -58,7 +58,7 @@ contract RouterInvariantHandler {
         vm.prank(trader);
         usdc.approve(address(router), usdcIn);
         vm.prank(trader);
-        try router.buyYes(marketId, usdcIn, 0, trader, 5, block.timestamp + 1 hours) returns (
+        try router.buyYes(marketId, usdcIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0)) returns (
             uint256, uint256, uint256
         ) {
             totalUsdcIn += usdcIn;
@@ -76,7 +76,7 @@ contract RouterInvariantHandler {
         vm.prank(trader);
         yes1.approve(address(router), yesIn);
         vm.prank(trader);
-        try router.sellYes(marketId, yesIn, 0, trader, 5, block.timestamp + 1 hours) returns (
+        try router.sellYes(marketId, yesIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0)) returns (
             uint256, uint256, uint256
         ) {
             totalUsdcOut += usdcOut;

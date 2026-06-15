@@ -19,7 +19,7 @@ contract PrediXRouter_Fuzz is RouterFixture {
         vm.prank(alice);
         usdc.approve(address(router), usdcIn);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(usdc.balanceOf(address(router)), 0, "usdc dust");
         assertEq(yes1.balanceOf(address(router)), 0, "yes dust");
@@ -34,7 +34,7 @@ contract PrediXRouter_Fuzz is RouterFixture {
         vm.prank(alice);
         yes1.approve(address(router), yesIn);
         vm.prank(alice);
-        router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline());
+        router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(usdc.balanceOf(address(router)), 0, "usdc dust");
         assertEq(yes1.balanceOf(address(router)), 0, "yes dust");
@@ -48,7 +48,7 @@ contract PrediXRouter_Fuzz is RouterFixture {
         vm.prank(alice);
         usdc.approve(address(router), usdcIn);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(exchange.lastLimitPrice(), 1e6, "permissive cap");
     }
 }

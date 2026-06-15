@@ -60,7 +60,7 @@ contract Fairness_YesVsNo is RouterFixture {
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 200e6, usdcIn);
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 yesOut,,) = router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 yesOut,,) = router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         // CLOB delivered 200e6 YES for 100e6 USDC. Router applies NO cushion.
         assertEq(yesOut, 200e6, "BUY_YES applies no internal cushion");
     }
@@ -71,7 +71,7 @@ contract Fairness_YesVsNo is RouterFixture {
         exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.SELL_YES, 100e6, yesIn);
         _approveTokenAsAlice(address(yes1), yesIn);
         vm.prank(alice);
-        (uint256 usdcOut,,) = router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline());
+        (uint256 usdcOut,,) = router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(usdcOut, 100e6, "SELL_YES applies no internal cushion");
     }
 
@@ -83,7 +83,7 @@ contract Fairness_YesVsNo is RouterFixture {
         _queueFlash(expectedMint, expectedMint / 2);
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         uint256 theoreticalMax = 80_000_000; // = usdcIn / (1 - spot)
         uint256 hiddenCostBps = ((theoreticalMax - noOut) * 10_000) / theoreticalMax;
@@ -111,7 +111,7 @@ contract Fairness_YesVsNo is RouterFixture {
 
         _approveTokenAsAlice(address(no1), noIn);
         vm.prank(alice);
-        (uint256 usdcOut,,) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+        (uint256 usdcOut,,) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
 
         uint256 theoreticalUsdc = 50_000_000; // = noIn - actual cost
         // hidden cost = (theoreticalUsdc - usdcOut) / theoreticalUsdc
@@ -186,7 +186,7 @@ contract Fairness_YesVsNo is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     // ====================================================================
@@ -201,7 +201,7 @@ contract Fairness_YesVsNo is RouterFixture {
         _approveUsdcAsAlice(100e6);
         vm.prank(alice);
         uint256 gasBeforeYes = gasleft();
-        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
         uint256 gasYes = gasBeforeYes - gasleft();
 
         // BUY_NO virtual-NO path
@@ -211,7 +211,7 @@ contract Fairness_YesVsNo is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         uint256 gasBeforeNo = gasleft();
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
         uint256 gasNo = gasBeforeNo - gasleft();
 
         // BUY_NO can be up to 3x BUY_YES — inherent design cost.

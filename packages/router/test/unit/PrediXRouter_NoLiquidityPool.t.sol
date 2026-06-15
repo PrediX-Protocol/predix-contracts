@@ -20,7 +20,7 @@ contract PrediXRouter_NoLiquidityPool is RouterFixture {
         usdc.approve(address(router), usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 120e6, "CLOB fills its depth");
         assertEq(ammFilled, 0, "AMM not routed (no liquidity)");

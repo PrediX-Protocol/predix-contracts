@@ -67,7 +67,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint, "iter-1 convergence + safety pass");
     }
 
@@ -95,7 +95,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint, "iter-2 convergence + safety pass");
     }
 
@@ -144,7 +144,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint, "safety loop converges in linear pool");
     }
 
@@ -169,7 +169,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         // Theoretical max (no cushion) = 80e6
         // Actual          = 79.6e6
@@ -198,7 +198,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         uint256 preNewM7_3pct = (80_000_000 * 9700) / 10_000; // 77.6M
         uint256 newM7_1pct = (80_000_000 * 9900) / 10_000; // 79.2M
@@ -241,7 +241,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertGt(noOut, 0, "$240 trade succeeds post-Path-D");
         assertEq(noOut, expectedMint, "exact expected mint");
     }
@@ -259,7 +259,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, uint256(40e6)));
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     /// @dev Spot at 100% (YES = 1) → effectiveNoPrice = 0 → division by zero
@@ -274,7 +274,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, uint256(40e6)));
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     /// @dev Sweep the trade sizes that pre-fix reverted on Sepolia
@@ -310,7 +310,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertGt(noOut, 0, "$500 trade succeeds post-Path-D");
         assertEq(noOut, expectedMint, "exact expected mint at $500");
     }
@@ -342,7 +342,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertGt(noOut, 0, "$3000 trade succeeds post-Path-D");
         assertEq(noOut, expectedMint, "exact expected mint at $3000");
     }
@@ -375,7 +375,7 @@ contract PathD_BuyNoIterativeSizing is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, 995, "graceful tiny mint instead of revert");
     }
 }

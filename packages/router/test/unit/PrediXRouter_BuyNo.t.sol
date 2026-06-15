@@ -38,7 +38,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         _approveUsdcAsAlice(100e6);
         vm.prank(alice);
         (uint256 noOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyNo(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+            router.buyNo(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, 200e6);
         assertEq(clobFilled, 200e6);
         assertEq(ammFilled, 0);
@@ -64,7 +64,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint);
         assertEq(ammFilled, expectedMint);
         assertEq(no1.balanceOf(alice), 1_000_000e6 + expectedMint);
@@ -91,7 +91,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
-        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_VirtualPath_BuyNo_RespectsPerTradeCap() public {
@@ -102,7 +102,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.PerMarketCapExceeded.selector);
-        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_BuyNo_ExactInUnfilled_NoQuote() public {
@@ -112,7 +112,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, 40e6));
-        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_VirtualPath_BuyNo_FeeAsymmetry_Succeeds() public {
@@ -157,7 +157,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,, uint256 ammFilled) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(ammFilled, expectedMint, "ammFilled");
         assertEq(noOut, expectedMint, "noOut");
@@ -174,7 +174,7 @@ contract PrediXRouter_BuyNo is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 noOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 78e6, "clobFilled");
         assertEq(ammFilled, 0, "ammFilled dust skipped");

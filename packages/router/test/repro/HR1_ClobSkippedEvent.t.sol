@@ -5,14 +5,15 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {IPrediXExchangeView} from "@predix/router/interfaces/IPrediXExchangeView.sol";
 import {IPrediXRouter} from "@predix/router/interfaces/IPrediXRouter.sol";
-import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 import {RouterFixture} from "../utils/RouterFixture.sol";
+import {PrediXRouterHarness} from "../utils/PrediXRouterHarness.sol";
 
 /// @dev Minimal exchange stub that always reverts with the requested selector (or no
 ///      data). Kept local because the shared `MockExchange` only reverts with a string,
@@ -94,7 +95,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
     /// @dev Replace the fixture's canonical exchange with a router pointed at
     ///      `newExchange`. Needed because the router's `exchange` is immutable.
     function _rewireRouterTo(address newExchange) internal {
-        router = new PrediXRouter(
+        router = new PrediXRouterHarness(
             IPoolManager(address(poolManager)),
             address(diamond),
             address(usdc),
@@ -103,7 +104,8 @@ contract HR1_ClobSkippedEvent is RouterFixture {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            60
+            60,
+            IBuilderRegistry(address(builderRegistry))
         );
     }
 
@@ -122,7 +124,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
         emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, EX_PAUSED_SELECTOR);
 
         vm.prank(alice);
-        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_HR1_EmptyCLOB_NoEmit_FullAmmRoute() public {
@@ -138,7 +140,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
 
         vm.recordLogs();
         vm.prank(alice);
-        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
 
         bytes32 topic = keccak256("ClobSkipped(uint256,address,bytes4)");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -158,7 +160,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
 
         vm.expectRevert();
         vm.prank(alice);
-        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_HR1_SellPathAlsoEmits() public {
@@ -176,7 +178,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
         emit IPrediXRouter.ClobSkipped(MARKET_ID, alice, EX_PAUSED_SELECTOR);
 
         vm.prank(alice);
-        router.sellYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.sellYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_HR1_RecipientInEvent_IsEndUser_NotRouter() public {
@@ -192,7 +194,7 @@ contract HR1_ClobSkippedEvent is RouterFixture {
 
         vm.recordLogs();
         vm.prank(alice);
-        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 100e6, 0, alice, 5, _deadline(), bytes32(0));
 
         bytes32 topic = keccak256("ClobSkipped(uint256,address,bytes4)");
         Vm.Log[] memory logs = vm.getRecordedLogs();

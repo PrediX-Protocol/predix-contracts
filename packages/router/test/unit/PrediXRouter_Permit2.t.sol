@@ -30,7 +30,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
         IAllowanceTransfer.PermitSingle memory p =
             _permit(address(usdc), uint160(usdcIn), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
-        (uint256 yesOut,,) = router.buyYesWithPermit(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), p, "");
+        (uint256 yesOut,,) = router.buyYesWithPermit(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), p, "", bytes32(0));
         assertEq(yesOut, 200e6);
         assertEq(permit2.permitCount(), 1);
     }
@@ -44,7 +44,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
             _permit(address(usdc), uint160(100e6), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
         vm.expectRevert(bytes("MockPermit2: invalid signature"));
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 
     function test_Revert_Permit2_TokenMismatch() public {
@@ -56,7 +56,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
             _permit(address(yes1), uint160(100e6), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidPermitToken.selector);
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 
     function test_Revert_Permit2_AmountMismatch_Under() public {
@@ -69,7 +69,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
             _permit(address(usdc), uint160(50e6), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 
     function test_Revert_Permit2_AmountMismatch_Over() public {
@@ -82,7 +82,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
             _permit(address(usdc), uint160(200e6), uint48(block.timestamp + 1 hours));
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 
     function test_Revert_Permit2_PermitDeadlineExpired() public {
@@ -99,7 +99,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
         });
         vm.prank(alice);
         vm.expectRevert(bytes("MockPermit2: permit expired"));
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 
     function test_Permit2_SellYes_HappyPath() public {
@@ -110,7 +110,7 @@ contract PrediXRouter_Permit2 is RouterFixture {
             _permit(address(yes1), uint160(100e6), uint48(block.timestamp + 1 hours));
         uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        router.sellYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.sellYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
         assertEq(usdc.balanceOf(alice), aliceUsdcBefore + 60e6);
     }
 
@@ -124,16 +124,13 @@ contract PrediXRouter_Permit2 is RouterFixture {
 
         IAllowanceTransfer.PermitSingle memory p = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: address(usdc),
-                amount: uint160(100e6),
-                expiration: uint48(block.timestamp + 1 hours),
-                nonce: 0
+                token: address(usdc), amount: uint160(100e6), expiration: uint48(block.timestamp + 1 hours), nonce: 0
             }),
             spender: makeAddr("attacker"),
             sigDeadline: block.timestamp + 1 hours
         });
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidPermitSpender.selector);
-        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "");
+        router.buyYesWithPermit(MARKET_ID, 100e6, 0, alice, 5, _deadline(), p, "", bytes32(0));
     }
 }

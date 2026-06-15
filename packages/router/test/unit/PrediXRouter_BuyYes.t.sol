@@ -25,7 +25,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(yesOut, 200e6, "yesOut");
         assertEq(clobFilled, 200e6, "clobFilled");
@@ -53,7 +53,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 0, "clob 0");
         assertEq(ammFilled, 180e6, "amm 180");
@@ -77,7 +77,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(clobFilled, 120e6);
         assertEq(ammFilled, 72e6);
         assertEq(yesOut, 192e6);
@@ -100,7 +100,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
 
         assertEq(clobFilled, 199e6, "clobFilled");
         assertEq(ammFilled, 0, "ammFilled dust zero");
@@ -116,7 +116,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, bob, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, bob, 5, _deadline(), bytes32(0));
 
         assertEq(yes1.balanceOf(bob), 1_000_000e6 + 150e6, "bob got YES");
         assertEq(yes1.balanceOf(alice), 1_000_000e6, "alice unchanged");
@@ -143,7 +143,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         uint256 aliceBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(usdc.balanceOf(address(router)), 0);
         assertEq(usdc.balanceOf(alice), aliceBefore - usdcIn);
     }
@@ -156,14 +156,14 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.ZeroAmount.selector);
-        router.buyYes(MARKET_ID, 0, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 0, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_BelowMinTradeAmount() public {
         _approveUsdcAsAlice(500);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.ZeroAmount.selector);
-        router.buyYes(MARKET_ID, 500, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 500, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_DeadlineExpired() public {
@@ -171,28 +171,28 @@ contract PrediXRouter_BuyYes is RouterFixture {
         uint256 past = block.timestamp - 1;
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.DeadlineExpired.selector, past, block.timestamp));
-        router.buyYes(MARKET_ID, 1000, 0, alice, 5, past);
+        router.buyYes(MARKET_ID, 1000, 0, alice, 5, past, bytes32(0));
     }
 
     function test_Revert_InvalidRecipient_Self() public {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
-        router.buyYes(MARKET_ID, 1000, 0, address(router), 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, address(router), 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_InvalidRecipient_Zero() public {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
-        router.buyYes(MARKET_ID, 1000, 0, address(0), 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, address(0), 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_InvalidRecipient_Diamond() public {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
-        router.buyYes(MARKET_ID, 1000, 0, address(diamond), 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, address(diamond), 5, _deadline(), bytes32(0));
     }
 
     /// @notice F6 regression — yesToken as recipient is banned (tokens would be locked).
@@ -200,7 +200,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
-        router.buyYes(MARKET_ID, 1000, 0, address(yes1), 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, address(yes1), 5, _deadline(), bytes32(0));
     }
 
     /// @notice F6 regression — noToken as recipient is banned.
@@ -208,7 +208,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.InvalidRecipient.selector);
-        router.buyYes(MARKET_ID, 1000, 0, address(no1), 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, address(no1), 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_InsufficientOutput() public {
@@ -217,7 +217,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.InsufficientOutput.selector, 150e6, 200e6));
-        router.buyYes(MARKET_ID, usdcIn, 200e6, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 200e6, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_ExactInUnfilled() public {
@@ -228,14 +228,14 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, usdcIn));
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_MarketNotFound() public {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.MarketNotFound.selector);
-        router.buyYes(999, 1000, 0, alice, 5, _deadline());
+        router.buyYes(999, 1000, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_MarketResolved() public {
@@ -243,7 +243,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.MarketResolved.selector);
-        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_MarketExpired() public {
@@ -251,7 +251,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.MarketExpired.selector);
-        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_MarketInRefundMode() public {
@@ -259,7 +259,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.MarketInRefundMode.selector);
-        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     function test_Revert_MarketModulePaused() public {
@@ -267,7 +267,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(1000);
         vm.prank(alice);
         vm.expectRevert(IPrediXRouter.MarketModulePaused.selector);
-        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, 1000, 0, alice, 5, _deadline(), bytes32(0));
     }
 
     // ============================================================
@@ -284,7 +284,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         }
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         // Hook commit must have happened before any swap: MockHook records in the same tx,
         // so commitCount=1 and swapCount=1. Assert hook.lastCommitUser == real end user alice.
         assertEq(hook.commitCount(), 2);
@@ -307,7 +307,7 @@ contract PrediXRouter_BuyYes is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(clobFilled, 0);
         assertEq(ammFilled, 180e6);
         assertEq(yesOut, 180e6);

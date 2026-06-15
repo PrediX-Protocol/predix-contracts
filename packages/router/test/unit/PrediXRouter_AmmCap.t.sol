@@ -42,7 +42,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(clobFilled, 0, "CLOB rejected above cap");
         assertEq(ammFilled, 250e6, "AMM filled full budget");
         assertEq(yesOut, 250e6);
@@ -66,7 +66,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
         _approveYesAsAlice(yesIn);
         vm.prank(alice);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline());
+            router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(clobFilled, 0);
         assertEq(ammFilled, 60e6);
         assertEq(usdcOut, 60e6);
@@ -103,7 +103,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(exchange.lastLimitPrice(), 500_000, "cap = 1 - yesSellEffective = 0.50");
     }
 
@@ -125,7 +125,7 @@ contract PrediXRouter_AmmCap is RouterFixture {
 
         _approveNoAsAlice(noIn);
         vm.prank(alice);
-        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline());
+        router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(exchange.lastLimitPrice(), 500_000, "min = 1 - yesBuySpot = 0.50");
     }
 }

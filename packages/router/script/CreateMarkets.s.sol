@@ -26,12 +26,13 @@ contract CreateMarkets is Script {
         IERC20(usdc).approve(factory, type(uint256).max);
 
         // Market 1: BTS comeback — binary
-        uint256 btsMarketId = PrediXMarketFactory(factory).createMarketWithPool(
-            "Will BTS announce a full-group comeback before June 30, 2026?",
-            1778616000, // 2026-05-12 20:00 UTC
-            oracle,
-            budgetPerMarket
-        );
+        uint256 btsMarketId = PrediXMarketFactory(factory)
+            .createMarketWithPool(
+                "Will BTS announce a full-group comeback before June 30, 2026?",
+                1778616000, // 2026-05-12 20:00 UTC
+                oracle,
+                budgetPerMarket
+            );
         console2.log("BTS market created, marketId:", btsMarketId);
 
         // Market 2: Netflix top show — multi-outcome event
@@ -40,13 +41,14 @@ contract CreateMarkets is Script {
         candidates[1] = "Legends";
         candidates[2] = "Others";
 
-        (uint256 eventId, uint256[] memory childIds) = PrediXMarketFactory(factory).createEventWithPools(
-            "What will be the top global Netflix show this week?",
-            candidates,
-            1778702400, // 2026-05-13 20:00 UTC
-            oracle,
-            budgetPerMarket * 3
-        );
+        (uint256 eventId, uint256[] memory childIds) = PrediXMarketFactory(factory)
+            .createEventWithPools(
+                "What will be the top global Netflix show this week?",
+                candidates,
+                1778702400, // 2026-05-13 20:00 UTC
+                oracle,
+                budgetPerMarket * 3
+            );
         console2.log("Netflix event created, eventId:", eventId);
         for (uint256 i; i < childIds.length; ++i) {
             console2.log("  child marketId:", childIds[i]);

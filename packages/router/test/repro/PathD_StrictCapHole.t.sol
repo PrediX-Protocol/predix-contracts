@@ -76,7 +76,7 @@ contract PathD_StrictCapHole is RouterFixture {
 
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline());
+        (uint256 noOut,,) = router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
         assertEq(noOut, expectedMint, "linear-pool strict-cap loop converges + invariant holds");
     }
 }
