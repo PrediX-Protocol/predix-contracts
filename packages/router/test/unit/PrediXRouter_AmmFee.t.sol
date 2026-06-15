@@ -188,6 +188,51 @@ contract PrediXRouter_AmmFee is RouterFixture {
         assertEq(exchange.accruedProtocol(), 0, "coef 0 => no protocol fee");
     }
 
+    function _approveNoAsAlice(uint256 amount) internal {
+        no1.mint(alice, amount);
+        vm.prank(alice);
+        no1.approve(address(router), amount);
+    }
+
+    // ===== Task 6: sellNo combined fee (carve both from gross) =====
+
+    function _queueSellNo(uint256 noIn, uint256 costQuote) internal {
+        quoter.setExactOutResult((costQuote * 1e6) / noIn); // per-1e6-YES cost rate
+        if (address(usdc) < address(yes1)) {
+            poolManager.queueSwapResult(-int128(uint128(costQuote)), int128(uint128(noIn)));
+        } else {
+            poolManager.queueSwapResult(int128(uint128(noIn)), -int128(uint128(costQuote)));
+        }
+    }
+
+    function test_sellNo_ammLeg_combinedFee_carvedFromGross() public {
+        uint256 noIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        diamond.setProtocolFeeRate(MARKET_ID, 700);
+        _queueSellNo(noIn, 50e6); // ammGross = 100 - 50 = 50
+        _approveNoAsAlice(noIn);
+        vm.prank(alice);
+        (uint256 usdcOut,, uint256 ammFilled) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), BUILDER);
+        uint256 expProto = router.exposed_curveFee(100e6, 700, 500_000); // p = 50/100 = 0.5 → 1.75
+        assertEq(ammFilled, 50e6 - 5e5 - expProto, "net = gross - builder(0.5) - protocol");
+        assertEq(usdcOut, 50e6 - 5e5 - expProto, "net usdc");
+        assertEq(exchange.accruedBuilder(BUILDER), 5e5, "builder 0.5 forwarded");
+        assertEq(exchange.accruedProtocol(), expProto, "protocol fee forwarded");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary");
+    }
+
+    function test_sellNo_noFees_byteIdentical() public {
+        uint256 noIn = 100e6;
+        _queueSellNo(noIn, 50e6);
+        _approveNoAsAlice(noIn);
+        vm.prank(alice);
+        (uint256 usdcOut,, uint256 ammFilled) = router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(usdcOut, noIn - 50e6, "P10: gross unchanged");
+        assertEq(ammFilled, noIn - 50e6);
+        assertEq(exchange.accruedProtocol(), 0, "no protocol fee");
+        assertEq(exchange.accruedBuilder(bytes32(0)), 0, "no builder fee");
+    }
+
     // buyYes coef 700, no builder: reserve at p=0.5 (quoter), recompute on realized fill, forward, refund surplus.
     function test_buyYes_ammLeg_protocolFee_reserveThenRecompute() public {
         uint256 usdcIn = 100e6;

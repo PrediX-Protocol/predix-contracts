@@ -1024,6 +1024,38 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         }
     }
 
+    /// @dev buyNo AMM leg with builder + protocol fee. The full `usdcRemaining` stays in the router during the
+    ///      leg so the buyNo split-solvency gate reads enough USDC; fees are carved AFTER. `p` is a balance
+    ///      delta (USDC actually consumed by the leg) per §13, snapshotted tightly around `_executeAmmBuyNo`.
+    ///      F4-2: the protocol fee is clamped to the residual the router holds (the YES-out reserve is NOT a
+    ///      guaranteed upper bound under the balance-delta basis) so the trade never over-pulls / reverts.
+    function _ammBuyNoWithFees(
+        uint256 marketId,
+        address yesToken,
+        address noToken,
+        uint256 usdcRemaining,
+        bytes32 builder
+    ) internal returns (uint256 ammFilled) {
+        (uint16 takerBps,,) = builder == bytes32(0)
+            ? (uint16(0), uint16(0), address(0))
+            : builderRegistry.feeOf(builder);
+        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
+        uint256 builderFee = _feeOn(usdcRemaining, takerBps);
+        uint256 ammSpend =
+            usdcRemaining - builderFee - _reserveProtocolFee(yesToken, usdcRemaining - builderFee, coefBps);
+        uint256 balBefore = IERC20(usdc).balanceOf(address(this));
+        ammFilled = _executeAmmBuyNo(marketId, yesToken, noToken, ammSpend, msg.sender);
+        if (ammFilled > 0) {
+            uint256 protocolFee = _curveFee(
+                ammFilled, coefBps, ((balBefore - IERC20(usdc).balanceOf(address(this))) * PRICE_PRECISION) / ammFilled
+            );
+            if (builderFee > 0) IPrediXExchangeView(exchange).depositBuilderFee(builder, builderFee);
+            uint256 room = IERC20(usdc).balanceOf(address(this));
+            if (protocolFee > room) protocolFee = room;
+            if (protocolFee > 0) IPrediXExchangeView(exchange).depositProtocolFee(protocolFee);
+        }
+    }
+
     /// @notice Fee-adjusted AMM effective price for buying YES at `usdcSize` USDC in.
     /// @dev Quotes `quoteExactInputSingle(usdcSize)` and divides input by output to get the
     ///      blended USDC-per-YES the swap would pay across the full trade. Used to size the
@@ -1512,15 +1544,19 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address noToken,
         bytes32 builder
     ) internal returns (uint256 noOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _convergeCap(
-            marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills
-        );
         uint256 usdcRemaining;
-        (clobFilled, usdcRemaining) =
-            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_NO, clobLimit, usdcIn, maxFills, deadline, builder);
+        (clobFilled, usdcRemaining) = _tryClobBuy(
+            marketId,
+            IPrediXExchangeView.Side.BUY_NO,
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_NO, CapKind.BUY_NO, yesToken, usdcIn, maxFills),
+            usdcIn,
+            maxFills,
+            deadline,
+            builder
+        );
 
         if (usdcRemaining > 0 && _hasPool(yesToken)) {
-            ammFilled = _executeAmmBuyNo(marketId, yesToken, noToken, usdcRemaining, msg.sender);
+            ammFilled = _ammBuyNoWithFees(marketId, yesToken, noToken, usdcRemaining, builder);
         }
 
         noOut = clobFilled + ammFilled;
@@ -1547,16 +1583,32 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ) internal returns (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) {
         _ensureApproval(noToken, exchange);
 
-        uint256 clobLimit =
-            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_NO, CapKind.SELL_NO, yesToken, noIn, maxFills);
         uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
         uint256 noRemaining;
-        (, noRemaining) =
-            _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_NO, clobLimit, noIn, maxFills, deadline, builder);
+        (, noRemaining) = _tryClobSell(
+            marketId,
+            IPrediXExchangeView.Side.SELL_NO,
+            _convergeCap(marketId, IPrediXExchangeView.Side.SELL_NO, CapKind.SELL_NO, yesToken, noIn, maxFills),
+            noIn,
+            maxFills,
+            deadline,
+            builder
+        );
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
+        // AMM-leg fees carved from the post-swap gross (p = USDC-per-NO realized), gated ammGross>0.
+        (uint16 takerBps,,) =
+            builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
+        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
         if (noRemaining > 0 && _hasPool(yesToken)) {
-            ammFilled = _executeAmmSellNo(marketId, yesToken, noToken, noRemaining, msg.sender);
+            uint256 ammGross = _executeAmmSellNo(marketId, yesToken, noToken, noRemaining, msg.sender);
+            if (ammGross > 0) {
+                uint256 builderFee = _feeOn(ammGross, takerBps);
+                uint256 protocolFee = _curveFee(noRemaining, coefBps, (ammGross * PRICE_PRECISION) / noRemaining);
+                ammFilled = ammGross - builderFee - protocolFee;
+                if (builderFee > 0) IPrediXExchangeView(exchange).depositBuilderFee(builder, builderFee);
+                if (protocolFee > 0) IPrediXExchangeView(exchange).depositProtocolFee(protocolFee);
+            }
         }
 
         usdcOut = clobFilled + ammFilled;
