@@ -269,6 +269,12 @@ interface IPrediXRouter {
     // Quotes
     // =========================================================================
 
+    /// @dev FEE NOTE (applies to all `quote*` helpers): the returned `ammPortion` is GROSS of the AMM-leg
+    ///      builder + protocol fee — these helpers take no `builder` and do not net the AMM fee. When fees
+    ///      are active (market coef > 0 or a builder is passed at trade time) the delivered amount is LOWER
+    ///      than the quote; callers must subtract the AMM fee themselves (or use the exchange's
+    ///      `previewProtocolFee` for the CLOB leg). At launch (coef 0) gross == net. The CLOB portion already
+    ///      reflects in-exchange fees via the fill simulation.
     /// @notice Preview {buyYes} without executing. Non-view because `IV4Quoter.quoteExactInputSingle`
     ///         is implemented with a revert-and-decode simulation and is not a `view` function.
     /// @dev Returns `(0, 0, 0)` on an untradeable market instead of reverting, so frontend

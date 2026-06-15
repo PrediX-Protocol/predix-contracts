@@ -316,6 +316,13 @@ abstract contract TakerPath is ExchangeStorage {
             _accrueProtocol(protocolFee - rebate); // T = F - R
         }
 
+        // Design (intentional, aggressor-centric gate): the resting maker's builder fee + the per-fill rebate
+        // are gated on the AGGRESSOR's `feeActive` (taker has a builder OR market coef>0), NOT on the resting
+        // maker's own makerBps. A maker-with-builder filled by a no-fee taker on a coef-0 market is therefore
+        // not charged its builder fee — a bounded revenue leak for that builder, accepted to keep the P10 hot
+        // path free of a per-fill SLOAD of the maker's bps when no fee applies. Moot at launch (no maker-fee
+        // builders configured). The maker-vs-maker path uses the symmetric placer-centric gate.
+        //
         // Interactions: maker paid per-fill, taker output accumulated in deltas.
         if (ctx.takerIsBuy) {
             // maker is SELL → receives USDC. Maker builder fee is SUBTRACTIVE.
