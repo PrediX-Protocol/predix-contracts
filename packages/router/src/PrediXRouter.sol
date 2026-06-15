@@ -984,6 +984,46 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         return (shares * uint256(coefBps) * p * (PRICE_PRECISION - p)) / 1e16;
     }
 
+    /// @notice Conservative pre-swap protocol-fee reserve for a BUY AMM leg. Reserves at the fee-maximizing
+    ///         p=0.5 over a no-impact YES-out estimate. Because the curve peaks at 0.5 and the impacted
+    ///         `ammFilled` is ≤ the no-impact `yesEst`, this reserve ≥ the post-swap recomputed `_curveFee`
+    ///         whenever the leg fills (so no post-swap clamp is needed); over-reserve is refunded by the
+    ///         finalize canary. F4-2: clamped to `usdcForLeg` so an extreme-price estimate can never make the
+    ///         caller's `ammSpend` underflow (worst case reserve==budget → ammSpend 0 → leg skips, refunded).
+    ///         Returns 0 at launch coef 0.
+    function _reserveProtocolFee(address yesToken, uint256 usdcForLeg, uint16 coefBps) internal returns (uint256) {
+        if (coefBps == 0 || usdcForLeg == 0) return 0;
+        uint256 effective = _ammEffectivePriceForBuy(yesToken, uint128(usdcForLeg));
+        if (effective == 0) return 0;
+        uint256 r = _curveFee((usdcForLeg * PRICE_PRECISION) / effective, coefBps, PRICE_PRECISION / 2);
+        return r > usdcForLeg ? usdcForLeg : r;
+    }
+
+    /// @dev buyYes AMM leg with builder + protocol fee carve. Builder flat-bps on the USDC in; protocol fee
+    ///      reserved at p=0.5 then recomputed on the realized fill. F4-2 clamps guard the extreme-price case
+    ///      (reserve > budget / recompute > residual) so the trade never reverts/over-pulls. Own stack frame.
+    function _ammBuyYesWithFees(
+        uint256 marketId,
+        address yesToken,
+        address noToken,
+        uint256 usdcRemaining,
+        bytes32 builder
+    ) internal returns (uint256 ammFilled) {
+        (uint16 takerBps,,) = builder == bytes32(0)
+            ? (uint16(0), uint16(0), address(0))
+            : builderRegistry.feeOf(builder);
+        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
+        uint256 builderFee = _feeOn(usdcRemaining, takerBps);
+        uint256 ammSpend =
+            usdcRemaining - builderFee - _reserveProtocolFee(yesToken, usdcRemaining - builderFee, coefBps);
+        ammFilled = _executeAmmBuyYes(marketId, yesToken, noToken, ammSpend, msg.sender);
+        if (ammFilled > 0) {
+            uint256 protocolFee = _curveFee(ammFilled, coefBps, (ammSpend * PRICE_PRECISION) / ammFilled);
+            if (builderFee > 0) IPrediXExchangeView(exchange).depositBuilderFee(builder, builderFee);
+            if (protocolFee > 0) IPrediXExchangeView(exchange).depositProtocolFee(protocolFee);
+        }
+    }
+
     /// @notice Fee-adjusted AMM effective price for buying YES at `usdcSize` USDC in.
     /// @dev Quotes `quoteExactInputSingle(usdcSize)` and divides input by output to get the
     ///      blended USDC-per-YES the swap would pay across the full trade. Used to size the
@@ -1384,16 +1424,22 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         address noToken,
         bytes32 builder
     ) internal returns (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) {
-        uint256 clobLimit = _convergeCap(
-            marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills
-        );
         uint256 usdcRemaining;
-        (clobFilled, usdcRemaining) =
-            _tryClobBuy(marketId, IPrediXExchangeView.Side.BUY_YES, clobLimit, usdcIn, maxFills, deadline, builder);
+        (clobFilled, usdcRemaining) = _tryClobBuy(
+            marketId,
+            IPrediXExchangeView.Side.BUY_YES,
+            _convergeCap(marketId, IPrediXExchangeView.Side.BUY_YES, CapKind.BUY_YES, yesToken, usdcIn, maxFills),
+            usdcIn,
+            maxFills,
+            deadline,
+            builder
+        );
 
-        bool hasAmm = _hasPool(yesToken);
-        if (usdcRemaining > 0 && hasAmm) {
-            ammFilled = _executeAmmBuyYes(marketId, yesToken, noToken, usdcRemaining, msg.sender);
+        // AMM-leg fees: builder flat-bps on USDC in + protocol curve (reserve at p=0.5, recompute on the
+        // realized fill). Over-reserve is refunded by the finalize canary. Launch coef 0 ⇒ protocol fee 0
+        // (P10). High-LP-tier all-in ~9.5% at the 500bps tier is a parameterization concern, moot at launch.
+        if (usdcRemaining > 0 && _hasPool(yesToken)) {
+            ammFilled = _ammBuyYesWithFees(marketId, yesToken, noToken, usdcRemaining, builder);
         }
 
         yesOut = clobFilled + ammFilled;
@@ -1429,8 +1475,19 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, deadline, builder);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
+        // AMM-leg fees carved from the post-swap gross (SELL needs no reserve), gated ammGross>0.
+        (uint16 takerBps,,) =
+            builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
+        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
         if (yesRemaining > 0 && _hasPool(yesToken)) {
-            ammFilled = _executeAmmSellYes(marketId, yesToken, noToken, yesRemaining, msg.sender);
+            uint256 ammGross = _executeAmmSellYes(marketId, yesToken, noToken, yesRemaining, msg.sender);
+            if (ammGross > 0) {
+                uint256 builderFee = _feeOn(ammGross, takerBps);
+                uint256 protocolFee = _curveFee(yesRemaining, coefBps, (ammGross * PRICE_PRECISION) / yesRemaining);
+                ammFilled = ammGross - builderFee - protocolFee;
+                if (builderFee > 0) IPrediXExchangeView(exchange).depositBuilderFee(builder, builderFee);
+                if (protocolFee > 0) IPrediXExchangeView(exchange).depositProtocolFee(protocolFee);
+            }
         }
 
         usdcOut = clobFilled + ammFilled;

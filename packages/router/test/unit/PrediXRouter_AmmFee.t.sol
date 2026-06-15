@@ -99,4 +99,113 @@ contract PrediXRouter_AmmFee is RouterFixture {
         router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), BUILDER);
         assertEq(exchange.lastTakerBuilder(), BUILDER, "SELL CLOB leg got builder code");
     }
+
+    function _queueBuySwap(int128 usdcIn, int128 yesOut) internal {
+        if (address(usdc) < address(yes1)) {
+            poolManager.queueSwapResult(-usdcIn, yesOut);
+        } else {
+            poolManager.queueSwapResult(yesOut, -usdcIn);
+        }
+    }
+
+    function _queueSellSwap(int128 yesIn, int128 usdcOut) internal {
+        if (address(yes1) < address(usdc)) {
+            poolManager.queueSwapResult(-yesIn, usdcOut);
+        } else {
+            poolManager.queueSwapResult(usdcOut, -yesIn);
+        }
+    }
+
+    // ===== Task 3: AMM-leg builder fee (buyYes / sellYes), coef 0 =====
+
+    // buyYes builder 100bps: ammSpend = 100 - 1 = 99; fee 1 forwarded; NO out is gross (fee paid in USDC).
+    function test_buyYes_ammLeg_builderFee_forwardedAndNet() public {
+        uint256 usdcIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        _queueBuySwap(int128(99e6), int128(1782e5)); // 99 USDC → 178.2 YES
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(clobFilled, 0, "clob 0");
+        assertEq(ammFilled, 1782e5, "amm filled gross");
+        assertEq(yesOut, 1782e5, "yes delivered");
+        assertEq(exchange.accruedBuilder(BUILDER), 1e6, "1% of 100 USDC builder fee forwarded");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary");
+    }
+
+    // sellYes builder 100bps: carve 1% from ammGross 50 = 0.5; net 49.5.
+    function test_sellYes_ammLeg_builderFee_carvedFromGross() public {
+        uint256 yesIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        _queueSellSwap(int128(100e6), int128(50e6)); // 100 YES → 50 USDC gross
+        yes1.mint(alice, yesIn);
+        vm.prank(alice);
+        yes1.approve(address(router), yesIn);
+        vm.prank(alice);
+        (uint256 usdcOut,, uint256 ammFilled) = router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(ammFilled, 495e5, "net = gross 50 - 0.5 builder");
+        assertEq(usdcOut, 495e5, "net usdc out");
+        assertEq(exchange.accruedBuilder(BUILDER), 5e5, "0.5 USDC builder fee forwarded");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary");
+    }
+
+    function test_buyYes_ammLeg_noBuilder_noFee() public {
+        uint256 usdcIn = 100e6;
+        _queueBuySwap(int128(100e6), int128(180e6));
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(exchange.accruedBuilder(bytes32(0)), 0, "no fee for builder 0");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary");
+    }
+
+    // ===== Task 4: AMM-leg protocol fee (buyYes / sellYes) =====
+
+    // sellYes coef 700, no builder: carve protocol fee from gross. p = 50/100 = 0.5; F = curve(100,700,0.5) = 1.75.
+    function test_sellYes_ammLeg_protocolFee_carvedFromGross() public {
+        uint256 yesIn = 100e6;
+        diamond.setProtocolFeeRate(MARKET_ID, 700);
+        _queueSellSwap(int128(100e6), int128(50e6));
+        yes1.mint(alice, yesIn);
+        vm.prank(alice);
+        yes1.approve(address(router), yesIn);
+        vm.prank(alice);
+        (uint256 usdcOut,, uint256 ammFilled) = router.sellYes(MARKET_ID, yesIn, 0, alice, 5, _deadline(), bytes32(0));
+        uint256 expFee = router.exposed_curveFee(100e6, 700, 500_000);
+        assertEq(ammFilled, 50e6 - expFee, "net = gross - protocol fee");
+        assertEq(usdcOut, 50e6 - expFee, "net usdc out");
+        assertEq(exchange.accruedProtocol(), expFee, "protocol fee forwarded");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary");
+    }
+
+    function test_buyYes_ammLeg_zeroCoef_noProtocolFee() public {
+        uint256 usdcIn = 100e6;
+        _queueBuySwap(int128(100e6), int128(180e6));
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(exchange.accruedProtocol(), 0, "coef 0 => no protocol fee");
+    }
+
+    // buyYes coef 700, no builder: reserve at p=0.5 (quoter), recompute on realized fill, forward, refund surplus.
+    function test_buyYes_ammLeg_protocolFee_reserveThenRecompute() public {
+        uint256 usdcIn = 100e6;
+        diamond.setProtocolFeeRate(MARKET_ID, 700);
+        // quoter canned is PER-1e6-input (scaled): 2e6 ⇒ 2 YES per USDC ⇒ effective p=0.5. For 100 USDC the
+        // reserve estimate = 200 YES ⇒ reserve = curve(200,700,0.5) = 3.5.
+        quoter.setExactInResult(address(usdc) < address(yes1), 2e6);
+        // ammSpend = 100 - 0 - 3.5 = 96.5. Pin the realized swap to p=0.5 ⇒ 193 YES out.
+        _queueBuySwap(int128(965e5), int128(193e6));
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (, uint256 clobFilled, uint256 ammFilled) =
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+        assertEq(clobFilled, 0, "clob 0");
+        assertEq(ammFilled, 193e6, "gross YES (protocol fee is USDC-side)");
+        uint256 expFee = router.exposed_curveFee(193e6, 700, 500_000); // realized p=0.5
+        assertEq(exchange.accruedProtocol(), expFee, "recomputed protocol fee forwarded");
+        assertLe(expFee, router.exposed_curveFee(200e6, 700, 500_000), "recomputed <= reserve");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary - over-reserve refunded");
+    }
 }

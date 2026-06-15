@@ -20,6 +20,7 @@ contract MockDiamond {
         uint256 totalCollateral;
         uint256 perMarketCap;
         address creator;
+        uint16 protocolFeeRateBps;
     }
 
     address public immutable usdc;
@@ -108,6 +109,11 @@ contract MockDiamond {
         v.totalCollateral = m.totalCollateral;
         v.perMarketCap = m.perMarketCap;
         v.creator = m.creator;
+        v.protocolFeeRateBps = m.protocolFeeRateBps;
+    }
+
+    function setProtocolFeeRate(uint256 marketId, uint16 coefBps) external {
+        _markets[marketId].protocolFeeRateBps = coefBps;
     }
 
     /// @dev splitPosition pulls USDC and mints matching YES+NO via the mock outcome tokens.
