@@ -126,8 +126,12 @@ contract TakerFeeBuyTest is TakerFeeBase {
         uint256 amountIn = 51e6; // < 51.75 needed for the full 100 shares
         (uint256 filled, uint256 cost) = _fillBuyYes(500_000, amountIn, bytes32(0));
         assertLe(cost, amountIn, "never overspends amountIn");
-        assertGt(filled, 0, "clamped fill still settled a non-zero amount");
-        // tightness: one more share would have exceeded the budget (clamp filled the MAX affordable)
+        // F3-1 TIGHTNESS (executed, not just commented): cost(s) = s/2 + s*1.75% ⇒ s*0.5175. The MAX s with
+        // cost ≤ 51e6 is ≈ 98.55e6, so the clamp must land in (98e6, 99e6) — NOT clamp-to-0 and NOT overfill —
+        // and the budget must be all but exhausted (leftover < one share's marginal cost ≈ 0.5175 USDC).
+        assertGt(filled, 98e6, "clamp filled ~max affordable (not clamp-to-0)");
+        assertLt(filled, 99e6, "clamp did not overfill past the affordable max");
+        assertLt(amountIn - cost, 520_000, "leftover < one more share marginal cost: clamp is tight");
     }
 
     function test_takerBuy_P10_byteIdentical() public {

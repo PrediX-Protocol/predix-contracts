@@ -32,7 +32,9 @@ contract MockDiamond {
             refundModeActive: refundModeActive,
             eventId: 0,
             perMarketRedemptionFeeBps: 0,
-            redemptionFeeOverridden: false
+            redemptionFeeOverridden: false,
+            protocolFeeRateBps: 0,
+            protocolMakerRebateBps: 0
         });
     }
 

@@ -26,7 +26,9 @@ contract MockDiamondMarket {
             refundModeActive: false,
             eventId: 0,
             perMarketRedemptionFeeBps: 0,
-            redemptionFeeOverridden: false
+            redemptionFeeOverridden: false,
+            protocolFeeRateBps: 0,
+            protocolMakerRebateBps: 0
         });
     }
 
@@ -48,7 +50,9 @@ contract MockDiamondMarket {
             refundModeActive: false,
             eventId: 0,
             perMarketRedemptionFeeBps: 0,
-            redemptionFeeOverridden: false
+            redemptionFeeOverridden: false,
+            protocolFeeRateBps: 0,
+            protocolMakerRebateBps: 0
         });
     }
 
