@@ -18,6 +18,8 @@ import {IMarketFacet} from "@predix/shared/interfaces/IMarketFacet.sol";
 import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
+import {BuilderRegistry} from "@predix/exchange/BuilderRegistry.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
 import {PrediXHookProxyV2} from "@predix/hook/proxy/PrediXHookProxyV2.sol";
 import {IPrediXHook} from "@predix/hook/interfaces/IPrediXHook.sol";
@@ -89,6 +91,7 @@ contract LinkedCrossPackageE2ETest is EventFixture {
         );
         exchange = PrediXExchange(address(exchangeProxy));
 
+        BuilderRegistry builderReg = new BuilderRegistry(address(diamond));
         router = new PrediXRouter(
             IPoolManager(address(pm)),
             address(diamond),
@@ -98,7 +101,8 @@ contract LinkedCrossPackageE2ETest is EventFixture {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             FEE_FLAG,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderReg))
         );
 
         vm.startPrank(hookAdmin);
@@ -311,7 +315,7 @@ contract LinkedCrossPackageE2ETest is EventFixture {
         usdc.approve(address(router), 120e6);
         vm.prank(trader);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(ids[0], 120e6, 0, trader, 5, block.timestamp + 1 hours);
+            router.buyYes(ids[0], 120e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertEq(ammFilled, 0, "no AMM leg");
         assertEq(clobFilled, 200e6, "router CLOB leg filled");
@@ -359,7 +363,8 @@ contract LinkedCrossPackageE2ETest is EventFixture {
         vm.prank(trader);
         usdc.approve(address(router), usdcIn);
         vm.prank(trader);
-        (uint256 noOut,, uint256 ammFilled) = router.buyNo(ids[0], usdcIn, 0, trader, 5, block.timestamp + 1 hours);
+        (uint256 noOut,, uint256 ammFilled) =
+            router.buyNo(ids[0], usdcIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertEq(ammFilled, mintAmount, "virtual-NO minted via AMM leg");
         assertEq(noOut, mintAmount);

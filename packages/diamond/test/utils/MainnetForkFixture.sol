@@ -46,6 +46,8 @@ import {IPrediXExchange} from "@predix/exchange/IPrediXExchange.sol";
 // === PrediX router ===
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 import {IPrediXRouter} from "@predix/router/interfaces/IPrediXRouter.sol";
+import {BuilderRegistry} from "@predix/exchange/BuilderRegistry.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 // === Diamond fixture base ===
 import {DiamondFixture} from "./DiamondFixture.sol";
@@ -214,9 +216,12 @@ abstract contract MainnetForkFixture is DiamondFixture {
         string memory primaryRpc = _requiredEnvString("UNICHAIN_RPC_PRIMARY");
         uint256 pinBlock = _requiredEnvUint("UNICHAIN_MAINNET_PIN_BLOCK");
 
-        try vm.createSelectFork(primaryRpc, pinBlock) returns (uint256) {
-            // success
-        } catch {
+        try vm.createSelectFork(primaryRpc, pinBlock) returns (
+            uint256
+        ) {
+        // success
+        }
+        catch {
             string memory secondaryRpc = vm.envOr("UNICHAIN_RPC_SECONDARY", string(""));
             if (bytes(secondaryRpc).length == 0) {
                 revert(
@@ -256,10 +261,7 @@ abstract contract MainnetForkFixture is DiamondFixture {
         cuts[0] = _add(address(marketFacet), _marketSelectors());
 
         MarketInit.InitArgs memory args = MarketInit.InitArgs({
-            collateralToken: address(usdc),
-            feeRecipient: feeRecipient,
-            marketCreationFee: 0,
-            defaultPerMarketCap: 0
+            collateralToken: address(usdc), feeRecipient: feeRecipient, marketCreationFee: 0, defaultPerMarketCap: 0
         });
         bytes memory initData = abi.encodeCall(MarketInit.init, (args));
 
@@ -320,9 +322,8 @@ abstract contract MainnetForkFixture is DiamondFixture {
                 | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG
         );
 
-        bytes memory constructorArgs = abi.encode(
-            poolManager, address(hookImpl), hookProxyAdmin, hookAdmin, address(diamond), address(usdc)
-        );
+        bytes memory constructorArgs =
+            abi.encode(poolManager, address(hookImpl), hookProxyAdmin, hookAdmin, address(diamond), address(usdc));
 
         (address minedAddr, bytes32 salt) =
             HookMiner.find(address(this), flags, type(PrediXHookProxyV2).creationCode, constructorArgs);
@@ -339,6 +340,9 @@ abstract contract MainnetForkFixture is DiamondFixture {
     // =========================================================================
 
     function _deployRouter() private {
+        // Fee system (Sub-plan 01/04): the router needs a non-zero builder registry. builder=0 on every
+        // fork call, so a bare registry suffices for the fork E2E.
+        BuilderRegistry builderRegistry = new BuilderRegistry(address(diamond));
         router = new PrediXRouter(
             poolManager,
             address(diamond),
@@ -348,7 +352,8 @@ abstract contract MainnetForkFixture is DiamondFixture {
             quoter,
             permit2,
             DYNAMIC_FEE,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderRegistry))
         );
     }
 
@@ -422,12 +427,8 @@ abstract contract MainnetForkFixture is DiamondFixture {
         int24 minTick = (TickMath.MIN_TICK / TICK_SPACING) * TICK_SPACING;
         int24 maxTick = (TickMath.MAX_TICK / TICK_SPACING) * TICK_SPACING;
 
-        ModifyLiquidityParams memory params = ModifyLiquidityParams({
-            tickLower: minTick,
-            tickUpper: maxTick,
-            liquidityDelta: 50_000e6,
-            salt: bytes32(0)
-        });
+        ModifyLiquidityParams memory params =
+            ModifyLiquidityParams({tickLower: minTick, tickUpper: maxTick, liquidityDelta: 50_000e6, salt: bytes32(0)});
         liquidityRouter.modifyLiquidity(poolKey, params, "");
         vm.stopPrank();
     }
@@ -494,7 +495,7 @@ abstract contract MainnetForkFixture is DiamondFixture {
     // =========================================================================
 
     function _marketSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](29);
+        s = new bytes4[](35);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -524,6 +525,13 @@ abstract contract MainnetForkFixture is DiamondFixture {
         s[26] = IMarketFacet.effectiveRedemptionFeeBps.selector;
         s[27] = IMarketFacet.rescueSurplus.selector;
         s[28] = IMarketFacet.totalCollateralLocked.selector;
+        // Sub-plan 02 protocol-fee config (F5-2: fork cut must expose the new MarketFacet ABI).
+        s[29] = IMarketFacet.setDefaultProtocolFeeRateBps.selector;
+        s[30] = IMarketFacet.setPerMarketProtocolFeeRateBps.selector;
+        s[31] = IMarketFacet.clearPerMarketProtocolFee.selector;
+        s[32] = IMarketFacet.setProtocolMakerRebateBps.selector;
+        s[33] = IMarketFacet.effectiveProtocolFee.selector;
+        s[34] = IMarketFacet.getFeeConfig.selector;
     }
 
     function _eventSelectors() internal pure returns (bytes4[] memory s) {
@@ -544,17 +552,13 @@ abstract contract MainnetForkFixture is DiamondFixture {
 
     function _requiredEnvString(string memory key) private view returns (string memory) {
         string memory v = vm.envOr(key, string(""));
-        require(
-            bytes(v).length > 0, string.concat("MainnetForkFixture: required env var '", key, "' not set")
-        );
+        require(bytes(v).length > 0, string.concat("MainnetForkFixture: required env var '", key, "' not set"));
         return v;
     }
 
     function _requiredEnvUint(string memory key) private view returns (uint256) {
         uint256 v = vm.envOr(key, uint256(0));
-        require(
-            v != 0, string.concat("MainnetForkFixture: required env var '", key, "' not set or zero")
-        );
+        require(v != 0, string.concat("MainnetForkFixture: required env var '", key, "' not set or zero"));
         return v;
     }
 }

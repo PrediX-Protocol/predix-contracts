@@ -25,36 +25,30 @@ contract E2EPermit2Test is Script {
         // Build PermitSingle
         IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: usdc,
-                amount: uint160(10e6),
-                expiration: uint48(block.timestamp + 3600),
-                nonce: 0
+                token: usdc, amount: uint160(10e6), expiration: uint48(block.timestamp + 3600), nonce: 0
             }),
             spender: router,
             sigDeadline: block.timestamp + 3600
         });
 
         // Compute EIP-712 hash
-        bytes32 PERMIT_DETAILS_TYPEHASH = keccak256(
-            "PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
-        );
+        bytes32 PERMIT_DETAILS_TYPEHASH =
+            keccak256("PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)");
         bytes32 PERMIT_SINGLE_TYPEHASH = keccak256(
             "PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
         );
 
-        bytes32 detailsHash = keccak256(abi.encode(
-            PERMIT_DETAILS_TYPEHASH,
-            permitSingle.details.token,
-            permitSingle.details.amount,
-            permitSingle.details.expiration,
-            permitSingle.details.nonce
-        ));
-        bytes32 structHash = keccak256(abi.encode(
-            PERMIT_SINGLE_TYPEHASH,
-            detailsHash,
-            permitSingle.spender,
-            permitSingle.sigDeadline
-        ));
+        bytes32 detailsHash = keccak256(
+            abi.encode(
+                PERMIT_DETAILS_TYPEHASH,
+                permitSingle.details.token,
+                permitSingle.details.amount,
+                permitSingle.details.expiration,
+                permitSingle.details.nonce
+            )
+        );
+        bytes32 structHash =
+            keccak256(abi.encode(PERMIT_SINGLE_TYPEHASH, detailsHash, permitSingle.spender, permitSingle.sigDeadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSep, structHash));
 
         // Sign
@@ -74,16 +68,20 @@ contract E2EPermit2Test is Script {
         IMarketFacet.MarketView memory m = IMarketFacet(diamond).getMarket(marketId);
         uint256 yesBefore = IERC20(m.yesToken).balanceOf(deployer);
 
-        try IPrediXRouter(router).buyYesWithPermit(
-            marketId,
-            10e6,    // usdcIn
-            1,       // minYesOut
-            deployer,
-            10,      // maxFills
-            block.timestamp + 300,
-            permitSingle,
-            signature
-        ) returns (uint256 yesOut, uint256, uint256) {
+        try IPrediXRouter(router)
+            .buyYesWithPermit(
+                marketId,
+                10e6, // usdcIn
+                1, // minYesOut
+                deployer,
+                10, // maxFills
+                block.timestamp + 300,
+                permitSingle,
+                signature,
+                bytes32(0)
+            ) returns (
+            uint256 yesOut, uint256, uint256
+        ) {
             console2.log("buyYesWithPermit SUCCESS, yesOut:", yesOut);
         } catch (bytes memory reason) {
             // May revert due to AMM pool issues, but the permit was consumed

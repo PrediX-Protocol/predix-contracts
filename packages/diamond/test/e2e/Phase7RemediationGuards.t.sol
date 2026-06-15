@@ -96,7 +96,8 @@ contract Phase7RemediationGuards is Phase7ForkBase {
             maxFills: 0,
             deadline: block.timestamp + 1,
             permitSingle: permit,
-            signature: hex""
+            signature: hex"",
+            builder: bytes32(0)
         });
     }
 

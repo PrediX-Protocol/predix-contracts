@@ -33,9 +33,7 @@ contract AccessControlAttacker {
         pauseReverted = !ok3;
 
         // Try grantRole to self
-        (bool ok4,) = diamond.call(
-            abi.encodeWithSignature("grantRole(bytes32,address)", bytes32(0), address(this))
-        );
+        (bool ok4,) = diamond.call(abi.encodeWithSignature("grantRole(bytes32,address)", bytes32(0), address(this)));
         grantRoleReverted = !ok4;
     }
 }
@@ -125,6 +123,7 @@ contract E2EAttackVectors2 is Script {
         console2.log("  PASS:", label);
         passCount++;
     }
+
     function _fail(string memory label) internal {
         console2.log("  FAIL:", label);
         failCount++;
@@ -202,8 +201,8 @@ contract E2EAttackVectors2 is Script {
             console2.log("  impl.feeRecipient:", implFeeRecip);
 
             // ALL must be non-zero and distinct from each other (no collision)
-            bool allNonZero = proxyAdmin != address(0) && proxyImpl != address(0)
-                && implDiamond != address(0) && implUsdc != address(0) && implFeeRecip != address(0);
+            bool allNonZero = proxyAdmin != address(0) && proxyImpl != address(0) && implDiamond != address(0)
+                && implUsdc != address(0) && implFeeRecip != address(0);
             bool proxyImplCorrect = proxyImpl == EXCHANGE_IMPL;
             bool diamondCorrect = implDiamond == DIAMOND;
             bool usdcCorrect = implUsdc == USDC;
@@ -253,19 +252,16 @@ contract E2EAttackVectors2 is Script {
 
             // Sign
             bytes32 domainSep = IAllowanceTransfer(PERMIT2).DOMAIN_SEPARATOR();
-            bytes32 PERMIT_DETAILS_TYPEHASH = keccak256(
-                "PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
-            );
+            bytes32 PERMIT_DETAILS_TYPEHASH =
+                keccak256("PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)");
             bytes32 PERMIT_SINGLE_TYPEHASH = keccak256(
                 "PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
             );
-            bytes32 detailsHash = keccak256(abi.encode(
-                PERMIT_DETAILS_TYPEHASH,
-                USDC, uint160(10e6), uint48(block.timestamp + 3600), uint48(100)
-            ));
-            bytes32 structHash = keccak256(abi.encode(
-                PERMIT_SINGLE_TYPEHASH, detailsHash, ROUTER, block.timestamp + 3600
-            ));
+            bytes32 detailsHash = keccak256(
+                abi.encode(PERMIT_DETAILS_TYPEHASH, USDC, uint160(10e6), uint48(block.timestamp + 3600), uint48(100))
+            );
+            bytes32 structHash =
+                keccak256(abi.encode(PERMIT_SINGLE_TYPEHASH, detailsHash, ROUTER, block.timestamp + 3600));
             bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSep, structHash));
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
             bytes memory sig = abi.encodePacked(r, s, v);
@@ -274,9 +270,8 @@ contract E2EAttackVectors2 is Script {
 
             // First call
             bool firstOk;
-            try IPrediXRouter(ROUTER).buyYesWithPermit(
-                4, 10e6, 1, deployer, 10, block.timestamp + 300, permitSingle, sig
-            ) {
+            try IPrediXRouter(ROUTER)
+                .buyYesWithPermit(4, 10e6, 1, deployer, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)) {
                 firstOk = true;
             } catch {
                 firstOk = false;
@@ -284,9 +279,8 @@ contract E2EAttackVectors2 is Script {
 
             // Second call with SAME signature (replay)
             bool secondFailed;
-            try IPrediXRouter(ROUTER).buyYesWithPermit(
-                4, 10e6, 1, deployer, 10, block.timestamp + 300, permitSingle, sig
-            ) {
+            try IPrediXRouter(ROUTER)
+                .buyYesWithPermit(4, 10e6, 1, deployer, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)) {
                 secondFailed = false;
             } catch {
                 secondFailed = true;
@@ -360,19 +354,23 @@ contract E2EAttackVectors2 is Script {
 
             // Place 15 small SELL orders at same price
             for (uint256 i; i < 15; i++) {
-                IPrediXExchange(EXCHANGE).placeOrder(
-                    mid, IPrediXExchange.Side.SELL_YES, 500_000, 2e6,
-                        bytes32(0)
-                );
+                IPrediXExchange(EXCHANGE).placeOrder(mid, IPrediXExchange.Side.SELL_YES, 500_000, 2e6, bytes32(0));
             }
 
             // Fill with maxFills=15 - measure gas
             uint256 gasBefore = gasleft();
-            IPrediXExchange(EXCHANGE).fillMarketOrder(
-                mid, IPrediXExchange.Side.BUY_YES, 500_000, 15e6,
-                deployer, deployer, 15, block.timestamp + 300,
+            IPrediXExchange(EXCHANGE)
+                .fillMarketOrder(
+                    mid,
+                    IPrediXExchange.Side.BUY_YES,
+                    500_000,
+                    15e6,
+                    deployer,
+                    deployer,
+                    15,
+                    block.timestamp + 300,
                     bytes32(0)
-            );
+                );
             uint256 gasUsed = gasBefore - gasleft();
 
             console2.log("  Gas for 15-order fill:", gasUsed);

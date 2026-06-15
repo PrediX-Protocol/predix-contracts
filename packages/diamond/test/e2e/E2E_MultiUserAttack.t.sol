@@ -76,8 +76,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 60e6, bob, bob, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 60e6, bob, bob, 10, block.timestamp + 300, bytes32(0)
         );
         vm.stopPrank();
 
@@ -140,7 +139,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         IERC20(USDC).transfer(alice, IERC20(USDC).balanceOf(eve));
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketId, 1e6, 1, eve, 10, block.timestamp + 300);
+        router.buyYes(marketId, 1e6, 1, eve, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -165,7 +164,9 @@ contract E2E_MultiUserAttack is E2EForkBase {
 
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 10, block.timestamp + 300, bytes32(0));
+        exchange.fillMarketOrder(
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 10, block.timestamp + 300, bytes32(0)
+        );
         vm.stopPrank();
 
         uint256 collateralAfter = diamond.getMarket(marketId).totalCollateral;
@@ -222,8 +223,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 1, block.timestamp + 300,
-                bytes32(0)
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 50e6, bob, bob, 1, block.timestamp + 300, bytes32(0)
         );
         vm.stopPrank();
 
@@ -264,7 +264,9 @@ contract E2E_MultiUserAttack is E2EForkBase {
         vm.startPrank(eve);
         vm.expectRevert();
         // eve is msg.sender, taker=alice → E-02 revert
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100e6, alice, eve, 10, block.timestamp + 300, bytes32(0));
+        exchange.fillMarketOrder(
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 100e6, alice, eve, 10, block.timestamp + 300, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -306,7 +308,7 @@ contract E2E_MultiUserAttack is E2EForkBase {
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         // Try to send YES to diamond address
         vm.expectRevert();
-        router.buyYes(marketId, 50e6, 1, DIAMOND, 10, block.timestamp + 300);
+        router.buyYes(marketId, 50e6, 1, DIAMOND, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -333,15 +335,24 @@ contract E2E_MultiUserAttack is E2EForkBase {
         // Bob fills 99e6 of the 100e6 order
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
-        exchange.fillMarketOrder(marketId, IPrediXExchange.Side.BUY_YES, 500_000, 49e6, bob, bob, 10, block.timestamp + 300, bytes32(0));
+        exchange.fillMarketOrder(
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 49e6, bob, bob, 10, block.timestamp + 300, bytes32(0)
+        );
         vm.stopPrank();
 
         // Market still functional — another fill works
         vm.startPrank(charlie);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId,
+            IPrediXExchange.Side.BUY_YES,
+            500_000,
+            10e6,
+            charlie,
+            charlie,
+            10,
+            block.timestamp + 300,
+            bytes32(0)
         );
         vm.stopPrank();
 

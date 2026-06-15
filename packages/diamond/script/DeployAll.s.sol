@@ -19,7 +19,9 @@ import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
 import {PrediXHookProxyV2} from "@predix/hook/proxy/PrediXHookProxyV2.sol";
 import {PrediXExchange} from "@predix/exchange/PrediXExchange.sol";
 import {PrediXExchangeProxy} from "@predix/exchange/PrediXExchangeProxy.sol";
+import {BuilderRegistry} from "@predix/exchange/BuilderRegistry.sol";
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 import {DeployEnvVerifier} from "./lib/DeployEnvVerifier.sol";
 import {DiamondDeployLib} from "./lib/DiamondDeployLib.sol";
@@ -144,6 +146,7 @@ contract DeployAll is Script {
             new PrediXExchangeProxy(out.exchangeImpl, env.exchangeProxyAdmin, out.diamond, env.usdc, env.feeRecipient)
         );
 
+        address builderRegistry = address(new BuilderRegistry(out.diamond));
         out.router = address(
             new PrediXRouter(
                 env.poolManager,
@@ -154,7 +157,8 @@ contract DeployAll is Script {
                 IV4Quoter(env.v4Quoter),
                 IAllowanceTransfer(env.permit2),
                 env.lpFeeFlag,
-                env.tickSpacing
+                env.tickSpacing,
+                IBuilderRegistry(builderRegistry)
             )
         );
 
@@ -187,9 +191,7 @@ contract DeployAll is Script {
                 IPrediXHook(out.hookProxy).setAdmin(env.hookRuntimeAdmin);
             }
 
-            DiamondDeployLib.transferGovernance(
-                out.diamond, env.deployer, env.multisig, env.pauser, out.timelock
-            );
+            DiamondDeployLib.transferGovernance(out.diamond, env.deployer, env.multisig, env.pauser, out.timelock);
         }
 
         vm.stopBroadcast();
@@ -307,9 +309,8 @@ contract DeployAll is Script {
     ///      acceptance (`hook.acceptAdmin()`) is a follow-up tx the final admin must
     ///      sign post-broadcast — documented in `packages/diamond/script/README.md`.
     function _deployHook(Env memory env, address diamond) internal returns (address impl, address proxy, bytes32 salt) {
-        PrediXHookV2 implC = new PrediXHookV2(
-            env.poolManager, env.v4Quoter, env.lpFeeFlag, env.tickSpacing, env.hookAdminRotationDelay
-        );
+        PrediXHookV2 implC =
+            new PrediXHookV2(env.poolManager, env.v4Quoter, env.lpFeeFlag, env.tickSpacing, env.hookAdminRotationDelay);
         impl = address(implC);
 
         bytes memory constructorArgs =

@@ -41,17 +41,17 @@ contract Phase7Permit2Smoke is Script {
         vm.startBroadcast(pk);
         uint256 out;
         if (_eq(action, "buyYes")) {
-            (out,,) =
-                IPrediXRouter(router).buyYesWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig);
+            (out,,) = IPrediXRouter(router)
+                .buyYesWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig, bytes32(0));
         } else if (_eq(action, "sellYes")) {
-            (out,,) =
-                IPrediXRouter(router).sellYesWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig);
+            (out,,) = IPrediXRouter(router)
+                .sellYesWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig, bytes32(0));
         } else if (_eq(action, "buyNo")) {
-            (out,,) =
-                IPrediXRouter(router).buyNoWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig);
+            (out,,) = IPrediXRouter(router)
+                .buyNoWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig, bytes32(0));
         } else if (_eq(action, "sellNo")) {
-            (out,,) =
-                IPrediXRouter(router).sellNoWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig);
+            (out,,) = IPrediXRouter(router)
+                .sellNoWithPermit(marketId, amt, 0, user, 0, block.timestamp + 300, permit, sig, bytes32(0));
         } else {
             revert("unknown PERMIT2_ACTION");
         }

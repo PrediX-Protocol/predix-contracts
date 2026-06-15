@@ -52,7 +52,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 50e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(marketB, 50e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -60,7 +60,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 999, 1, alice, 10, block.timestamp + 300); // < MIN_TRADE_AMOUNT
+        router.buyYes(marketB, 999, 1, alice, 10, block.timestamp + 300, bytes32(0)); // < MIN_TRADE_AMOUNT
         vm.stopPrank();
     }
 
@@ -69,7 +69,7 @@ contract E2E_Router is E2EForkBase {
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
         // minOut = max uint → impossible to fill
-        router.buyYes(marketB, 10e6, type(uint256).max, alice, 10, block.timestamp + 300);
+        router.buyYes(marketB, 10e6, type(uint256).max, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -77,7 +77,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 50e6, 1, alice, 10, block.timestamp - 1);
+        router.buyYes(marketB, 50e6, 1, alice, 10, block.timestamp - 1, bytes32(0));
         vm.stopPrank();
     }
 
@@ -85,7 +85,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 50e6, 1, ROUTER, 10, block.timestamp + 300);
+        router.buyYes(marketB, 50e6, 1, ROUTER, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -93,7 +93,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 50e6, 1, DIAMOND, 10, block.timestamp + 300);
+        router.buyYes(marketB, 50e6, 1, DIAMOND, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -101,7 +101,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 50e6, 1, EXCHANGE, 10, block.timestamp + 300);
+        router.buyYes(marketB, 50e6, 1, EXCHANGE, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -110,7 +110,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(yesB).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.sellYes(marketB, 50e6, 1, alice, 10, block.timestamp + 300);
+        router.sellYes(marketB, 50e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -123,7 +123,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(noB).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.sellNo(marketB, 20e6, 1, alice, 10, block.timestamp + 300);
+        router.sellNo(marketB, 20e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -131,7 +131,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyNo(marketB, 10e6, type(uint256).max, alice, 10, block.timestamp + 300);
+        router.buyNo(marketB, 10e6, type(uint256).max, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -158,7 +158,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -173,7 +173,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -185,7 +185,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(mid, 10e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 
@@ -196,7 +196,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(marketB, 10e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(marketB, 10e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
 
         vm.prank(DEPLOYER);
@@ -207,7 +207,7 @@ contract E2E_Router is E2EForkBase {
         vm.startPrank(alice);
         IERC20(USDC).approve(ROUTER, type(uint256).max);
         vm.expectRevert();
-        router.buyYes(99999, 10e6, 1, alice, 10, block.timestamp + 300);
+        router.buyYes(99999, 10e6, 1, alice, 10, block.timestamp + 300, bytes32(0));
         vm.stopPrank();
     }
 }

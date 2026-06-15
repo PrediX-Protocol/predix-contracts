@@ -35,9 +35,8 @@ contract Scenario8_Setup is AuditBase {
         address m = vm.addr(mKey);
 
         vm.startBroadcast(c.creatorKey);
-        uint256 marketId = IMarketFacet(c.diamond).createMarket(
-            "Indexer audit S8 (mixed Router+Exchange)", block.timestamp + END_OFFSET, c.oracleManual
-        );
+        uint256 marketId = IMarketFacet(c.diamond)
+            .createMarket("Indexer audit S8 (mixed Router+Exchange)", block.timestamp + END_OFFSET, c.oracleManual);
         vm.stopBroadcast();
 
         (address yes, address no,,,) = IMarketFacet(c.diamond).getMarketStatus(marketId);
@@ -47,10 +46,14 @@ contract Scenario8_Setup is AuditBase {
         IMarketFacet(c.diamond).splitPosition(marketId, USDC_SPLIT_LP);
         IERC20(yes).approve(c.exchange, type(uint256).max);
         IERC20(no).approve(c.exchange, type(uint256).max);
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
         vm.stopBroadcast();
 
         uint256 deadline = block.timestamp + 5 minutes;
@@ -58,12 +61,13 @@ contract Scenario8_Setup is AuditBase {
         vm.startBroadcast(mKey);
         // Leg 1: Router (writes Trade event with recipient=M)
         IERC20(c.usdc).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).buyYes(marketId, M_TRADE, 1, m, 5, deadline);
+        IPrediXRouter(c.router).buyYes(marketId, M_TRADE, 1, m, 5, deadline, bytes32(0));
         // Leg 2: direct Exchange (no Trade event, only maker fills observed)
         IERC20(c.usdc).approve(c.exchange, type(uint256).max);
-        IPrediXExchange(c.exchange).fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, DIRECT_LIMIT_PRICE, M_TRADE, m, m, 5, deadline, bytes32(0)
-        );
+        IPrediXExchange(c.exchange)
+            .fillMarketOrder(
+                marketId, IPrediXExchange.Side.BUY_YES, DIRECT_LIMIT_PRICE, M_TRADE, m, m, 5, deadline, bytes32(0)
+            );
         vm.stopBroadcast();
 
         console2.log("=== Scenario 8 setup complete ===");

@@ -30,12 +30,12 @@ contract SandwichAttacker {
         IERC20(yesToken).approve(address(router), type(uint256).max);
 
         // First swap: buyYes
-        router.buyYes(marketId, amount, 1, address(this), 10, block.timestamp + 300);
+        router.buyYes(marketId, amount, 1, address(this), 10, block.timestamp + 300, bytes32(0));
         firstSwapOk = true;
 
         // Second swap: sellYes (opposite direction, same block, same identity)
         uint256 yesBal = IERC20(yesToken).balanceOf(address(this));
-        try router.sellYes(marketId, yesBal, 1, address(this), 10, block.timestamp + 300) {
+        try router.sellYes(marketId, yesBal, 1, address(this), 10, block.timestamp + 300, bytes32(0)) {
             secondSwapReverted = false;
         } catch (bytes memory reason) {
             secondSwapReverted = true;

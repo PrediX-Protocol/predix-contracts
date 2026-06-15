@@ -50,7 +50,10 @@ contract E2E_Permit2Remaining is E2EForkBase {
         // A full happy-path requires: user approves USDC to Permit2, then signs EIP-712 typed data.
         // Skip with explanation since the permit2.permit() call requires exact domain separator
         // from the deployed Permit2 contract and constructing the full witness is brittle in fork tests.
-        vm.skip(true, "K01: Full Permit2 EIP-712 signature construction requires deployed domain separator; revert paths (K03-K06) validate the Router's pre-checks");
+        vm.skip(
+            true,
+            "K01: Full Permit2 EIP-712 signature construction requires deployed domain separator; revert paths (K03-K06) validate the Router's pre-checks"
+        );
     }
 
     function test_K02_buyNoWithPermit_reverts_noPool() public {
@@ -60,10 +63,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: USDC,
-                amount: uint160(amount),
-                expiration: uint48(block.timestamp + 300),
-                nonce: 0
+                token: USDC, amount: uint160(amount), expiration: uint48(block.timestamp + 300), nonce: 0
             }),
             spender: ROUTER,
             sigDeadline: block.timestamp + 300
@@ -75,7 +75,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(aliceSigner);
         IERC20(USDC).approve(PERMIT2, type(uint256).max);
         vm.expectRevert();
-        router.buyNoWithPermit(marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig);
+        router.buyNoWithPermit(
+            marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -98,7 +100,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.startPrank(aliceSigner);
         vm.expectRevert(IPrediXRouter.InvalidPermitToken.selector);
-        router.buyYesWithPermit(marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig);
+        router.buyYesWithPermit(
+            marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -108,10 +112,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: USDC,
-                amount: uint160(permitAmount),
-                expiration: uint48(block.timestamp + 300),
-                nonce: 0
+                token: USDC, amount: uint160(permitAmount), expiration: uint48(block.timestamp + 300), nonce: 0
             }),
             spender: ROUTER,
             sigDeadline: block.timestamp + 300
@@ -121,7 +122,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.startPrank(aliceSigner);
         vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
-        router.buyYesWithPermit(marketId, tradeAmount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig);
+        router.buyYesWithPermit(
+            marketId, tradeAmount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -131,10 +134,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: USDC,
-                amount: uint160(permitAmount),
-                expiration: uint48(block.timestamp + 300),
-                nonce: 0
+                token: USDC, amount: uint160(permitAmount), expiration: uint48(block.timestamp + 300), nonce: 0
             }),
             spender: ROUTER,
             sigDeadline: block.timestamp + 300
@@ -144,7 +144,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         vm.startPrank(aliceSigner);
         vm.expectRevert(IPrediXRouter.InvalidPermitAmount.selector);
-        router.buyYesWithPermit(marketId, tradeAmount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig);
+        router.buyYesWithPermit(
+            marketId, tradeAmount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -155,10 +157,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
 
         IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
             details: IAllowanceTransfer.PermitDetails({
-                token: USDC,
-                amount: uint160(amount),
-                expiration: uint48(block.timestamp + 300),
-                nonce: 0
+                token: USDC, amount: uint160(amount), expiration: uint48(block.timestamp + 300), nonce: 0
             }),
             spender: ROUTER,
             sigDeadline: block.timestamp + 300
@@ -170,7 +169,9 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(aliceSigner);
         IERC20(USDC).approve(PERMIT2, type(uint256).max);
         vm.expectRevert(); // Permit2 internal signature validation failure
-        router.buyYesWithPermit(marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig);
+        router.buyYesWithPermit(
+            marketId, amount, 1, aliceSigner, 10, block.timestamp + 300, permitSingle, sig, bytes32(0)
+        );
         vm.stopPrank();
     }
 
@@ -228,8 +229,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6, bob, bob, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId, IPrediXExchange.Side.BUY_YES, 600_000, 100e6, bob, bob, 10, block.timestamp + 300, bytes32(0)
         );
         vm.stopPrank();
 
@@ -252,8 +252,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         // Fill with budget that consumes most but not all: 1 token at 0.50 = 0.50 USDC
         (uint256 filled1,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 500_000, bob, bob, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 500_000, bob, bob, 10, block.timestamp + 300, bytes32(0)
         );
         vm.stopPrank();
 
@@ -261,8 +260,15 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(charlie);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled2,) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, 10e6, charlie, charlie, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId,
+            IPrediXExchange.Side.BUY_YES,
+            500_000,
+            10e6,
+            charlie,
+            charlie,
+            10,
+            block.timestamp + 300,
+            bytes32(0)
         );
         vm.stopPrank();
 
@@ -286,8 +292,15 @@ contract E2E_Permit2Remaining is E2EForkBase {
         vm.startPrank(bob);
         IERC20(USDC).approve(EXCHANGE, type(uint256).max);
         (uint256 filled, uint256 cost) = exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 500_000, smallBudget, bob, bob, 10, block.timestamp + 300,
-                bytes32(0)
+            marketId,
+            IPrediXExchange.Side.BUY_YES,
+            500_000,
+            smallBudget,
+            bob,
+            bob,
+            10,
+            block.timestamp + 300,
+            bytes32(0)
         );
         vm.stopPrank();
 
@@ -378,9 +391,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = bytes4(keccak256("fakeFunction()"));
         cuts[0] = IDiamondCut.FacetCut({
-            facetAddress: address(0xdead),
-            action: IDiamondCut.FacetCutAction.Add,
-            functionSelectors: selectors
+            facetAddress: address(0xdead), action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors
         });
 
         vm.prank(eve);
@@ -398,9 +409,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = bytes4(keccak256("fakeFunction()"));
         cuts[0] = IDiamondCut.FacetCut({
-            facetAddress: address(0xdead),
-            action: IDiamondCut.FacetCutAction.Add,
-            functionSelectors: selectors
+            facetAddress: address(0xdead), action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors
         });
 
         vm.prank(TIMELOCK);
@@ -428,9 +437,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = bytes4(keccak256("anotherFakeFunction()"));
         cuts[0] = IDiamondCut.FacetCut({
-            facetAddress: address(0xbeef),
-            action: IDiamondCut.FacetCutAction.Add,
-            functionSelectors: selectors
+            facetAddress: address(0xbeef), action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors
         });
 
         vm.prank(TIMELOCK);
@@ -492,7 +499,7 @@ contract E2E_Permit2Remaining is E2EForkBase {
             bob,
             0, // maxFills = 0 → uses DEFAULT_MAX_FILLS = 10
             block.timestamp + 300,
-                bytes32(0)
+            bytes32(0)
         );
         vm.stopPrank();
 

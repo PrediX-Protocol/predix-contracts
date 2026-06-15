@@ -62,20 +62,24 @@ contract FlashLoanCLOBAttacker {
         IERC20(mkt.noToken).approve(address(exchange), type(uint256).max);
         IERC20(usdc).approve(address(exchange), type(uint256).max);
 
-        (bytes32 sellOrderId,) = exchange.placeOrder(
-            marketId, IPrediXExchange.Side.SELL_YES, 10_000, 200e6,
-                bytes32(0)
-        );
+        (bytes32 sellOrderId,) = exchange.placeOrder(marketId, IPrediXExchange.Side.SELL_YES, 10_000, 200e6, bytes32(0));
 
         // 3. Try to buy cheap from own order via fillMarketOrder
         // This should fail: self-match or NotTaker
         try exchange.fillMarketOrder(
-            marketId, IPrediXExchange.Side.BUY_YES, 10_000, 2e6,
-            address(this), address(this), 10, block.timestamp + 300,
-                bytes32(0)
+            marketId,
+            IPrediXExchange.Side.BUY_YES,
+            10_000,
+            2e6,
+            address(this),
+            address(this),
+            10,
+            block.timestamp + 300,
+            bytes32(0)
         ) {
-            // If succeeded, attacker bought own cheap YES
-        } catch {
+        // If succeeded, attacker bought own cheap YES
+        }
+            catch {
             // Expected: self-match prevention or other guard
         }
 
@@ -108,20 +112,20 @@ contract Permit2ReplayAttacker {
         bytes calldata signature
     ) external {
         // First call
-        try IPrediXRouter(router).buyYesWithPermit(
-            marketId, amount, 1, address(this), 10, block.timestamp + 300,
-            permitSingle, signature
-        ) {
+        try IPrediXRouter(router)
+            .buyYesWithPermit(
+                marketId, amount, 1, address(this), 10, block.timestamp + 300, permitSingle, signature, bytes32(0)
+            ) {
             firstCallOk = true;
         } catch {
             firstCallOk = false;
         }
 
         // Second call with SAME signature (replay)
-        try IPrediXRouter(router).buyYesWithPermit(
-            marketId, amount, 1, address(this), 10, block.timestamp + 300,
-            permitSingle, signature
-        ) {
+        try IPrediXRouter(router)
+            .buyYesWithPermit(
+                marketId, amount, 1, address(this), 10, block.timestamp + 300, permitSingle, signature, bytes32(0)
+            ) {
             secondCallReverted = false; // BAD if this succeeds
         } catch {
             secondCallReverted = true; // GOOD - replay blocked
@@ -140,19 +144,25 @@ contract DustAccumulator {
         usdc = _usdc;
     }
 
-    function fillManySmall(
-        uint256 marketId,
-        uint256 numFills,
-        uint256 fillAmount
-    ) external {
+    function fillManySmall(uint256 marketId, uint256 numFills, uint256 fillAmount) external {
         IERC20(usdc).approve(address(exchange), type(uint256).max);
         uint256 exchangeUsdcBefore = IERC20(usdc).balanceOf(address(exchange));
 
         for (uint256 i; i < numFills; i++) {
             try exchange.fillMarketOrder(
-                marketId, IPrediXExchange.Side.BUY_YES, 990_000, fillAmount,
-                address(this), address(this), 1, block.timestamp + 300, bytes32(0)
-            ) {} catch { break; }
+                marketId,
+                IPrediXExchange.Side.BUY_YES,
+                990_000,
+                fillAmount,
+                address(this),
+                address(this),
+                1,
+                block.timestamp + 300,
+                bytes32(0)
+            ) {}
+                catch {
+                break;
+            }
         }
 
         uint256 exchangeUsdcAfter = IERC20(usdc).balanceOf(address(exchange));
@@ -179,6 +189,7 @@ contract E2EAttackVectors is Script {
         console2.log("  PASS:", label);
         passCount++;
     }
+
     function _fail(string memory label) internal {
         console2.log("  FAIL:", label);
         failCount++;
@@ -293,16 +304,12 @@ contract E2EAttackVectors is Script {
             address eve = address(0xEEE);
 
             // Try setFeeRecipient from non-admin
-            (bool ok1,) = DIAMOND.call(
-                abi.encodeWithSignature("setFeeRecipient(address)", eve)
-            );
+            (bool ok1,) = DIAMOND.call(abi.encodeWithSignature("setFeeRecipient(address)", eve));
             // This call is from deployer who IS admin, so it would succeed
             // We need to test from non-admin. Use a contract that calls.
 
             // Instead, verify that Diamond checks roles properly
-            bool eveHasAdmin = IAccessControlFacet(DIAMOND).hasRole(
-                keccak256("predix.role.admin"), eve
-            );
+            bool eveHasAdmin = IAccessControlFacet(DIAMOND).hasRole(keccak256("predix.role.admin"), eve);
             if (!eveHasAdmin) {
                 _pass("ATK-06: Random address has no ADMIN_ROLE");
             } else {
@@ -348,32 +355,24 @@ contract E2EAttackVectors is Script {
             IERC20(USDC).approve(EXCHANGE, type(uint256).max);
 
             // Empty market (ID 0)
-            (bool ok1,) = address(exchange()).call(
-                abi.encodeWithSignature(
-                    "placeOrder(uint256,uint8,uint256,uint256)",
-                    0, 0, 500000, 1000000
-                )
-            );
+            (bool ok1,) = address(exchange())
+                .call(abi.encodeWithSignature("placeOrder(uint256,uint8,uint256,uint256)", 0, 0, 500000, 1000000));
             if (!ok1) _pass("ATK-10a: placeOrder on market 0 reverted");
             else _fail("ATK-10a: placeOrder on market 0 should revert");
 
             // Max uint256 market ID
-            (bool ok2,) = address(exchange()).call(
-                abi.encodeWithSignature(
-                    "placeOrder(uint256,uint8,uint256,uint256)",
-                    type(uint256).max, 0, 500000, 1000000
-                )
-            );
+            (bool ok2,) = address(exchange())
+                .call(
+                    abi.encodeWithSignature(
+                        "placeOrder(uint256,uint8,uint256,uint256)", type(uint256).max, 0, 500000, 1000000
+                    )
+                );
             if (!ok2) _pass("ATK-10b: placeOrder on max marketId reverted");
             else _fail("ATK-10b: placeOrder on max marketId should revert");
 
             // Invalid Side enum (5 = out of range)
-            (bool ok3,) = address(exchange()).call(
-                abi.encodeWithSignature(
-                    "placeOrder(uint256,uint8,uint256,uint256)",
-                    mid, 5, 500000, 1000000
-                )
-            );
+            (bool ok3,) = address(exchange())
+                .call(abi.encodeWithSignature("placeOrder(uint256,uint8,uint256,uint256)", mid, 5, 500000, 1000000));
             if (!ok3) _pass("ATK-10c: placeOrder with invalid Side reverted");
             else _fail("ATK-10c: placeOrder with invalid Side should revert");
         }
@@ -393,9 +392,7 @@ contract E2EAttackVectors is Script {
             proxy.proposeUpgrade(ORACLE); // Use oracle as dummy impl
 
             // Try execute immediately (should fail)
-            (bool ok1,) = address(proxy).call(
-                abi.encodeWithSignature("executeUpgrade()")
-            );
+            (bool ok1,) = address(proxy).call(abi.encodeWithSignature("executeUpgrade()"));
             if (!ok1) {
                 _pass("ATK-11a: Immediate execute blocked by timelock");
             } else {
@@ -403,9 +400,7 @@ contract E2EAttackVectors is Script {
             }
 
             // Try propose again while pending (timer reset attack)
-            (bool ok2,) = address(proxy).call(
-                abi.encodeWithSignature("proposeUpgrade(address)", DIAMOND)
-            );
+            (bool ok2,) = address(proxy).call(abi.encodeWithSignature("proposeUpgrade(address)", DIAMOND));
             if (!ok2) {
                 _pass("ATK-11b: Re-propose blocked by AlreadyPending");
             } else {
@@ -464,10 +459,21 @@ contract E2EAttackVectors is Script {
             // Fill in 10 tiny increments (1 USDC each)
             IERC20(USDC).approve(EXCHANGE, type(uint256).max);
             for (uint256 i; i < 10; i++) {
-                try IPrediXExchange(EXCHANGE).fillMarketOrder(
-                    mid, IPrediXExchange.Side.BUY_YES, 500_000, 1e6,
-                    deployer, deployer, 1, block.timestamp + 300, bytes32(0)
-                ) {} catch { break; }
+                try IPrediXExchange(EXCHANGE)
+                    .fillMarketOrder(
+                        mid,
+                        IPrediXExchange.Side.BUY_YES,
+                        500_000,
+                        1e6,
+                        deployer,
+                        deployer,
+                        1,
+                        block.timestamp + 300,
+                        bytes32(0)
+                    ) {}
+                    catch {
+                    break;
+                }
             }
 
             uint256 exchangeUsdcAfter = IERC20(USDC).balanceOf(EXCHANGE);

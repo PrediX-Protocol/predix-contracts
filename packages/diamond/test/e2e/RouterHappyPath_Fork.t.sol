@@ -27,7 +27,7 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
 
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(marketId, 1_000e6, 0, alice, 5, block.timestamp + 1 hours);
+            router.buyYes(marketId, 1_000e6, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertGt(yesOut, 0, "BuyYes must return YES");
         assertEq(clobFilled, 0, "CLOB is empty - all should be AMM");
@@ -54,7 +54,7 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
 
         vm.prank(alice);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellYes(marketId, 1_000e6, 0, alice, 5, block.timestamp + 1 hours);
+            router.sellYes(marketId, 1_000e6, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertGt(usdcOut, 0, "SellYes must return USDC");
         assertEq(clobFilled, 0, "CLOB empty");
@@ -85,7 +85,7 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
 
         vm.prank(alice);
         (uint256 noOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyNo(marketId, 100e6, 0, alice, 5, block.timestamp + 1 hours);
+            router.buyNo(marketId, 100e6, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertGt(noOut, 0, "BuyNo must return NO via virtual synthesis");
         assertEq(clobFilled, 0, "CLOB empty");
@@ -119,7 +119,7 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
 
         vm.prank(alice);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(marketId, 1_000e6, 0, alice, 10, block.timestamp + 1 hours);
+            router.buyYes(marketId, 1_000e6, 0, alice, 10, block.timestamp + 1 hours, bytes32(0));
 
         assertGt(clobFilled, 0, "CLOB should fill first (cheaper price)");
         assertGt(ammFilled, 0, "AMM picks up remainder");
@@ -136,14 +136,14 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
         _approveRouterForUsdc(alice);
         vm.prank(alice);
         vm.expectRevert();
-        router.buyYes(marketId, 1_000e6, 0, alice, 5, block.timestamp - 1);
+        router.buyYes(marketId, 1_000e6, 0, alice, 5, block.timestamp - 1, bytes32(0));
     }
 
     function test_BuyYes_Revert_InsufficientOutput() public {
         _approveRouterForUsdc(alice);
         vm.prank(alice);
         vm.expectRevert();
-        router.buyYes(marketId, 1_000e6, type(uint256).max, alice, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 1_000e6, type(uint256).max, alice, 5, block.timestamp + 1 hours, bytes32(0));
     }
 
     function test_RouterZeroBalance_AfterMultipleTrades() public {
@@ -160,25 +160,25 @@ contract RouterHappyPath_Fork is MainnetForkFixture {
 
         // Alice buys YES on AMM
         vm.prank(alice);
-        router.buyYes(marketId, 100e6, 0, alice, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 100e6, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         // Roll to next block to clear sandwich detection.
         vm.roll(block.number + 1);
 
         // Bob buys NO via virtual synthesis (different direction OK at new block)
         vm.prank(bob);
-        router.buyNo(marketId, 50e6, 0, bob, 5, block.timestamp + 1 hours);
+        router.buyNo(marketId, 50e6, 0, bob, 5, block.timestamp + 1 hours, bytes32(0));
 
         vm.roll(block.number + 1);
 
         // Charlie buys YES
         vm.prank(charlie);
-        router.buyYes(marketId, 200e6, 0, charlie, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 200e6, 0, charlie, 5, block.timestamp + 1 hours, bytes32(0));
 
         // Alice (different block from her buy) sells some YES
         vm.roll(block.number + 1);
         vm.prank(alice);
-        router.sellYes(marketId, 50e6, 0, alice, 5, block.timestamp + 1 hours);
+        router.sellYes(marketId, 50e6, 0, alice, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertEq(usdc.balanceOf(address(router)), 0, "Router USDC must remain 0");
         assertEq(IERC20(yesToken).balanceOf(address(router)), 0, "Router YES must remain 0");

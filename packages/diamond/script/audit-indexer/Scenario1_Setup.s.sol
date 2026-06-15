@@ -34,8 +34,8 @@ contract Scenario1_Setup is AuditBase {
         // 1. Creator creates market
         vm.startBroadcast(c.creatorKey);
         IERC20(c.usdc).approve(c.diamond, type(uint256).max);
-        uint256 marketId =
-            IMarketFacet(c.diamond).createMarket("Indexer audit S1 (NO-side)", block.timestamp + END_OFFSET, c.oracleManual);
+        uint256 marketId = IMarketFacet(c.diamond)
+            .createMarket("Indexer audit S1 (NO-side)", block.timestamp + END_OFFSET, c.oracleManual);
         vm.stopBroadcast();
 
         (address yes, address no,,,) = IMarketFacet(c.diamond).getMarketStatus(marketId);
@@ -47,17 +47,21 @@ contract Scenario1_Setup is AuditBase {
         IERC20(yes).approve(c.exchange, type(uint256).max);
         IERC20(no).approve(c.exchange, type(uint256).max);
         IERC20(c.usdc).approve(c.exchange, type(uint256).max);
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
         vm.stopBroadcast();
 
         // 3. Trader A: Router.buyYes + Router.buyNo (the critical NO-side trade)
         vm.startBroadcast(c.aKey);
         IERC20(c.usdc).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).buyYes(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes);
-        IPrediXRouter(c.router).buyNo(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes);
+        IPrediXRouter(c.router).buyYes(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes, bytes32(0));
+        IPrediXRouter(c.router).buyNo(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes, bytes32(0));
         vm.stopBroadcast();
 
         // 4. Trader B: split to get NO, then Router.sellNo
@@ -65,7 +69,7 @@ contract Scenario1_Setup is AuditBase {
         IERC20(c.usdc).approve(c.diamond, type(uint256).max);
         IMarketFacet(c.diamond).splitPosition(marketId, TRADER_USDC);
         IERC20(no).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).sellNo(marketId, TRADER_USDC, 1, b, 5, block.timestamp + 5 minutes);
+        IPrediXRouter(c.router).sellNo(marketId, TRADER_USDC, 1, b, 5, block.timestamp + 5 minutes, bytes32(0));
         vm.stopBroadcast();
 
         console2.log("=== Scenario 1 setup complete ===");

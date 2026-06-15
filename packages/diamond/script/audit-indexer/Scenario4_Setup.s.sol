@@ -38,9 +38,8 @@ contract Scenario4_Setup is AuditBase {
         candidates[2] = "Outcome C";
 
         vm.startBroadcast(c.creatorKey);
-        (uint256 eventId, uint256[] memory marketIds) = IEventFacet(c.diamond).createEvent(
-            "Indexer audit S4 (event lifecycle)", candidates, block.timestamp + END_OFFSET, c.oracleManual
-        );
+        (uint256 eventId, uint256[] memory marketIds) = IEventFacet(c.diamond)
+            .createEvent("Indexer audit S4 (event lifecycle)", candidates, block.timestamp + END_OFFSET, c.oracleManual);
         vm.stopBroadcast();
 
         // LP seeds CLOB for each child
@@ -53,10 +52,14 @@ contract Scenario4_Setup is AuditBase {
             IMarketFacet(c.diamond).splitPosition(mid, USDC_SPLIT_LP);
             IERC20(yes).approve(c.exchange, type(uint256).max);
             IERC20(no).approve(c.exchange, type(uint256).max);
-            IPrediXExchange(c.exchange).placeOrder(mid, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-            IPrediXExchange(c.exchange).placeOrder(mid, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-            IPrediXExchange(c.exchange).placeOrder(mid, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-            IPrediXExchange(c.exchange).placeOrder(mid, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+            IPrediXExchange(c.exchange)
+                .placeOrder(mid, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+            IPrediXExchange(c.exchange)
+                .placeOrder(mid, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+            IPrediXExchange(c.exchange)
+                .placeOrder(mid, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+            IPrediXExchange(c.exchange)
+                .placeOrder(mid, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
         }
         vm.stopBroadcast();
 
@@ -65,13 +68,13 @@ contract Scenario4_Setup is AuditBase {
         // Child 0: A.Router.buyYes 10 USDC
         vm.startBroadcast(c.aKey);
         IERC20(c.usdc).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).buyYes(marketIds[0], TRADER_USDC, 1, a, 5, deadline);
+        IPrediXRouter(c.router).buyYes(marketIds[0], TRADER_USDC, 1, a, 5, deadline, bytes32(0));
         vm.stopBroadcast();
 
         // Child 1: B.Router.buyNo 10 USDC
         vm.startBroadcast(c.bKey);
         IERC20(c.usdc).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).buyNo(marketIds[1], TRADER_USDC, 1, b, 5, deadline);
+        IPrediXRouter(c.router).buyNo(marketIds[1], TRADER_USDC, 1, b, 5, deadline, bytes32(0));
         vm.stopBroadcast();
 
         // Child 2: A.splitPosition 10 USDC + Router.sellNo 10
@@ -80,7 +83,7 @@ contract Scenario4_Setup is AuditBase {
         IERC20(c.usdc).approve(c.diamond, type(uint256).max);
         IMarketFacet(c.diamond).splitPosition(marketIds[2], TRADER_USDC);
         IERC20(no2).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).sellNo(marketIds[2], TRADER_USDC, 1, a, 5, deadline);
+        IPrediXRouter(c.router).sellNo(marketIds[2], TRADER_USDC, 1, a, 5, deadline, bytes32(0));
         vm.stopBroadcast();
 
         console2.log("=== Scenario 4 setup complete ===");

@@ -27,9 +27,8 @@ contract Scenario5_Setup is AuditBase {
         address a = vm.addr(c.aKey);
 
         vm.startBroadcast(c.creatorKey);
-        uint256 marketId = IMarketFacet(c.diamond).createMarket(
-            "Indexer audit S5 (refund flow)", block.timestamp + END_OFFSET, c.oracleManual
-        );
+        uint256 marketId = IMarketFacet(c.diamond)
+            .createMarket("Indexer audit S5 (refund flow)", block.timestamp + END_OFFSET, c.oracleManual);
         vm.stopBroadcast();
 
         (address yes, address no,,,) = IMarketFacet(c.diamond).getMarketStatus(marketId);
@@ -40,15 +39,19 @@ contract Scenario5_Setup is AuditBase {
         IERC20(yes).approve(c.exchange, type(uint256).max);
         IERC20(no).approve(c.exchange, type(uint256).max);
         IERC20(c.usdc).approve(c.exchange, type(uint256).max);
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
-        IPrediXExchange(c.exchange).placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.SELL_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_YES, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
+        IPrediXExchange(c.exchange)
+            .placeOrder(marketId, IPrediXExchange.Side.BUY_NO, PRICE_HALF, ORDER_AMOUNT, bytes32(0));
         vm.stopBroadcast();
 
         vm.startBroadcast(c.aKey);
         IERC20(c.usdc).approve(c.router, type(uint256).max);
-        IPrediXRouter(c.router).buyYes(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes);
+        IPrediXRouter(c.router).buyYes(marketId, TRADER_USDC, 1, a, 5, block.timestamp + 5 minutes, bytes32(0));
         // A also needs a matched pair (YES + NO) to call refund. Split to ensure
         // A holds equal yes+no for the refund call.
         IERC20(c.usdc).approve(c.diamond, type(uint256).max);

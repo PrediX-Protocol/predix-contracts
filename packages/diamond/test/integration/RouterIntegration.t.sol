@@ -35,6 +35,8 @@ import {IOutcomeToken} from "@predix/shared/interfaces/IOutcomeToken.sol";
 // Router
 import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 import {IPrediXRouter} from "@predix/router/interfaces/IPrediXRouter.sol";
+import {BuilderRegistry} from "@predix/exchange/BuilderRegistry.sol";
+import {IBuilderRegistry} from "@predix/shared/interfaces/IBuilderRegistry.sol";
 
 // Hook + exchange — real implementations via test-only remappings.
 import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
@@ -113,6 +115,7 @@ contract RouterIntegrationTest is MarketFixture {
         exchange = PrediXExchange(address(exchangeProxy));
 
         // Real router.
+        BuilderRegistry builderReg = new BuilderRegistry(address(diamond));
         router = new PrediXRouter(
             IPoolManager(address(pm)),
             address(diamond),
@@ -122,7 +125,8 @@ contract RouterIntegrationTest is MarketFixture {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             FEE_FLAG,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(builderReg))
         );
 
         // Trust router + quoter on hook so `commitSwapIdentity` and
@@ -260,7 +264,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, 120e6, address(router));
         vm.prank(trader);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(marketId, 120e6, 0, trader, 5, block.timestamp + 1 hours);
+            router.buyYes(marketId, 120e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertEq(ammFilled, 0, "no AMM leg");
         assertEq(clobFilled, 200e6, "CLOB filled 200 YES");
@@ -291,7 +295,7 @@ contract RouterIntegrationTest is MarketFixture {
         uint256 traderUsdcBefore = usdc.balanceOf(trader);
         vm.prank(trader);
         (uint256 usdcOut, uint256 clobFilled, uint256 ammFilled) =
-            router.sellYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+            router.sellYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
 
         assertEq(ammFilled, 0);
         assertEq(clobFilled, 40e6);
@@ -309,7 +313,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, 100e6, address(router));
         vm.prank(trader);
         vm.expectRevert(IPrediXRouter.MarketModulePaused.selector);
-        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
     }
 
     function test_Revert_MarketExpired_FromRouter() public {
@@ -318,7 +322,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, 100e6, address(router));
         vm.prank(trader);
         vm.expectRevert(IPrediXRouter.MarketExpired.selector);
-        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
     }
 
     // ---------- Hook trust + commit ----------
@@ -335,7 +339,7 @@ contract RouterIntegrationTest is MarketFixture {
 
         _approveUsdc(trader, 100e6, address(router));
         vm.prank(trader);
-        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+        router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
 
         // Hook's `committedIdentity` is tx-scoped transient storage — the recorded value
         // has already been cleared by the time the test checks. Instead, we assert the
@@ -347,6 +351,7 @@ contract RouterIntegrationTest is MarketFixture {
     function test_Revert_HookCommit_UntrustedRouterBlocked() public {
         // Deploy a rogue router with the same addresses. The hook's trusted-router set
         // only includes the legitimate router, so a commit from the rogue must revert.
+        BuilderRegistry rogueBuilderReg = new BuilderRegistry(address(diamond));
         PrediXRouter rogue = new PrediXRouter(
             IPoolManager(address(pm)),
             address(diamond),
@@ -356,7 +361,8 @@ contract RouterIntegrationTest is MarketFixture {
             IV4Quoter(address(quoter)),
             IAllowanceTransfer(address(permit2)),
             FEE_FLAG,
-            TICK_SPACING
+            TICK_SPACING,
+            IBuilderRegistry(address(rogueBuilderReg))
         );
         (uint256 marketId, address yesToken,,) = _createMarketWithPool();
         if (address(usdc) < yesToken) {
@@ -368,7 +374,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, 100e6, address(rogue));
         vm.prank(trader);
         vm.expectRevert(IPrediXHook.Hook_OnlyTrustedRouter.selector);
-        rogue.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+        rogue.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
     }
 
     // ---------- Exchange pause — CLOB revert → AMM fallback ----------
@@ -393,7 +399,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, 100e6, address(router));
         vm.prank(trader);
         (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours);
+            router.buyYes(marketId, 100e6, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
         assertEq(clobFilled, 0);
         assertEq(ammFilled, 180e6);
         assertEq(yesOut, 180e6);
@@ -437,7 +443,7 @@ contract RouterIntegrationTest is MarketFixture {
         _approveUsdc(trader, usdcIn, address(router));
         vm.prank(trader);
         (uint256 noOut, uint256 clobFilled, uint256 ammFilled) =
-            router.buyNo(marketId, usdcIn, 0, trader, 5, block.timestamp + 1 hours);
+            router.buyNo(marketId, usdcIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0));
         assertEq(clobFilled, 0);
         assertEq(ammFilled, mintAmount);
         assertEq(noOut, mintAmount);
