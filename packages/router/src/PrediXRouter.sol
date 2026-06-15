@@ -1507,11 +1507,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             _tryClobSell(marketId, IPrediXExchangeView.Side.SELL_YES, clobLimit, yesIn, maxFills, deadline, builder);
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
-        // AMM-leg fees carved from the post-swap gross (SELL needs no reserve), gated ammGross>0.
-        (uint16 takerBps,,) =
-            builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
-        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
+        // AMM-leg fees carved from the post-swap gross (SELL needs no reserve), gated ammGross>0. The fee-
+        // config reads sit INSIDE the pool gate so a CLOB-only sell pays no extra SLOAD (mirrors the BUY paths).
         if (yesRemaining > 0 && _hasPool(yesToken)) {
+            (uint16 takerBps,,) =
+                builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
+            uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
             uint256 ammGross = _executeAmmSellYes(marketId, yesToken, noToken, yesRemaining, msg.sender);
             if (ammGross > 0) {
                 uint256 builderFee = _feeOn(ammGross, takerBps);
@@ -1596,11 +1597,12 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         );
         clobFilled = IERC20(usdc).balanceOf(address(this)) - usdcBefore;
 
-        // AMM-leg fees carved from the post-swap gross (p = USDC-per-NO realized), gated ammGross>0.
-        (uint16 takerBps,,) =
-            builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
-        uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
+        // AMM-leg fees carved from the post-swap gross (p = USDC-per-NO realized), gated ammGross>0. Fee-config
+        // reads sit INSIDE the pool gate so a CLOB-only sell pays no extra SLOAD (mirrors the BUY paths).
         if (noRemaining > 0 && _hasPool(yesToken)) {
+            (uint16 takerBps,,) =
+                builder == bytes32(0) ? (uint16(0), uint16(0), address(0)) : builderRegistry.feeOf(builder);
+            uint16 coefBps = IMarketFacet(diamond).getMarket(marketId).protocolFeeRateBps;
             uint256 ammGross = _executeAmmSellNo(marketId, yesToken, noToken, noRemaining, msg.sender);
             if (ammGross > 0) {
                 uint256 builderFee = _feeOn(ammGross, takerBps);
