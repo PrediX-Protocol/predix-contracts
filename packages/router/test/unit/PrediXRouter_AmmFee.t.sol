@@ -253,4 +253,48 @@ contract PrediXRouter_AmmFee is RouterFixture {
         assertLe(expFee, router.exposed_curveFee(200e6, 700, 500_000), "recomputed <= reserve");
         assertEq(usdc.balanceOf(address(router)), 0, "canary - over-reserve refunded");
     }
+
+    // ===== Task 7: no-strand / no-double-charge guards (buyYes path) =====
+
+    // No pool → AMM leg skipped → no AMM fee, CLOB-only, canary holds.
+    function test_buyYes_noPool_clobOnly_noAmmFee() public {
+        uint256 usdcIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        diamond.setProtocolFeeRate(MARKET_ID, 700);
+        _setPoolLiquidity(address(yes1), 0); // no AMM
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 200e6, usdcIn);
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(ammFilled, 0, "no amm");
+        assertEq(clobFilled, 200e6, "all clob");
+        assertEq(yesOut, 200e6, "no AMM fee deducted (CLOB fee is in-exchange)");
+        assertEq(exchange.accruedBuilder(BUILDER), 0, "no AMM builder fee");
+        assertEq(exchange.accruedProtocol(), 0, "no AMM protocol fee");
+    }
+
+    // usdcRemaining == 0 (CLOB took everything) → AMM skipped → no AMM fee.
+    function test_buyYes_clobTakesAll_noAmmFee() public {
+        uint256 usdcIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 200e6, usdcIn); // cost == usdcIn
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(exchange.accruedBuilder(BUILDER), 0, "no AMM fee when usdcRemaining==0");
+    }
+
+    // No double-charge: split fill. AMM builder fee is on the AMM input (40) ONLY; CLOB leg charged in-exchange.
+    function test_buyYes_split_ammFeeOnAmmFilledOnly() public {
+        uint256 usdcIn = 100e6;
+        builderRegistry.setBuilder(BUILDER, 100, 0, address(0xB111D));
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 120e6, 60e6); // CLOB takes 60
+        _queueBuySwap(int128(396e5), int128(72e6)); // AMM input 40 - 0.4 builder = 39.6
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), BUILDER);
+        assertEq(exchange.accruedBuilder(BUILDER), (40e6 * 100) / 10_000, "AMM builder fee on AMM input (40) only");
+        assertEq(exchange.lastTakerBuilder(), BUILDER, "CLOB leg got builder (charged in-exchange)");
+    }
 }
