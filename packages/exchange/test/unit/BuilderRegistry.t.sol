@@ -31,7 +31,7 @@ contract BuilderRegistryTest is Test {
     }
 
     function test_constructor_rejectsZeroDiamond() public {
-        vm.expectRevert(IBuilderRegistry.Registry_ZeroCode.selector);
+        vm.expectRevert(IBuilderRegistry.Registry_ZeroDiamond.selector);
         new BuilderRegistry(address(0));
     }
 

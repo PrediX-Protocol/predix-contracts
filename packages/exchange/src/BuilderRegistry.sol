@@ -29,7 +29,7 @@ contract BuilderRegistry is IBuilderRegistry {
     }
 
     constructor(address _diamond) {
-        if (_diamond == address(0)) revert Registry_ZeroCode();
+        if (_diamond == address(0)) revert Registry_ZeroDiamond();
         diamond = _diamond;
     }
 

@@ -18,6 +18,7 @@ interface IBuilderRegistry {
 
     // ---- Errors ----
     error Registry_NotAdmin();
+    error Registry_ZeroDiamond();
     error Registry_ZeroCode();
     error Registry_ZeroRecipient();
     error Registry_AlreadyExists();
