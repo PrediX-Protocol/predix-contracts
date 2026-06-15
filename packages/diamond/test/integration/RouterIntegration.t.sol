@@ -472,6 +472,10 @@ contract IntegrationPoolManager {
 
     function setPoolSlot0(bytes32 slotKey, uint160 sqrtPriceX96) external {
         _slots[slotKey] = bytes32(uint256(sqrtPriceX96));
+        // Router._hasPool (c6c9824) gates AMM routing on getLiquidity()>0 in addition to a set slot0. Seed the
+        // Pool.State liquidity slot (struct offset +3) so a "marked initialized" pool also reports liquidity,
+        // matching this stub's intent that the pool is swap-ready. See keyti-vvbo.
+        _slots[bytes32(uint256(slotKey) + 3)] = bytes32(uint256(1e18));
     }
 
     function extsload(bytes32 slot) external view returns (bytes32) {
