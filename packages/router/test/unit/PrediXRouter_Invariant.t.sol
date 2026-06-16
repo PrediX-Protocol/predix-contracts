@@ -8,6 +8,7 @@ import {PrediXRouter} from "@predix/router/PrediXRouter.sol";
 import {MockDiamond} from "../mocks/MockDiamond.sol";
 import {MockExchange} from "../mocks/MockExchange.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockPoolManager} from "../mocks/MockPoolManager.sol";
 
 /// @dev Handler exercised by Foundry's invariant runner. Each handler action pre-configures
 ///      the CLOB mock to fill the full input via a single canned result, so the router's
@@ -20,6 +21,7 @@ contract RouterInvariantHandler {
     MockERC20 internal immutable usdc;
     MockERC20 internal immutable yes1;
     MockERC20 internal immutable no1;
+    MockPoolManager internal immutable poolManager;
 
     address internal immutable trader;
     uint256 internal immutable marketId;
@@ -34,6 +36,7 @@ contract RouterInvariantHandler {
         MockERC20 _usdc,
         MockERC20 _yes,
         MockERC20 _no,
+        MockPoolManager _poolManager,
         address _trader,
         uint256 _marketId
     ) {
@@ -43,6 +46,7 @@ contract RouterInvariantHandler {
         usdc = _usdc;
         yes1 = _yes;
         no1 = _no;
+        poolManager = _poolManager;
         trader = _trader;
         marketId = _marketId;
     }
@@ -83,6 +87,51 @@ contract RouterInvariantHandler {
         } catch {}
     }
 
+    /// @dev clm6.7 catch path: CLOB fills HALF, the remainder routes to the AMM which is forced to REVERT.
+    ///      The router must ship CLOB-only and refund the rest — the balance==0 invariants then prove no funds
+    ///      are stranded on the caught-AMM path (the directed tests cover the happy assertion; this fuzzes it).
+    function buyYesAmmReverts(uint256 usdcIn, uint256 priceSeed) external {
+        usdcIn = bound(usdcIn, 2_000, 100_000e6);
+        priceSeed = bound(priceSeed, 100_000, 900_000);
+        uint256 clobCost = usdcIn / 2; // leave a remainder for the AMM leg
+        uint256 clobYes = (clobCost * 1e6) / priceSeed;
+        if (clobYes == 0) return;
+
+        usdc.mint(trader, usdcIn);
+        exchange.setResult(marketId, IPrediXExchangeView.Side.BUY_YES, clobYes, clobCost);
+        poolManager.setRevertOnSwap(true);
+        vm.prank(trader);
+        usdc.approve(address(router), usdcIn);
+        vm.prank(trader);
+        try router.buyYes(marketId, usdcIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0)) returns (
+            uint256, uint256, uint256
+        ) {
+            totalUsdcIn += clobCost; // only the CLOB leg settled; AMM remainder refunded
+        } catch {}
+        poolManager.setRevertOnSwap(false); // reset so other actions see a healthy pool
+    }
+
+    function sellYesAmmReverts(uint256 yesIn, uint256 priceSeed) external {
+        yesIn = bound(yesIn, 2_000, 100_000e6);
+        priceSeed = bound(priceSeed, 100_000, 900_000);
+        uint256 clobYes = yesIn / 2; // leave a remainder for the AMM leg
+        uint256 clobUsdc = (clobYes * priceSeed) / 1e6;
+        if (clobUsdc == 0) return;
+
+        yes1.mint(trader, yesIn);
+        exchange.setResult(marketId, IPrediXExchangeView.Side.SELL_YES, clobUsdc, clobYes);
+        poolManager.setRevertOnSwap(true);
+        vm.prank(trader);
+        yes1.approve(address(router), yesIn);
+        vm.prank(trader);
+        try router.sellYes(marketId, yesIn, 0, trader, 5, block.timestamp + 1 hours, bytes32(0)) returns (
+            uint256, uint256, uint256
+        ) {
+            totalUsdcOut += clobUsdc;
+        } catch {}
+        poolManager.setRevertOnSwap(false);
+    }
+
     // Foundry VM cheat-code surface reused via the StdCheats-free pattern above
     function bound(uint256 x, uint256 min, uint256 max) internal pure returns (uint256) {
         if (min >= max) return min;
@@ -103,12 +152,14 @@ contract PrediXRouter_Invariant is RouterFixture {
 
     function setUp() public override {
         super.setUp();
-        handler = new RouterInvariantHandler(router, diamond, exchange, usdc, yes1, no1, alice, MARKET_ID);
+        handler = new RouterInvariantHandler(router, diamond, exchange, usdc, yes1, no1, poolManager, alice, MARKET_ID);
 
         // Restrict invariant fuzzer to the handler's public selectors.
-        bytes4[] memory selectors = new bytes4[](2);
+        bytes4[] memory selectors = new bytes4[](4);
         selectors[0] = RouterInvariantHandler.buyYes.selector;
         selectors[1] = RouterInvariantHandler.sellYes.selector;
+        selectors[2] = RouterInvariantHandler.buyYesAmmReverts.selector;
+        selectors[3] = RouterInvariantHandler.sellYesAmmReverts.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
