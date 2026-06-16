@@ -60,10 +60,18 @@ contract MockPoolManager {
     uint256 public lastTakeAmount;
     uint256 public swapCount;
 
+    /// @dev When set, `swap` reverts — exercises the router's AMM-leg try/catch (RTR-1 / clm6.7) so a CLOB
+    ///      fill survives an AMM revert (InsufficientLiquidity / QuoteOutsideSafetyMargin) inside the callback.
+    bool public revertOnSwap;
+
     event MockSwap(address indexed caller, int128 amount0, int128 amount1, uint256 sequence);
 
     function queueSwapResult(int128 amount0, int128 amount1) external {
         _queued = QueuedSwap({amount0: amount0, amount1: amount1, set: true});
+    }
+
+    function setRevertOnSwap(bool v) external {
+        revertOnSwap = v;
     }
 
     function unlock(bytes calldata data) external returns (bytes memory) {
@@ -71,6 +79,7 @@ contract MockPoolManager {
     }
 
     function swap(PoolKey memory, SwapParams memory, bytes calldata) external returns (BalanceDelta delta) {
+        if (revertOnSwap) revert("MockPoolManager: forced AMM revert");
         require(_queued.set, "MockPoolManager: no queued swap");
         QueuedSwap memory q = _queued;
         delete _queued;

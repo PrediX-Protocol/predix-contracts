@@ -45,6 +45,21 @@ contract PrediXRouter_BuyNo is RouterFixture {
         assertEq(no1.balanceOf(alice), 1_000_000e6 + 200e6);
     }
 
+    /// @notice RTR-1 (clm6.7): the CITED path. An AMM-leg revert inside `_callbackBuyNo` (here forced) must be
+    ///         CAUGHT, not bubbled. With no CLOB book the trade then surfaces the graceful `ExactInUnfilled`
+    ///         (nothing filled, full refund) instead of propagating the raw AMM revert — which, with a CLOB
+    ///         fill present, would have wrongly killed it (the buyYes sibling test proves CLOB survival).
+    function test_RTR1_buyNo_ammRevert_caughtNotPropagated() public {
+        uint256 usdcIn = 40e6;
+        _stubQuoterForBuyNo();
+        poolManager.setRevertOnSwap(true); // AMM swap reverts inside the unlock callback
+
+        _approveUsdcAsAlice(usdcIn);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, usdcIn));
+        router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+    }
+
     function test_VirtualPath_BuyNo_AmmOnly_Quoter() public {
         // Quoter: yesPriceSpot = 0.5, iter-1 proceeds = 40e6 (linear at 80e6),
         // final safety at 79.6e6 returns 39.8e6. Post-Path-D mintAmount =
@@ -90,7 +105,10 @@ contract PrediXRouter_BuyNo is RouterFixture {
         }
         _approveUsdcAsAlice(usdcIn);
         vm.prank(alice);
-        vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
+        // RTR-1 (clm6.7): the safety-margin breach (QuoteOutsideSafetyMargin in `_callbackBuyNo`) is now CAUGHT
+        // inside the AMM leg → ship CLOB-only. With no CLOB book here it surfaces the graceful
+        // `ExactInUnfilled(usdcIn)` instead of bubbling the raw AMM revert.
+        vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, usdcIn));
         router.buyNo(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 

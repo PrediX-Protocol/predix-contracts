@@ -84,6 +84,28 @@ contract PrediXRouter_BuyYes is RouterFixture {
         assertEq(yes1.balanceOf(alice), 1_000_000e6 + 192e6);
     }
 
+    /// @notice RTR-1 (clm6.7): when the AMM leg REVERTS (not just yields 0), the router must still ship the
+    ///         CLOB fill instead of reverting the whole atomic trade, and surface AmmSkipped.
+    function test_RTR1_buyYes_ammRevert_shipsClobOnly() public {
+        uint256 usdcIn = 100e6;
+        exchange.setResult(MARKET_ID, IPrediXExchangeView.Side.BUY_YES, 120e6, 60e6); // CLOB 60 USDC -> 120 YES
+        poolManager.setRevertOnSwap(true); // AMM leg reverts inside the unlock callback
+
+        uint256 yesBefore = yes1.balanceOf(alice);
+        _approveUsdcAsAlice(usdcIn);
+        vm.expectEmit(true, true, false, false, address(router));
+        emit IPrediXRouter.AmmSkipped(MARKET_ID, alice, bytes4(0));
+        vm.prank(alice);
+        (uint256 yesOut, uint256 clobFilled, uint256 ammFilled) =
+            router.buyYes(MARKET_ID, usdcIn, 0, alice, 5, _deadline(), bytes32(0));
+
+        assertEq(clobFilled, 120e6, "CLOB fill survives the AMM revert");
+        assertEq(ammFilled, 0, "AMM leg skipped on revert");
+        assertEq(yesOut, 120e6, "ships CLOB-only");
+        assertEq(yes1.balanceOf(alice) - yesBefore, 120e6, "delivered the CLOB YES");
+        assertEq(usdc.balanceOf(address(router)), 0, "canary: unused AMM budget refunded, no funds stuck");
+    }
+
     function test_HappyPath_ClobNearExact_AmmDustYieldsZero() public {
         // CLOB nearly consumes the input, leaving 1 wei USDC remainder (common outcome of
         // rounding at each price level). AMM receives 1 wei and returns 0 YES because the

@@ -155,6 +155,15 @@ interface IPrediXRouter {
     ///         anomaly stream.
     event ClobSkipped(uint256 indexed marketId, address indexed recipient, bytes4 reason);
 
+    /// @notice Emitted when the AMM leg reverted and the router shipped the
+    ///         CLOB-only fill instead of reverting the whole atomic trade
+    ///         (RTR-1 / clm6.7). `reason` is the 4-byte selector of the AMM
+    ///         revert (e.g. `InsufficientLiquidity` / `QuoteOutsideSafetyMargin`
+    ///         thrown inside the unlock callback), or `bytes4(0)` if the revert
+    ///         carried no data. Like {ClobSkipped}, this turns a swallowed catch
+    ///         into an observable anomaly stream for ops.
+    event AmmSkipped(uint256 indexed marketId, address indexed recipient, bytes4 reason);
+
     // =========================================================================
     // Exact-in trade primitives
     // =========================================================================

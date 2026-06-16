@@ -168,24 +168,23 @@ contract Fairness_YesVsNo is RouterFixture {
     // Failure mode parity
     // ====================================================================
 
-    /// @dev Failure mode count. Post-Path-D BUY_NO can only revert with:
-    ///        InsufficientLiquidity / InsufficientOutput / ExactInUnfilled /
-    ///        PerMarketCapExceeded / QuoteOutsideSafetyMargin
-    ///      QuoteOutsideSafetyMargin is now reachable ONLY when the actual
-    ///      swap proceeds drift > 0.5% below the final-safety-quote estimate
-    ///      (i.e., quoter precision drift exceeds the cushion). This is the
-    ///      MINIMUM possible set given the single-pool / virtual-NO design.
+    /// @dev User-facing failure-mode set for BUY_NO AFTER RTR-1 (clm6.7). The AMM-internal reverts
+    ///      (InsufficientLiquidity / QuoteOutsideSafetyMargin, thrown in `_callbackBuyNo`) are now CAUGHT by
+    ///      the AMM-leg try/catch and the router ships CLOB-only — so they are no longer user-facing. The
+    ///      user-facing set shrinks to: InsufficientOutput (minOut) / ExactInUnfilled (nothing filled) /
+    ///      PerMarketCapExceeded (pre-unlock cap, deliberately not caught). This test drives the same
+    ///      quoter-vs-actual divergence that previously bubbled QuoteOutsideSafetyMargin and asserts it now
+    ///      surfaces as the graceful `ExactInUnfilled` (no CLOB book here) — proving the breach is caught.
     function test_FailureModes_BuyNo_OnlyAlgebraicallyReachable() public {
-        // Force a quoter-vs-actual divergence > 0.5%:
-        //   Final safety quote at 79.6e6 returns 39.8e6 (linear, would pass).
-        //   But pool delivers only 1e6 — divergence of 38.7e6, far beyond
-        //   the 0.5% cushion. Callback reverts QuoteOutsideSafetyMargin.
+        // Force a quoter-vs-actual divergence > 0.5%: final safety quote at 79.6e6 returns 39.8e6 (would pass),
+        // but the pool delivers only 1e6 — far beyond the 0.5% cushion, so `_callbackBuyNo` hits
+        // QuoteOutsideSafetyMargin. RTR-1 catches it inside the unlock; with no CLOB book → ExactInUnfilled.
         _queueSellSeqForBuyNo(500_000, 40_000_000, 39_800_000);
         _queueFlash(79_600_000, 1e6);
 
         _approveUsdcAsAlice(40e6);
         vm.prank(alice);
-        vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
+        vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, uint256(40e6)));
         router.buyNo(MARKET_ID, 40e6, 0, alice, 5, _deadline(), bytes32(0));
     }
 

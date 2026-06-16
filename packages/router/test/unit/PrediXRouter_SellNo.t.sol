@@ -60,7 +60,10 @@ contract PrediXRouter_SellNo is RouterFixture {
         }
         _approveNoAsAlice(noIn);
         vm.prank(alice);
-        vm.expectRevert(IPrediXRouter.QuoteOutsideSafetyMargin.selector);
+        // RTR-1 (clm6.7): the AMM safety-margin breach (QuoteOutsideSafetyMargin in `_callbackSellNo`) is now
+        // CAUGHT inside the AMM leg and the router ships CLOB-only. With no CLOB book here, nothing fills, so
+        // the trade surfaces the graceful `ExactInUnfilled(noIn)` instead of bubbling the raw AMM revert.
+        vm.expectRevert(abi.encodeWithSelector(IPrediXRouter.ExactInUnfilled.selector, noIn));
         router.sellNo(MARKET_ID, noIn, 0, alice, 5, _deadline(), bytes32(0));
     }
 

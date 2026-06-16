@@ -680,8 +680,15 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             AmmAction.BUY_YES,
             AmmCtx({key: key, marketId: marketId, yesToken: yesToken, noToken: noToken, amountIn: usdcIn})
         );
-        bytes memory result = poolManager.unlock(data);
-        yesOut = abi.decode(result, (uint256));
+        // RTR-1 (clm6.7): the swap + flash settlement run inside `unlock`; on revert (InsufficientLiquidity /
+        // slippage / a callback guard) ship the CLOB-only fill instead of reverting the whole atomic trade.
+        // Surface the selector via AmmSkipped — do NOT swallow silently.
+        try poolManager.unlock(data) returns (bytes memory result) {
+            yesOut = abi.decode(result, (uint256));
+        } catch (bytes memory err) {
+            emit AmmSkipped(marketId, user, err.length >= 4 ? bytes4(err) : bytes4(0));
+            return 0;
+        }
     }
 
     /// @notice Callback body for the `BUY_YES` AMM flow. Executes an exact-in USDC → YES swap
@@ -764,8 +771,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             AmmAction.SELL_YES,
             AmmCtx({key: key, marketId: marketId, yesToken: yesToken, noToken: noToken, amountIn: yesIn})
         );
-        bytes memory result = poolManager.unlock(data);
-        usdcOut = abi.decode(result, (uint256));
+        // RTR-1 (clm6.7): catch an AMM-leg revert and ship CLOB-only rather than reverting the whole trade.
+        try poolManager.unlock(data) returns (bytes memory result) {
+            usdcOut = abi.decode(result, (uint256));
+        } catch (bytes memory err) {
+            emit AmmSkipped(marketId, user, err.length >= 4 ? bytes4(err) : bytes4(0));
+            return 0;
+        }
     }
 
     /// @notice Callback body for `SELL_YES`: swap exact-in YES → USDC, settle YES debt, take USDC.
@@ -824,8 +836,14 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             AmmAction.BUY_NO,
             AmmCtx({key: key, marketId: marketId, yesToken: yesToken, noToken: noToken, amountIn: mintAmount})
         );
-        bytes memory result = poolManager.unlock(data);
-        noOut = abi.decode(result, (uint256));
+        // RTR-1 (clm6.7): catch an AMM-leg revert (e.g. QuoteOutsideSafetyMargin / InsufficientLiquidity in
+        // `_callbackBuyNo`) and ship CLOB-only rather than reverting the whole atomic trade.
+        try poolManager.unlock(data) returns (bytes memory result) {
+            noOut = abi.decode(result, (uint256));
+        } catch (bytes memory err) {
+            emit AmmSkipped(marketId, user, err.length >= 4 ? bytes4(err) : bytes4(0));
+            return 0;
+        }
     }
 
     /// @notice Callback body for `BUY_NO`. Router enters holding `usdcIn` USDC. It swaps
@@ -895,8 +913,13 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
             AmmCtx({key: key, marketId: marketId, yesToken: yesToken, noToken: noToken, amountIn: noIn}),
             maxCost
         );
-        bytes memory result = poolManager.unlock(data);
-        usdcOut = abi.decode(result, (uint256));
+        // RTR-1 (clm6.7): catch an AMM-leg revert and ship CLOB-only rather than reverting the whole trade.
+        try poolManager.unlock(data) returns (bytes memory result) {
+            usdcOut = abi.decode(result, (uint256));
+        } catch (bytes memory err) {
+            emit AmmSkipped(marketId, user, err.length >= 4 ? bytes4(err) : bytes4(0));
+            return 0;
+        }
     }
 
     /// @notice Callback body for `SELL_NO`. Router enters holding `noIn` NO. It buys `noIn`
