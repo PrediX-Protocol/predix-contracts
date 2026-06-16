@@ -92,4 +92,34 @@ contract Audit_I03_StorageLayoutTest is MarketFixture {
         assertTrue(overridden, "redemptionFeeOverridden at byte 2");
         assertEq(snapshot, 0, "snapshottedDefaultRedemptionFeeBps at bytes 3..4");
     }
+
+    /// @notice Slot 12 ALSO packs (after the redemption trio at bytes 0-4) the v1.6 `linkedChild` (byte 5) and
+    ///         the v1.7 per-market protocol-fee trio appended for the fee system:
+    ///           protocolFeeRateBps             (uint16, bytes 6-7)
+    ///           protocolFeeOverridden          (bool,   byte 8)
+    ///           snapshottedProtocolFeeRateBps  (uint16, bytes 9-10)
+    ///         These were NOT pinned when this test was written (pre-v1.7). A future maintainer inserting a
+    ///         field before them would shift them off slot 12 and brick a fee-config upgrade — pin them now
+    ///         (mirrors the exchange Audit_EXCH1 slot-pin / clm6.8).
+    function test_I03_MarketStorageSlot_ProtocolFeePacking() public {
+        // Default protocol fee 300 bps → snapshotted at creation; per-market override 500 bps (both <= cap 700).
+        vm.prank(admin);
+        market.setDefaultProtocolFeeRateBps(300);
+        uint256 marketId = _createMarket(block.timestamp + 7 days);
+        vm.prank(admin);
+        market.setPerMarketProtocolFeeRateBps(marketId, 500);
+
+        bytes32 mappingSlot = bytes32(uint256(MARKET_STORAGE_SLOT) + 1);
+        bytes32 marketStructSlot = keccak256(abi.encode(marketId, mappingSlot));
+        uint256 packed = uint256(vm.load(address(diamond), bytes32(uint256(marketStructSlot) + 12)));
+
+        // Solidity packs first-declared into the lowest bytes; protocol-fee trio starts at byte 6.
+        uint16 rate = uint16((packed >> 48) & 0xFFFF); // bytes 6-7
+        bool protocolOverridden = ((packed >> 64) & 0xFF) != 0; // byte 8
+        uint16 snapshotRate = uint16((packed >> 72) & 0xFFFF); // bytes 9-10
+
+        assertEq(rate, 500, "protocolFeeRateBps at slot 12 bytes 6-7");
+        assertTrue(protocolOverridden, "protocolFeeOverridden at slot 12 byte 8");
+        assertEq(snapshotRate, 300, "snapshottedProtocolFeeRateBps at slot 12 bytes 9-10");
+    }
 }
