@@ -33,6 +33,28 @@ contract MockV4Quoter is IV4Quoter {
     mapping(bool => uint256[]) internal _queueByDir;
     mapping(bool => uint256) internal _queueIdxByDir;
 
+    /// @dev When set, both quote functions revert with this raw payload before returning a value.
+    ///      Models the real V4Quoter reverting (e.g. NotEnoughLiquidity re-wrapped as
+    ///      UnexpectedRevertBytes) when the pool cannot fill the probed size — the partial-liquidity
+    ///      case the router must degrade past, not propagate.
+    bytes internal _revertData;
+
+    function setRevert(bytes calldata data) external {
+        _revertData = data;
+    }
+
+    function clearRevert() external {
+        delete _revertData;
+    }
+
+    function _maybeRevert() internal view {
+        bytes memory d = _revertData;
+        if (d.length == 0) return;
+        assembly ("memory-safe") {
+            revert(add(d, 0x20), mload(d))
+        }
+    }
+
     function setExactInResult(uint256 amountOut) external {
         _exactIn = Canned({amountOut: amountOut, amountIn: 0, set: true});
     }
@@ -66,6 +88,7 @@ contract MockV4Quoter is IV4Quoter {
         override
         returns (uint256 amountOut, uint256 gasEstimate)
     {
+        _maybeRevert();
         uint256 idx = _queueIdxByDir[params.zeroForOne];
         uint256[] storage q = _queueByDir[params.zeroForOne];
         if (idx < q.length) {
@@ -97,6 +120,7 @@ contract MockV4Quoter is IV4Quoter {
         override
         returns (uint256 amountIn, uint256 gasEstimate)
     {
+        _maybeRevert();
         amountIn = (uint256(params.exactAmount) * _exactOut.amountIn) / 1e6;
         gasEstimate = 0;
         callCount += 1;

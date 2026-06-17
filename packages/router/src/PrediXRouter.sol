@@ -126,6 +126,16 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     bytes4 private constant _EX_DEADLINE = bytes4(keccak256("DeadlineExpired(uint256,uint256)"));
     bytes4 private constant _EX_NO_LIQUIDITY = bytes4(keccak256("InsufficientLiquidity()"));
 
+    // Expected v4 Quoter revert selectors — graceful fallback to CLOB-only when the AMM cannot fill
+    // the probed size. The Quoter requires a FULL fill and reverts NotEnoughLiquidity (which it
+    // re-wraps as UnexpectedRevertBytes) when active liquidity cannot absorb the probe. A registered
+    // pool with liquidity > 0 can still fail this for a large size, so an AMM that cannot price a size
+    // must not abort a trade the CLOB can fill. All other selectors indicate caller/protocol bugs and
+    // MUST propagate. Selectors copied here because the monorepo boundary rule forbids importing
+    // cross-package `src/`.
+    bytes4 private constant _Q_UNEXPECTED_REVERT = bytes4(keccak256("UnexpectedRevertBytes(bytes)"));
+    bytes4 private constant _Q_NOT_ENOUGH_LIQUIDITY = bytes4(keccak256("NotEnoughLiquidity(bytes32)"));
+
     /// @notice Price precision used by the CLOB and by the AMM fee math (1e6 = 100%).
     uint256 internal constant PRICE_PRECISION = 1e6;
 
@@ -396,12 +406,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 usdcLeft = usdcIn - clobCost;
         if (usdcLeft > 0 && _hasPool(yesToken)) {
             _preCommitForQuoter(yesToken);
-            PoolKey memory key = _buildPoolKey(yesToken);
-            IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-                poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(usdcLeft), hookData: ""
-            });
-            (uint256 amountOut,) = quoter.quoteExactInputSingle(params);
-            ammPortion = amountOut;
+            // `ok` ignored: a quoter revert leaves `ammPortion` 0 so the quote reports CLOB-only.
+            (ammPortion,) = _tryQuoteExactIn(_buildPoolKey(yesToken), usdc < yesToken, uint128(usdcLeft));
         }
 
         expectedYesOut = clobPortion + ammPortion;
@@ -424,12 +430,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         uint256 yesLeft = yesIn - sharesFilled;
         if (yesLeft > 0 && _hasPool(yesToken)) {
             _preCommitForQuoter(yesToken);
-            PoolKey memory key = _buildPoolKey(yesToken);
-            IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-                poolKey: key, zeroForOne: yesToken < usdc, exactAmount: uint128(yesLeft), hookData: ""
-            });
-            (uint256 amountOut,) = quoter.quoteExactInputSingle(params);
-            ammPortion = amountOut;
+            (ammPortion,) = _tryQuoteExactIn(_buildPoolKey(yesToken), yesToken < usdc, uint128(yesLeft));
         }
 
         expectedUsdcOut = clobPortion + ammPortion;
@@ -930,6 +931,86 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         IPrediXHookCommit(hook).commitSwapIdentityFor(address(quoter), msg.sender, key.toId());
     }
 
+    /// @notice Quoter exact-in wrapped for graceful CLOB fallback. Returns `(amountOut, true)` on a
+    ///         clean quote; `(0, false)` when the AMM cannot fill `exactAmount` — the v4 Quoter
+    ///         reverts NotEnoughLiquidity (re-wrapped as UnexpectedRevertBytes) because it requires a
+    ///         full fill. Mirrors the orderbook-side `_tryClobBuy` contract: an AMM that cannot price
+    ///         the requested size degrades to CLOB-only instead of reverting the trade. Every other
+    ///         revert propagates (see {_handleQuoterRevert}).
+    /// @dev Callers MUST `_preCommitForQuoter` first; the commit stays outside the try so a genuine
+    ///      hook / trusted-router failure still reverts loudly.
+    function _tryQuoteExactIn(PoolKey memory key, bool zeroForOne, uint128 exactAmount)
+        internal
+        returns (uint256 amountOut, bool ok)
+    {
+        try quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: key, zeroForOne: zeroForOne, exactAmount: exactAmount, hookData: ""
+            })
+        ) returns (
+            uint256 out, uint256
+        ) {
+            return (out, true);
+        } catch (bytes memory err) {
+            _handleQuoterRevert(key.toId(), err);
+            return (0, false);
+        }
+    }
+
+    /// @notice Exact-out twin of {_tryQuoteExactIn}. Returns `(amountIn, true)` on a clean quote;
+    ///         `(0, false)` when the AMM cannot deliver `exactAmount` out.
+    function _tryQuoteExactOut(PoolKey memory key, bool zeroForOne, uint128 exactAmount)
+        internal
+        returns (uint256 amountIn, bool ok)
+    {
+        try quoter.quoteExactOutputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: key, zeroForOne: zeroForOne, exactAmount: exactAmount, hookData: ""
+            })
+        ) returns (
+            uint256 inAmt, uint256
+        ) {
+            return (inAmt, true);
+        } catch (bytes memory err) {
+            _handleQuoterRevert(key.toId(), err);
+            return (0, false);
+        }
+    }
+
+    /// @notice Decide whether a quoter revert is the documented "AMM cannot fill the probed size"
+    ///         condition and act on it. That condition is `NotEnoughLiquidity`, which the v4 Quoter
+    ///         re-wraps as `UnexpectedRevertBytes(NotEnoughLiquidity)`. On it: emit
+    ///         {AmmQuoteUnfillable} and return so the caller falls back to CLOB-only. EVERY other
+    ///         revert — a hook fault, a misconfigured pool, an unexpected selector — is re-thrown
+    ///         verbatim so it fails loud (§6.4). The wrapper's inner selector is decoded so an
+    ///         `UnexpectedRevertBytes` carrying a NON-liquidity error is not mistaken for a skip.
+    function _handleQuoterRevert(PoolId poolId, bytes memory err) internal {
+        bytes4 sel = err.length >= 4 ? bytes4(err) : bytes4(0);
+        bool unfillable = sel == _Q_NOT_ENOUGH_LIQUIDITY
+            || (sel == _Q_UNEXPECTED_REVERT && _innerSelector(err) == _Q_NOT_ENOUGH_LIQUIDITY);
+        if (!unfillable) {
+            assembly ("memory-safe") {
+                revert(add(err, 0x20), mload(err))
+            }
+        }
+        emit AmmQuoteUnfillable(PoolId.unwrap(poolId), _Q_NOT_ENOUGH_LIQUIDITY);
+    }
+
+    /// @notice Extract the inner error selector from a v4 Quoter `UnexpectedRevertBytes(bytes)` payload.
+    /// @dev ABI layout of the revert data: [0:4] wrapper selector, [4:36] offset (0x20), [36:68] inner
+    ///      length, [68:72] inner selector. Returns `bytes4(0)` when the payload is too short to carry
+    ///      an inner selector (treated as non-graceful by the caller). The fixed 0x20 offset holds for
+    ///      the single-`bytes` argument of `UnexpectedRevertBytes`. This couples to the vendored
+    ///      v4-periphery `QuoterRevert` encoding — re-validate on any v4 lib bump. Fail-safe by
+    ///      construction: a layout change yields a non-matching selector, so the caller re-throws
+    ///      (loud) rather than ever falsely swallowing a non-liquidity revert.
+    function _innerSelector(bytes memory err) private pure returns (bytes4 inner) {
+        if (err.length < 72) return bytes4(0);
+        assembly ("memory-safe") {
+            inner := mload(add(err, 0x64))
+        }
+    }
+
     // =========================================================================
     // CLOB price caps — fee-adjusted AMM spot
     // =========================================================================
@@ -940,11 +1021,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _ammSpotPriceForSell(address yesToken) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken)) return 0;
         _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: yesToken < usdc, exactAmount: uint128(PRICE_PRECISION), hookData: ""
-        });
-        (usdcPerYes,) = quoter.quoteExactInputSingle(params);
+        (usdcPerYes,) = _tryQuoteExactIn(_buildPoolKey(yesToken), yesToken < usdc, uint128(PRICE_PRECISION));
     }
 
     /// @notice Saturating `1e6 - price` used to derive virtual NO prices from YES prices.
@@ -960,11 +1037,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _ammEffectivePriceForBuy(address yesToken, uint128 usdcSize) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || usdcSize == 0) return 0;
         _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: usdcSize, hookData: ""
-        });
-        (uint256 yesOut,) = quoter.quoteExactInputSingle(params);
+        (uint256 yesOut,) = _tryQuoteExactIn(_buildPoolKey(yesToken), usdc < yesToken, usdcSize);
         if (yesOut == 0) return 0;
         usdcPerYes = (uint256(usdcSize) * PRICE_PRECISION) / yesOut;
     }
@@ -974,11 +1047,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _ammEffectivePriceForSell(address yesToken, uint128 yesSize) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || yesSize == 0) return 0;
         _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: yesToken < usdc, exactAmount: yesSize, hookData: ""
-        });
-        (uint256 usdcOut,) = quoter.quoteExactInputSingle(params);
+        (uint256 usdcOut,) = _tryQuoteExactIn(_buildPoolKey(yesToken), yesToken < usdc, yesSize);
         if (usdcOut == 0) return 0;
         usdcPerYes = (usdcOut * PRICE_PRECISION) / uint256(yesSize);
     }
@@ -989,11 +1058,7 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     function _ammEffectivePriceForBuyExactOut(address yesToken, uint128 yesOut) internal returns (uint256 usdcPerYes) {
         if (!_hasPool(yesToken) || yesOut == 0) return 0;
         _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: yesOut, hookData: ""
-        });
-        (uint256 usdcInQuote,) = quoter.quoteExactOutputSingle(params);
+        (uint256 usdcInQuote,) = _tryQuoteExactOut(_buildPoolKey(yesToken), usdc < yesToken, yesOut);
         if (usdcInQuote == 0) return 0;
         usdcPerYes = (usdcInQuote * PRICE_PRECISION) / uint256(yesOut);
     }
@@ -1193,11 +1258,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         // re-quote below handles that case.
         for (uint256 i = 0; i < BUY_NO_SIZING_MAX_ITER; ++i) {
             _preCommitForQuoter(yesToken);
-            (uint256 proceeds,) = quoter.quoteExactInputSingle(
-                IV4Quoter.QuoteExactSingleParams({
-                    poolKey: key, zeroForOne: zeroForOne, exactAmount: uint128(size), hookData: ""
-                })
-            );
+            (uint256 proceeds, bool ok) = _tryQuoteExactIn(key, zeroForOne, uint128(size));
+            // AMM cannot price this size -> skip the virtual-NO AMM leg, ship the CLOB-only fill.
+            if (!ok) return 0;
             if (proceeds + usdcIn >= size) {
                 // Converged — the next swap-size quote covers the budget.
                 break;
@@ -1231,11 +1294,8 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
         // re-introducing the bug Path D was designed to close.
         for (uint256 i = 0; i < BUY_NO_SIZING_MAX_ITER; ++i) {
             _preCommitForQuoter(yesToken);
-            (uint256 finalProceeds,) = quoter.quoteExactInputSingle(
-                IV4Quoter.QuoteExactSingleParams({
-                    poolKey: key, zeroForOne: zeroForOne, exactAmount: uint128(candidate), hookData: ""
-                })
-            );
+            (uint256 finalProceeds, bool ok) = _tryQuoteExactIn(key, zeroForOne, uint128(candidate));
+            if (!ok) return 0;
             if (finalProceeds + usdcIn >= candidate) {
                 mintAmount = candidate;
                 return mintAmount;
@@ -1269,12 +1329,9 @@ contract PrediXRouter is IPrediXRouter, IUnlockCallback, TransientReentrancyGuar
     ///      callback.
     function _computeSellNoMaxCost(address yesToken, uint256 noIn) internal returns (uint256 maxCost) {
         _preCommitForQuoter(yesToken);
-        PoolKey memory key = _buildPoolKey(yesToken);
-        IV4Quoter.QuoteExactSingleParams memory params = IV4Quoter.QuoteExactSingleParams({
-            poolKey: key, zeroForOne: usdc < yesToken, exactAmount: uint128(noIn), hookData: ""
-        });
-        (uint256 costQuote,) = quoter.quoteExactOutputSingle(params);
-        if (costQuote == 0) return type(uint256).max;
+        (uint256 costQuote, bool ok) = _tryQuoteExactOut(_buildPoolKey(yesToken), usdc < yesToken, uint128(noIn));
+        // Unfillable -> max cost so the caller's `maxCost >= noIn` gate skips the AMM leg gracefully.
+        if (!ok || costQuote == 0) return type(uint256).max;
         maxCost = (costQuote * BPS_DENOMINATOR) / SELL_NO_PRECISION_CUSHION_BPS;
     }
 

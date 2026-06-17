@@ -150,6 +150,16 @@ interface IPrediXRouter {
     ///         anomaly stream.
     event ClobSkipped(uint256 indexed marketId, address indexed recipient, bytes4 reason);
 
+    /// @notice Emitted when the AMM quoter could not price/fill the probed size
+    ///         (`NotEnoughLiquidity`, which the v4 Quoter re-wraps as
+    ///         `UnexpectedRevertBytes`) and the router fell back to CLOB-only for
+    ///         that leg. The AMM twin of {ClobSkipped}: turns the otherwise-silent
+    ///         graceful catch into an observable anomaly stream so an
+    ///         indexer/monitor can distinguish a genuine thin pool from a
+    ///         misconfigured one. `reason` is the swallowed selector
+    ///         (`NotEnoughLiquidity`); every other quoter revert propagates.
+    event AmmQuoteUnfillable(bytes32 indexed poolId, bytes4 reason);
+
     // =========================================================================
     // Exact-in trade primitives
     // =========================================================================
