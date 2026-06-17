@@ -254,7 +254,7 @@ library DiamondDeployLib {
     ///      mainnet diamond used a REPLACE 29 + ADD 2 cut shape (see
     ///      `UpgradeOutcomeTokenClone.s.sol`).
     function _marketSelectors() private pure returns (bytes4[] memory s) {
-        s = new bytes4[](32);
+        s = new bytes4[](38);
         s[0] = IMarketFacet.createMarket.selector;
         s[1] = IMarketFacet.splitPosition.selector;
         s[2] = IMarketFacet.mergePositions.selector;
@@ -289,6 +289,14 @@ library DiamondDeployLib {
         s[30] = IMarketFacet.outcomeTokenImpl.selector;
         // keyti-fqn8: create-time redemption-fee overload
         s[31] = IMarketFacet.createMarketWithFee.selector;
+        // Sub-plan 02 (v1.7) protocol-fee config + Mức-1 — so a FRESH diamond routes the fee selectors. The
+        // LIVE chain-130 diamond gets these via the ProtocolFeeMarketCut Add list (Sub-plan 05 Task 1/3).
+        s[32] = IMarketFacet.setDefaultProtocolFeeRateBps.selector;
+        s[33] = IMarketFacet.setPerMarketProtocolFeeRateBps.selector;
+        s[34] = IMarketFacet.clearPerMarketProtocolFee.selector;
+        s[35] = IMarketFacet.setProtocolMakerRebateBps.selector;
+        s[36] = IMarketFacet.effectiveProtocolFee.selector;
+        s[37] = IMarketFacet.getFeeConfig.selector;
     }
 
     function _eventSelectors() private pure returns (bytes4[] memory s) {
