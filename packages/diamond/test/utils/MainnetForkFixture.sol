@@ -32,6 +32,7 @@ import {Roles} from "@predix/shared/constants/Roles.sol";
 import {MarketFacet} from "@predix/diamond/facets/market/MarketFacet.sol";
 import {EventFacet} from "@predix/diamond/facets/event/EventFacet.sol";
 import {MarketInit} from "@predix/diamond/init/MarketInit.sol";
+import {OutcomeTokenClone} from "@predix/shared/tokens/OutcomeTokenClone.sol";
 
 // === PrediX hook ===
 import {PrediXHookV2} from "@predix/hook/hooks/PrediXHookV2.sol";
@@ -263,7 +264,10 @@ abstract contract MainnetForkFixture is DiamondFixture {
         MarketInit.InitArgs memory args = MarketInit.InitArgs({
             collateralToken: address(usdc), feeRecipient: feeRecipient, marketCreationFee: 0, defaultPerMarketCap: 0
         });
-        bytes memory initData = abi.encodeCall(MarketInit.init, (args));
+        // v1.3: wire the OutcomeTokenClone master atomically in the cut. Without it `createMarket` reverts
+        // `Market_OutcomeTokenImplNotSet`.
+        address outcomeImpl = address(new OutcomeTokenClone(address(diamond)));
+        bytes memory initData = abi.encodeCall(MarketInit.initWithOutcomeImpl, (args, outcomeImpl));
 
         vm.prank(timelock);
         diamondCut.diamondCut(cuts, address(marketInit), initData);
@@ -423,12 +427,17 @@ abstract contract MainnetForkFixture is DiamondFixture {
         usdc.approve(address(liquidityRouter), type(uint256).max);
         IERC20(yesToken).approve(address(liquidityRouter), type(uint256).max);
 
-        // Tick range aligned to the canonical tick spacing.
+        // Tick range aligned to the canonical tick spacing. The hook bounds LP to the [0,1] YES-price band
+        // (PrediXHookV2._beforeAddLiquidity): YES=currency0 caps tickUpper<=0, YES=currency1 floors
+        // tickLower>=0. A full-range position reverts Hook_LiquidityRangeOutOfBounds, so clamp the
+        // price-bounded side to tick 0.
         int24 minTick = (TickMath.MIN_TICK / TICK_SPACING) * TICK_SPACING;
         int24 maxTick = (TickMath.MAX_TICK / TICK_SPACING) * TICK_SPACING;
+        (int24 tickLower, int24 tickUpper) = yesIsCurrency0 ? (minTick, int24(0)) : (int24(0), maxTick);
 
-        ModifyLiquidityParams memory params =
-            ModifyLiquidityParams({tickLower: minTick, tickUpper: maxTick, liquidityDelta: 50_000e6, salt: bytes32(0)});
+        ModifyLiquidityParams memory params = ModifyLiquidityParams({
+            tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: 50_000e6, salt: bytes32(0)
+        });
         liquidityRouter.modifyLiquidity(poolKey, params, "");
         vm.stopPrank();
     }
