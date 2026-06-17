@@ -12,7 +12,7 @@ all params are 0 ⇒ **P10 byte-identical** to today (proven by `FeeSystemForkE2
 |---|---|---|
 | Diamond | `0xC8F12AF2a396c9C906ac36Bc0AC2279BBb69Ef96` | **UNCHANGED** by this upgrade (cut in place) |
 | Exchange proxy | `0x506367C7c48C95A4843F45d5C2F177B35e69594E` | **UNCHANGED** (impl swapped behind it) |
-| Timelock | `0xC5c64967CAA46e588cCe3eA97F761B5282e98882` | diamond cut authority; `getMinDelay()` = 1h today |
+| Timelock | `0xC5c64967CAA46e588cCe3eA97F761B5282e98882` | diamond cut authority; `getMinDelay()` = **1h, kept** (clm6.1 48h-raise declined) |
 | TEAM_SAFE | `0xf10Ad39CeD9CaDb74627063b4671f8AEc6F1F36A` | diamond `ADMIN_ROLE` + Exchange proxy `_ADMIN_SLOT` admin |
 | TestUSDC | `0xB3FCA863dD0F6b496cCDDf6497Da5Dad67857F56` | collateral |
 
@@ -21,9 +21,12 @@ unchanged proxy), `NEW_MARKET_FACET` (behind the unchanged diamond), `NEW_ROUTER
 changes for integrators.**
 
 ## ⚠️ Prerequisites & ordering constraints (load-bearing)
-1. **OPS — clm6.1 FIRST:** raise the diamond Timelock `getMinDelay()` 1h → 48h + split PROPOSER/EXECUTOR before
-   the fee cut (the cut rides this Timelock). Verify `cast call <timelock> "getMinDelay()(uint256)"`; the
-   Phase-B wait below = whatever this returns at deploy time (1h today, 48h after clm6.1).
+1. **Timelock stays at 1h (OPERATOR DECISION).** The diamond cut rides the Timelock; the operator has chosen to
+   KEEP `getMinDelay()` at **1h** and NOT raise it to 48h (clm6.1 declined). So the Phase-B cut wait = **1h**.
+   ⚠️ RISK ACCEPTED: a 1h cut-delay is a shorter window to detect/cancel a malicious or buggy diamond cut than
+   48h would give. Mitigated by: the cut is a narrow Replace+Add (fork-sim proven no-brick), proposer is the
+   TEAM_SAFE multisig, and the Exchange impl upgrade is INDEPENDENTLY 48h (the proxy `UPGRADE_DELAY` constant —
+   unaffected by this choice). Verify `cast call <timelock> "getMinDelay()(uint256)"` == 3600 at deploy time.
 2. **DIAMOND-CUT-FIRST (proven):** the new Exchange impl + new Router decode `getMarket()` as the **17-field**
    `MarketView`; the live diamond returns the **15-field** struct until the cut lands. Executing the Exchange
    upgrade (Phase C) **before** the MarketFacet cut (Phase B) is live would brick `getMarket` reads.
@@ -56,7 +59,7 @@ The MarketFacet for the cut is deployed via `ProtocolFeeMarketCut.deployMarketFa
 ### Phase B — diamond MarketFacet cut via Timelock  [authority: Timelock]
 ```
 SALT = <random bytes32, recorded>
-delay = cast call <TIMELOCK> "getMinDelay()(uint256)"      # 1h today / 48h after clm6.1
+delay = cast call <TIMELOCK> "getMinDelay()(uint256)"      # 3600 = 1h (kept per operator decision)
 # Safe submits:
 schedule(diamond, 0, diamondCutData, 0, SALT, delay)
 # wait >= delay, then:
