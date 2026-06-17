@@ -1,8 +1,8 @@
 # Fee System — Mainnet Deploy / Upgrade Runbook (chain-130 Unichain)
 
-> **Sub-plan 05 Task 5. DOCUMENTED, NOT executed.** No transaction here is broadcast by an agent. Each script is
-> dry-run (no `--broadcast`) to print calldata + gas; a **human/Safe** submits every state-changing tx after
-> review. Agents only verify read-only (`cast call`).
+> **Sub-plan 05 Task 5. DOCUMENTED, NOT executed.** No transaction here is broadcast automatically. Each script
+> is dry-run (no `--broadcast`) to print calldata + gas; a **human/Safe** submits every state-changing tx after
+> review. Verification is read-only (`cast call`) only.
 
 The fee system (builder fee + protocol fee + Mức-1 config) ships as **ONE combined upgrade** (GỘP). At launch
 all params are 0 ⇒ **P10 byte-identical** to today (proven by `FeeSystemForkE2E` + the 815-test suite).
